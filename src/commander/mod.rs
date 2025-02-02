@@ -146,16 +146,8 @@ impl Commander {
     /// Execute a command and record to history.
     /// Environment variables can be set with set_env.
     /// They are cleared after execution.
-    fn execute_command(&self, command: &mut Command) -> Result<String, CommandError> {
-        // Set current directory to root
-        command.current_dir(&self.env.root);
-
-        // Set environment variables and clear them for the next command
-        command.envs(self.env_var.lock().unwrap().iter().cloned());
-        self.env_var.lock().unwrap().clear();
-
-        let output = command.output();
-        let output = output?;
+    fn execute_command(&self, mut command: Command) -> Result<String, CommandError> {
+        let output = command.output()?;
 
         if !output.status.success() {
             // Return JjError if non-zero status code
@@ -179,17 +171,7 @@ impl Commander {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        let mut command = Command::new(&self.env.jj_bin);
-        command.args(args);
-        command.args(get_output_args(!self.force_no_color && color, quiet));
-
-        if let Some(jj_config_toml) = &self.jj_config_toml {
-            for cfg in jj_config_toml {
-                command.args(["--config", cfg]);
-            }
-        }
-
-        self.execute_command(&mut command)
+        self.execute_command(self.build_jj_command(args, color, quiet))
     }
 
     /// Execute a jj command without using the output.
@@ -199,8 +181,54 @@ impl Commander {
         S: AsRef<OsStr>,
     {
         // Since no result is used, enable color for command log
-        self.execute_jj_command(args, true, true)?;
-        Ok(())
+        self.execute_command(self.build_jj_command(args, true, true))
+            .and(Ok(()))
+    }
+
+    /// Build a jj command intended to run interactively (taking over the terminal).
+    /// Execution must happen in the main loop after restoring the terminal.
+    pub fn build_interactive_jj_command<I, S>(&self, args: I) -> Command
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        self.build_jj_command(args, true, true)
+    }
+
+    fn build_command<B, I, S>(&self, bin: B, args: I) -> Command
+    where
+        I: IntoIterator<Item = S>,
+        B: AsRef<OsStr>,
+        S: AsRef<OsStr>,
+    {
+        let mut command = Command::new(bin);
+        command.args(args);
+
+        // Set current directory to root
+        command.current_dir(&self.env.root);
+
+        // Set environment variables and clear them for the next command
+        command.envs(self.env_var.lock().unwrap().iter().cloned());
+        self.env_var.lock().unwrap().clear();
+
+        command
+    }
+
+    fn build_jj_command<I, S>(&self, args: I, color: bool, quiet: bool) -> Command
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let mut command = self.build_command(&self.env.jj_bin, args);
+        command.args(get_output_args(!self.force_no_color && color, quiet));
+
+        if let Some(jj_config_toml) = &self.jj_config_toml {
+            for cfg in jj_config_toml {
+                command.args(["--config", cfg]);
+            }
+        }
+
+        command
     }
 
     /// Check that the version of jj is recent enough to work with blazingjj

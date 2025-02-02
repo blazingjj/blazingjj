@@ -166,11 +166,21 @@ fn init_env() -> Result<Env> {
 fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
     loop {
         app.update()?;
+
         terminal.draw(|f| {
             let _ = ui(f, app);
         })?;
 
         let should_stop = input_to_app(app)?;
+
+        if let Some(mut command) = app.pending_interactive.take() {
+            restore_terminal()?;
+            let status = command.spawn()?.wait();
+            setup_terminal()?;
+            terminal.clear()?;
+            status?;
+            app.refresh_current_view()?;
+        }
 
         if should_stop {
             return Ok(());

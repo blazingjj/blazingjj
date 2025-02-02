@@ -1,4 +1,5 @@
 use core::fmt;
+use std::process::Command;
 use std::time::Instant;
 
 use anyhow::Result;
@@ -51,6 +52,9 @@ pub struct App<'a> {
     pub bookmarks: Option<BookmarksTab<'a>>,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
+    /// Interactive command queued by a component for the main loop to run
+    /// after restoring the terminal.
+    pub pending_interactive: Option<Command>,
 }
 
 impl<'a> App<'a> {
@@ -64,6 +68,7 @@ impl<'a> App<'a> {
             stats: Stats {
                 start_time: Instant::now(),
             },
+            pending_interactive: None,
         })
     }
 
@@ -148,6 +153,22 @@ impl<'a> App<'a> {
         }
     }
 
+    /// Re-sync the current view's state with the working copy. Called by the
+    /// main loop after an interactive command may have mutated the repo.
+    pub fn refresh_current_view(&mut self) -> Result<()> {
+        match self.current_tab {
+            Tab::Log => {
+                if let Some(log) = self.log.as_mut() {
+                    log.refresh_selected_head()?;
+                }
+            }
+            Tab::Files | Tab::Bookmarks => {
+                self.handle_action(ComponentAction::RefreshTab())?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn handle_action(&mut self, component_action: ComponentAction) -> Result<()> {
         match component_action {
             ComponentAction::ViewFiles(head) => {
@@ -175,6 +196,9 @@ impl<'a> App<'a> {
                     let head = new_commander().get_current_head()?.clone();
                     self.get_log_tab()?.set_head(head);
                 };
+            }
+            ComponentAction::RunInteractive(command) => {
+                self.pending_interactive = Some(command);
             }
         }
 

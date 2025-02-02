@@ -23,6 +23,7 @@ use crate::ComponentInputResult;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
+use crate::env::DescribeMode;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::env::get_env;
@@ -191,6 +192,13 @@ impl<'a> LogTab<'a> {
     pub fn set_head(&mut self, head: Head) {
         self.log_panel.set_head(head);
         self.refresh_log_output();
+    }
+
+    /// Re-fetch the latest version of the currently selected head.
+    pub fn refresh_selected_head(&mut self) -> Result<()> {
+        let latest = new_commander().get_head_latest(&self.head)?;
+        self.set_head(latest);
+        Ok(())
     }
 
     /// Update the log panel and diff panel. This will also refresh
@@ -542,16 +550,29 @@ impl<'a> LogTab<'a> {
                         }))),
                     ));
                 } else {
-                    let mut textarea = TextArea::new(
-                        new_commander()
-                            .get_commit_description(&self.head.commit_id)?
-                            .split("\n")
-                            .map(|line| line.to_string())
-                            .collect(),
-                    );
-                    textarea.move_cursor(CursorMove::End);
-                    self.describe_textarea = Some(textarea);
-                    return Ok(ComponentInputResult::Handled);
+                    match self.config.describe_mode() {
+                        DescribeMode::Popup => {
+                            let mut textarea = TextArea::new(
+                                new_commander()
+                                    .get_commit_description(&self.head.commit_id)?
+                                    .split("\n")
+                                    .map(|line| line.to_string())
+                                    .collect(),
+                            );
+                            textarea.move_cursor(CursorMove::End);
+                            self.describe_textarea = Some(textarea);
+                            return Ok(ComponentInputResult::Handled);
+                        }
+                        DescribeMode::Jj => {
+                            let command = new_commander().build_interactive_jj_command([
+                                "describe",
+                                self.head.commit_id.as_str(),
+                            ]);
+                            return Ok(ComponentInputResult::HandledAction(
+                                ComponentAction::RunInteractive(command),
+                            ));
+                        }
+                    }
                 }
             }
             LogTabEvent::EditRevset => {
