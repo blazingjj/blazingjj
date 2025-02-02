@@ -137,8 +137,9 @@ fn main() -> Result<()> {
     // Setup app
     let mut app = App::new(env.clone())?;
 
+    let mut terminal = create_terminal()?;
     install_panic_hook();
-    let mut terminal = setup_terminal()?;
+    setup_terminal()?;
 
     // Run app
     let res = run_app(&mut terminal, &mut app, &mut commander);
@@ -194,7 +195,12 @@ fn input_to_app(app: &mut App, commander: &mut Commander) -> Result<bool> {
     Ok(should_stop)
 }
 
-fn setup_terminal() -> Result<DefaultTerminal> {
+fn create_terminal() -> Result<DefaultTerminal> {
+    let backend = CrosstermBackend::new(io::stdout());
+    Ok(DefaultTerminal::new(backend)?)
+}
+
+fn setup_terminal() -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(
@@ -212,8 +218,7 @@ fn setup_terminal() -> Result<DefaultTerminal> {
         )?;
     }
 
-    let backend = CrosstermBackend::new(stdout);
-    Ok(DefaultTerminal::new(backend)?)
+    Ok(())
 }
 
 fn restore_terminal() -> Result<()> {
