@@ -15,7 +15,7 @@ use tui_textarea::{CursorMove, TextArea};
 use crate::{
     ComponentInputResult,
     commander::{CommandError, Commander, log::Head},
-    env::{Config, DiffFormat},
+    env::{Config, DescribeMode, DiffFormat},
     keybinds::{LogTabEvent, LogTabKeybinds},
     ui::{
         Component, ComponentAction,
@@ -23,8 +23,7 @@ use crate::{
         help_popup::HelpPopup,
         loader_popup::LoaderPopup,
         message_popup::MessagePopup,
-        panel::DetailsPanel,
-        panel::LogPanel,
+        panel::{DetailsPanel, LogPanel},
         rebase_popup::RebasePopup,
         utils::{centered_rect, centered_rect_line_height, tabs_to_spaces},
     },
@@ -331,16 +330,24 @@ impl<'a> LogTab<'a> {
                         }))),
                     ));
                 } else {
-                    let mut textarea = TextArea::new(
-                        commander
-                            .get_commit_description(&self.head.commit_id)?
-                            .split("\n")
-                            .map(|line| line.to_string())
-                            .collect(),
-                    );
-                    textarea.move_cursor(CursorMove::End);
-                    self.describe_textarea = Some(textarea);
-                    return Ok(ComponentInputResult::Handled);
+                    match self.config.describe_mode() {
+                        DescribeMode::Popup => {
+                            let mut textarea = TextArea::new(
+                                commander
+                                    .get_commit_description(&self.head.commit_id)?
+                                    .split("\n")
+                                    .map(|line| line.to_string())
+                                    .collect(),
+                            );
+                            textarea.move_cursor(CursorMove::End);
+                            self.describe_textarea = Some(textarea);
+                            return Ok(ComponentInputResult::Handled);
+                        }
+                        DescribeMode::Jj => {
+                            commander.run_describe_interactive(self.head.commit_id.as_str())?;
+                            self.set_head(commander, commander.get_head_latest(&self.head)?);
+                        }
+                    }
                 }
             }
             LogTabEvent::EditRevset => {
