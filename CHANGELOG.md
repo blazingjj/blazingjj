@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Details panel sets COLUMNS to allow jj diff tool to fit window
 - Update the details panel when gaining focus
 - Added an animated popup for fetch/push operations
+- Add support for interactive commands that take control of the terminal
 
 ### Changed
 
