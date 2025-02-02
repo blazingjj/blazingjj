@@ -172,6 +172,12 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App, commander: &mut Comman
         }
 
         app.update(commander)?;
+        if commander.terminal_needs_reset {
+            setup_terminal().unwrap();
+            terminal.clear()?;
+            commander.terminal_needs_reset = false;
+        }
+
         terminal.draw(|f| {
             let _ = ui(f, app);
         })?;

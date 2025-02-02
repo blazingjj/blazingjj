@@ -20,6 +20,7 @@ use crate::commander::CommandError;
 use crate::commander::Commander;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
+use crate::env::DescribeMode;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::keybinds::LogTabEvent;
@@ -422,16 +423,24 @@ impl<'a> LogTab<'a> {
                         }))),
                     ));
                 } else {
-                    let mut textarea = TextArea::new(
-                        commander
-                            .get_commit_description(&self.head.commit_id)?
-                            .split("\n")
-                            .map(|line| line.to_string())
-                            .collect(),
-                    );
-                    textarea.move_cursor(CursorMove::End);
-                    self.describe_textarea = Some(textarea);
-                    return Ok(ComponentInputResult::Handled);
+                    match self.config.describe_mode() {
+                        DescribeMode::Popup => {
+                            let mut textarea = TextArea::new(
+                                commander
+                                    .get_commit_description(&self.head.commit_id)?
+                                    .split("\n")
+                                    .map(|line| line.to_string())
+                                    .collect(),
+                            );
+                            textarea.move_cursor(CursorMove::End);
+                            self.describe_textarea = Some(textarea);
+                            return Ok(ComponentInputResult::Handled);
+                        }
+                        DescribeMode::Jj => {
+                            commander.run_describe_interactive(self.head.commit_id.as_str())?;
+                            self.set_head(commander, commander.get_head_latest(&self.head)?);
+                        }
+                    }
                 }
             }
             LogTabEvent::EditRevset => {
