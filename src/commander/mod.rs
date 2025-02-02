@@ -28,6 +28,7 @@ pub mod log;
 
 use crate::env::DiffFormat;
 use crate::env::Env;
+use crate::restore_terminal;
 
 use ansi_to_tui::IntoText;
 use anyhow::{Context, Result, bail};
@@ -40,7 +41,7 @@ use std::sync::Mutex;
 use std::{
     ffi::OsStr,
     io,
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
     string::FromUtf8Error,
     sync::Arc,
 };
@@ -109,6 +110,9 @@ pub struct Commander {
     env_var: Arc<Mutex<Vec<(String, String)>>>,
     pub command_history: Arc<Mutex<Vec<CommandLogItem>>>,
 
+    /// Set to `true` after running an interactive command that had access to the terminal
+    pub terminal_needs_reset: bool,
+
     // Used for testing
     pub jj_config_toml: Option<Vec<String>>,
     pub force_no_color: bool,
@@ -120,6 +124,7 @@ impl Commander {
             env: env.clone(),
             env_var: Arc::new(Mutex::new(Vec::new())),
             command_history: Arc::new(Mutex::new(Vec::new())),
+            terminal_needs_reset: false,
             jj_config_toml: None,
             force_no_color: false,
         }
@@ -206,16 +211,8 @@ impl Commander {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        let mut command = Command::new(&self.env.jj_bin);
-        command.args(args);
+        let mut command = self.build_jj_command(args);
         command.args(get_output_args(!self.force_no_color && color, quiet));
-
-        if let Some(jj_config_toml) = &self.jj_config_toml {
-            for cfg in jj_config_toml {
-                command.args(["--config", cfg]);
-            }
-        }
-
         self.execute_command(&mut command)
     }
 
@@ -225,9 +222,44 @@ impl Commander {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
+        let mut command = self.build_jj_command(args);
         // Since no result is used, enable color for command log
-        self.execute_jj_command(args, true, true)?;
+        command.args(get_output_args(!self.force_no_color, true));
+        self.execute_command(&mut command).and(Ok(()))
+    }
+
+    /// Execute an interactive jj command
+    pub fn execute_interactive_jj_command<I, S>(&mut self, args: I) -> Result<(), CommandError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let mut command = self.build_jj_command(args);
+        command.stdout(Stdio::inherit());
+
+        // todo(@dotdash) move terminal manipulation and execution of interactive command out into the main loop
+        self.terminal_needs_reset = true;
+        let _ = restore_terminal();
+        self.execute_command(&mut command)?;
+
         Ok(())
+    }
+
+    fn build_jj_command<I, S>(&self, args: I) -> Command
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let mut command = Command::new(&self.env.jj_bin);
+        command.args(args);
+
+        if let Some(jj_config_toml) = &self.jj_config_toml {
+            for cfg in jj_config_toml {
+                command.args(["--config", cfg]);
+            }
+        }
+
+        command
     }
 
     /// Check that the version of jj is recent enough to work with blazingjj
