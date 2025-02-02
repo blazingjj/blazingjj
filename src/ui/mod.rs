@@ -12,6 +12,8 @@ pub mod rebase_popup;
 pub mod styles;
 pub mod utils;
 
+use std::process::Command;
+
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
@@ -39,6 +41,9 @@ pub enum ComponentAction {
     SetPopup(Option<Box<dyn Component>>),
     Multiple(Vec<ComponentAction>),
     RefreshTab(),
+    /// Run a command that takes over the terminal. The main loop drains
+    /// these and refreshes the current view once the command exits.
+    RunInteractive(Command),
 }
 
 pub trait Component {
