@@ -77,6 +77,7 @@ You can optionally configure the following options through your jj config:
   - If `blazingjj.diff-tool` is not set but `ui.diff.tool` is, the latter will be used
 - `blazingjj.bookmark-template`: Change the bookmark name template for generated bookmark names. Defaults to `'push-' ++ change_id.short()`
   - If `blazingjj.bookmark-template` is not set but `templates.git_push_bookmark` is, the latter will be used
+- `blazingjj.describe-mode`: What describing a change puts up. Can be `popup` (default) for the built-in editor, or `jj` to hand the terminal to `jj describe` and your own editor
 - `blazingjj.layout`: Changes the layout of the main and details panel. Can be `horizontal` (default) or `vertical`
 - `blazingjj.layout-percent`: Changes the layout split of the main page. Should be number between 0 and 100. Defaults to `50`
 - `blazingjj.poll-interval`: Seconds between checks for work done outside the app. Set to `0` to only check when asked. Defaults to `1`

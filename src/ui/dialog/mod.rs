@@ -31,7 +31,7 @@ pub use context_menu::bookmarks_context_menu;
 pub use context_menu::evolog_context_menu;
 pub use context_menu::files_context_menu;
 pub use context_menu::log_context_menu;
-pub use describe::DescribePopup;
+pub use describe::describe_action;
 pub use help::HelpPopup;
 pub use loader::LoaderPopup;
 pub use message::MessagePopup;

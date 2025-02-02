@@ -37,6 +37,7 @@ mod background_tasks;
 mod commander;
 mod env;
 mod event;
+mod interrupt;
 mod keybinds;
 mod ui;
 use crate::app::App;
@@ -44,6 +45,9 @@ use crate::app::Handled;
 use crate::commander::Commander;
 use crate::env::Env;
 use crate::env::set_env;
+use crate::interrupt::catch_interrupts;
+use crate::interrupt::watch_for_interrupts;
+use crate::ui::Interactive;
 
 /// Command line arguments
 #[derive(Parser, Debug)]
@@ -74,6 +78,7 @@ fn main() -> Result<()> {
     let mut app = App::new()?;
 
     install_panic_hook();
+    watch_for_interrupts()?;
     let mut terminal = create_terminal()?;
     setup_terminal()?;
 
@@ -170,6 +175,14 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
 
         changed |= app.refresh_view()?;
 
+        // Before the wait below, which anything but user input may be a
+        // long time coming to.
+        if let Some(interactive) = app.take_pending_interactive() {
+            run_interactive(terminal, app, interactive)?;
+            quiet = false;
+            continue;
+        }
+
         // Waking up on a timer to find nothing has happened must not
         // cost a frame, or an app nobody is touching would rebuild the
         // whole display every poll interval.
@@ -185,6 +198,37 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
             Handled::Nothing => quiet = true,
         }
     }
+}
+
+/// Hand the terminal over to a command and take it back once it is done.
+fn run_interactive(
+    terminal: &mut DefaultTerminal,
+    app: &mut App,
+    interactive: Interactive,
+) -> Result<()> {
+    app.pause_input();
+    restore_terminal()?;
+
+    let ran = {
+        let _interrupts = catch_interrupts();
+        match interactive.command.run_foreground() {
+            Ok(status) => status.success(),
+            Err(err) => {
+                println!("Could not run jj: {err}");
+                false
+            }
+        }
+    };
+    // What the command left is on the screen we are about to take back,
+    // so it has to be read before we do.
+    if !ran || interactive.hold_screen {
+        wait_for_user()?;
+    }
+
+    setup_terminal()?;
+    terminal.clear()?;
+    app.resume_input();
+    app.catch_up_with_repo()
 }
 
 /// Let app process all input events in queue before returning.
@@ -228,6 +272,13 @@ fn input_to_app(app: &mut App) -> Result<Handled> {
 fn create_terminal() -> Result<DefaultTerminal> {
     let backend = CrosstermBackend::new(io::stdout());
     Ok(DefaultTerminal::new(backend)?)
+}
+
+/// Leave the terminal as it is until the user says they are done with it.
+fn wait_for_user() -> Result<()> {
+    println!("\nPress enter to return to blazingjj");
+    io::stdin().read_line(&mut String::new())?;
+    Ok(())
 }
 
 fn setup_terminal() -> Result<()> {

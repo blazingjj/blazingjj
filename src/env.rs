@@ -67,6 +67,7 @@ pub struct JjConfig {
 #[serde(rename_all = "kebab-case", default)]
 pub struct JjConfigBlazingjj {
     highlight_color: Color,
+    describe_mode: DescribeMode,
     diff_format: Option<DiffFormat>,
     diff_tool: Option<String>,
     bookmark_template: Option<String>,
@@ -86,6 +87,7 @@ impl Default for JjConfigBlazingjj {
             layout_percent: 50,
             poll_interval: Some(Duration::from_secs(1)),
             // Standard defaults for the rest
+            describe_mode: DescribeMode::default(),
             diff_format: None,
             diff_tool: None,
             bookmark_template: None,
@@ -153,6 +155,10 @@ impl JjConfig {
             .unwrap_or("'push-' ++ change_id.short()".to_string())
     }
 
+    pub fn describe_mode(&self) -> DescribeMode {
+        self.blazingjj.describe_mode
+    }
+
     pub fn layout(&self) -> JJLayout {
         self.blazingjj.layout
     }
@@ -209,6 +215,14 @@ impl Env {
             jj_bin,
         })
     }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DescribeMode {
+    #[default]
+    Popup,
+    Jj,
 }
 
 #[derive(Clone, Debug, Deserialize, Default, PartialEq, Eq, Hash)]
@@ -343,5 +357,18 @@ mod tests {
                 toml::from_str::<JjConfig>(&format!("blazingjj.poll-interval = {interval}\n"));
             assert!(config.is_err(), "{interval}");
         }
+    }
+
+    #[test]
+    fn describe_mode() {
+        assert_eq!(JjConfig::default().describe_mode(), DescribeMode::Popup);
+
+        let config: JjConfig = toml::from_str("blazingjj.describe-mode = \"jj\"\n").unwrap();
+        assert_eq!(config.describe_mode(), DescribeMode::Jj);
+
+        let config: JjConfig = toml::from_str("blazingjj.describe-mode = \"popup\"\n").unwrap();
+        assert_eq!(config.describe_mode(), DescribeMode::Popup);
+
+        assert!(toml::from_str::<JjConfig>("blazingjj.describe-mode = \"editor\"\n").is_err());
     }
 }

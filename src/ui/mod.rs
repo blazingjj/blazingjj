@@ -15,6 +15,7 @@ use ratatui::layout::Rect;
 
 use crate::app::command::Command;
 use crate::background_tasks::TaskResult;
+use crate::commander::JjCommand;
 use crate::commander::log::Head;
 
 /// Action commmands from component to application
@@ -45,6 +46,18 @@ pub enum AppAction {
     /// raises one has named it in full, so the app can run it without
     /// asking anything of the component the request came from.
     Run(Command),
+    /// Run a command that takes over the terminal, in place of whatever
+    /// other one is queued, and read the repo again once it is done.
+    RunInteractive(Interactive),
+}
+
+/// A command to run with the terminal handed over to it.
+pub struct Interactive {
+    pub command: JjCommand,
+    /// Whether to wait for the user before taking the screen back. Off for
+    /// a command run for its effect, whose output is beside the point
+    /// unless it failed.
+    pub hold_screen: bool,
 }
 
 /// When a Component process an input event, it returns an ComponentInputResult

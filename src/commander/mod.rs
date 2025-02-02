@@ -20,6 +20,7 @@ invocation with [Commander::jj], which returns a [JjCommand] builder:
 * [JjCommand::run] - Execute the command and return its output
 * [JjCommand::run_void] - Execute the command and discard the output
 * [JjCommand::run_cancellable] - Execute the command so it can be killed
+* [JjCommand::run_foreground] - Execute the command attached to the terminal
 
 */
 
@@ -39,6 +40,7 @@ use std::io::Read;
 use std::io::Write;
 use std::process::Child;
 use std::process::Command;
+use std::process::ExitStatus;
 use std::process::Stdio;
 use std::string::FromUtf8Error;
 use std::thread;
@@ -158,7 +160,8 @@ impl Commander {
     ///
     /// The returned [JjCommand] carries the per-command options (color,
     /// quiet, ...) and is executed with [JjCommand::run],
-    /// [JjCommand::run_void] or [JjCommand::run_cancellable].
+    /// [JjCommand::run_void], [JjCommand::run_cancellable] or
+    /// [JjCommand::run_foreground].
     pub fn jj<I, S>(&self, args: I) -> JjCommand
     where
         I: IntoIterator<Item = S>,
@@ -230,8 +233,9 @@ impl Commander {
 ///
 /// Carries the arguments and the per-command options. Configuration
 /// methods consume and return the builder so they can be chained; the
-/// command is run exactly once with [Self::run], [Self::run_void] or
-/// [Self::run_cancellable].
+/// command is run exactly once with [Self::run], [Self::run_void],
+/// [Self::run_cancellable] or [Self::run_foreground], the last of which
+/// leaves the output options to jj.
 pub struct JjCommand {
     jj_bin: String,
     root: String,
@@ -319,6 +323,15 @@ impl JjCommand {
         }))
     }
 
+    /// Run the command with the terminal handed over to it, so it can page,
+    /// colorize and prompt as it would outside the app, and return how it
+    /// exited. The terminal is the command's to read and write as it sees
+    /// fit, so [Self::stdin], [Self::color] and [Self::verbose] have no say
+    /// here.
+    pub fn run_foreground(self) -> io::Result<ExitStatus> {
+        self.build_command().status()
+    }
+
     /// Configure and run the command in a child process `cancel` can kill,
     /// blocking until it is done, and return its captured standard output.
     ///
@@ -329,6 +342,10 @@ impl JjCommand {
         let input = self.stdin.take();
 
         let mut command = self.build_command();
+        command.args(get_output_args(
+            !self.force_no_color && self.color,
+            self.quiet,
+        ));
         command
             .stdin(if input.is_some() {
                 Stdio::piped()
@@ -392,14 +409,11 @@ impl JjCommand {
         Ok(output)
     }
 
-    /// Construct a Command ready for execution
+    /// Construct a Command ready for execution. The caller adds the output
+    /// args, which only suit a command whose output it captures.
     fn build_command(&self) -> Command {
         let mut command = Command::new(&self.jj_bin);
         command.args(&self.args);
-        command.args(get_output_args(
-            !self.force_no_color && self.color,
-            self.quiet,
-        ));
 
         if self.ignore_working_copy {
             command.arg("--ignore-working-copy");
@@ -528,6 +542,21 @@ pub mod tests {
         let test_repo = TestRepo::new()?;
 
         test_repo.commander.jj(["status"]).color().run()?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_foreground_reports_how_the_command_exited() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        // The command writes to the terminal the test runs in, so it has
+        // to be one that says nothing in a fresh repo.
+        let status = test_repo
+            .commander
+            .jj(["bookmark", "list"])
+            .run_foreground()?;
+        assert!(status.success());
 
         Ok(())
     }
