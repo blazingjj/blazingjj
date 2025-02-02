@@ -33,6 +33,7 @@ use std::ffi::OsString;
 use std::io;
 use std::io::Write;
 use std::process::Command;
+use std::process::ExitStatus;
 use std::process::Stdio;
 use std::string::FromUtf8Error;
 
@@ -147,7 +148,7 @@ impl Commander {
     /// The returned [JjCommand] carries the per-command options (color,
     /// quiet, ...) and is executed with [JjCommand::run] or
     /// [JjCommand::run_void].
-    pub fn jj<I, S>(&self, args: I) -> JjCommand<'_>
+    pub fn jj<I, S>(&self, args: I) -> JjCommand
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -156,11 +157,19 @@ impl Commander {
         if let Some(columns) = self.columns {
             env_var.push(("COLUMNS".to_owned(), columns.to_string()));
         }
+        let mut args: Vec<_> = args.into_iter().map(|s| s.as_ref().to_owned()).collect();
+        if let Some(jj_config_toml) = &self.jj_config_toml {
+            for cfg in jj_config_toml {
+                args.extend_from_slice(&["--config".into(), cfg.into()]);
+            }
+        }
 
         JjCommand {
-            commander: self,
-            args: args.into_iter().map(|s| s.as_ref().to_owned()).collect(),
+            jj_bin: self.env.jj_bin.clone(),
+            root: self.env.root.clone(),
+            args,
             color: false,
+            force_no_color: self.force_no_color,
             quiet: true,
             stdin: None,
             env_var,
@@ -210,13 +219,15 @@ impl Commander {
 /// Carries the arguments and the per-command options. Configuration
 /// methods consume and return the builder so they can be chained; the
 /// command is run exactly once with [Self::run] or [Self::run_void].
-pub struct JjCommand<'a> {
-    commander: &'a Commander,
+pub struct JjCommand {
+    jj_bin: String,
+    root: String,
     args: Vec<OsString>,
     /// Whether the command should emit ANSI color. Off by default so output
     /// is safe to parse; enable with [Self::color] for output shown to the
     /// user.
     color: bool,
+    force_no_color: bool,
     /// Whether to pass `--quiet`. On by default.
     quiet: bool,
     /// Data to feed the command on standard input, if any.
@@ -225,7 +236,7 @@ pub struct JjCommand<'a> {
     env_var: Vec<(String, String)>,
 }
 
-impl JjCommand<'_> {
+impl JjCommand {
     /// Enable ANSI color in the command's output.
     ///
     /// Off by default, so parsed output stays free of escape codes; enable it
@@ -267,27 +278,33 @@ impl JjCommand<'_> {
         Ok(())
     }
 
+    /// Execute the command and return its standard output.
+    pub fn run_foreground(self) -> io::Result<ExitStatus> {
+        let mut command = self.build_command();
+        command.spawn()?.wait()
+    }
+
+    fn build_command(&self) -> Command {
+        let mut command = Command::new(&self.jj_bin);
+        command
+            .args(&self.args)
+            .args(get_output_args(
+                !self.force_no_color && self.color,
+                self.quiet,
+            ))
+            .current_dir(&self.root)
+            .envs(self.env_var.iter().cloned());
+        command
+    }
+
     /// Configure and run the command, returning the captured standard output.
     ///
     /// `stdout` selects how the child's standard output is handled: piped to
     /// be captured and returned, or null to be discarded. Standard error is
     /// always captured so it can be surfaced on failure.
     fn execute(self, stdout: Stdio) -> Result<Vec<u8>, CommandError> {
-        let mut command = Command::new(&self.commander.env.jj_bin);
-        command.args(&self.args);
-        command.args(get_output_args(
-            !self.commander.force_no_color && self.color,
-            self.quiet,
-        ));
+        let mut command = self.build_command();
 
-        if let Some(jj_config_toml) = &self.commander.jj_config_toml {
-            for cfg in jj_config_toml {
-                command.args(["--config", cfg]);
-            }
-        }
-
-        command.current_dir(&self.commander.env.root);
-        command.envs(self.env_var.iter().cloned());
         command.stdout(stdout);
         command.stderr(Stdio::piped());
 
