@@ -5,6 +5,7 @@ use std::fs::OpenOptions;
 use std::fs::canonicalize;
 use std::io::ErrorKind;
 use std::io::{self};
+use std::ops::Sub;
 use std::process::Command;
 use std::time::Duration;
 use std::time::Instant;
@@ -157,20 +158,11 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App, commander: &mut Comman
     const FOREVER: Duration = Duration::from_secs(24 * 3600);
     let mut wait_duration = Duration::ZERO;
     loop {
-        if event::poll(wait_duration)? {
-            match event::read()? {
-                event::Event::FocusLost => continue,
-                Event::Mouse(MouseEvent {
-                    kind: MouseEventKind::Moved,
-                    ..
-                }) => continue,
-                event => {
-                    app.stats.start_time = Instant::now();
-                    if app.input(event, commander)? {
-                        return Ok(());
-                    }
-                }
-            }
+        // Input
+        let should_stop = input_to_app(app, wait_duration, commander)?;
+
+        if should_stop {
+            return Ok(());
         }
 
         app.update(commander)?;
@@ -186,6 +178,36 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App, commander: &mut Comman
             Duration::from_millis(100)
         };
     }
+}
+
+/// Let app process all input events in queue before returning
+/// Return true if application should stop
+fn input_to_app(app: &mut App, wait_duration: Duration, commander: &mut Commander) -> Result<bool> {
+    let input_time_out = Instant::now() + wait_duration;
+    let event = loop {
+        let start_of_loop = Instant::now();
+        let remaining_wait_period = input_time_out.sub(start_of_loop);
+
+        // Return if no event arrives within the specified period
+        if !event::poll(remaining_wait_period)? {
+            return Ok(false);
+        }
+
+        // Process one event
+        match event::read()? {
+            event::Event::FocusLost => continue,
+            Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Moved,
+                ..
+            }) => continue,
+            event => break event,
+        }
+    };
+
+    app.stats.start_time = Instant::now();
+    let should_stop = app.input(event, commander)?;
+
+    Ok(should_stop)
 }
 
 fn setup_terminal() -> Result<DefaultTerminal> {
