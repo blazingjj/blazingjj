@@ -3,7 +3,6 @@ use std::sync::LazyLock;
 use ratatui::layout::Alignment;
 use ratatui::style::Color;
 use ratatui::style::Style;
-use ratatui::style::Stylize;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
