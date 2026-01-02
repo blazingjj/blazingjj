@@ -15,8 +15,8 @@ use crate::commander::Commander;
 use crate::commander::files::Conflict;
 use crate::commander::files::File;
 use crate::commander::log::Head;
-use crate::env::Config;
 use crate::env::DiffFormat;
+use crate::env::JjConfig;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
 use crate::ui::help_popup::HelpPopup;
@@ -39,7 +39,7 @@ pub struct FilesTab {
     diff_output: Result<Option<String>, CommandError>,
     diff_format: DiffFormat,
 
-    config: Config,
+    config: JjConfig,
 }
 
 fn get_current_file_index(
@@ -63,7 +63,7 @@ impl FilesTab {
         let head = head.clone();
         let is_current_head = head == commander.get_current_head()?;
 
-        let diff_format = commander.env.config.diff_format();
+        let diff_format = commander.env.jj_config.diff_format();
 
         let files_output = commander.get_files(&head);
         let conflicts_output = commander.get_conflicts(&head.commit_id)?;
@@ -101,7 +101,7 @@ impl FilesTab {
             diff_format,
             diff_panel: DetailsPanel::new(),
 
-            config: commander.env.config.clone(),
+            config: commander.env.jj_config.clone(),
         })
     }
 

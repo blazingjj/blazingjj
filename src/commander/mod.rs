@@ -267,8 +267,8 @@ pub mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::env::Config;
     use crate::env::Env;
+    use crate::env::JjConfig;
 
     macro_rules! apply_common_filters {
         {} => {
@@ -298,7 +298,7 @@ pub mod tests {
 
             let env = Env {
                 root: directory.path().to_string_lossy().to_string(),
-                config: Config::default(),
+                jj_config: JjConfig::default(),
                 default_revset: None,
                 jj_bin,
             };
