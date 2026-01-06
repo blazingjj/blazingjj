@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-/// Command log tab. Shows list of commands exectured by lazyjj in main panel and selected command
+/// Command log tab. Shows list of commands exectured by blazingjj in main panel and selected command
 /// output in details panel
 pub struct CommandLogTab {
     command_history: Vec<CommandLogItem>,

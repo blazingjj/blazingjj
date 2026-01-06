@@ -4,15 +4,15 @@ use ratatui::{
     crossterm::event::Event,
     layout::{Alignment, Rect},
     style::{Color, Style, Stylize},
-    text::{Span, Text},
-    widgets::{BorderType, Borders, block::Title},
+    text::{Line, Span, Text},
+    widgets::{BorderType, Borders},
 };
 use tui_confirm_dialog::PopupMessage;
 
 use crate::{ComponentInputResult, commander::Commander, ui::Component};
 
 pub struct MessagePopup<'a> {
-    pub title: Title<'a>,
+    pub title: Line<'a>,
     pub messages: Text<'a>,
     pub text_align: Option<Alignment>,
 }
@@ -21,14 +21,9 @@ impl Component for MessagePopup<'_> {
     /// Render the parent into the area.
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let mut title = self.title.clone();
-        title.content.spans = [
-            vec![Span::raw(" ")],
-            title.content.spans,
-            vec![Span::raw(" ")],
-        ]
-        .concat();
+        title.spans = [vec![Span::raw(" ")], title.spans, vec![Span::raw(" ")]].concat();
 
-        title.content = title.content.fg(Color::Cyan).bold();
+        title = title.fg(Color::Cyan).bold();
 
         let text_align = match self.text_align {
             Some(align) => align,

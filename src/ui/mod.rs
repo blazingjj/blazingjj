@@ -91,7 +91,7 @@ pub fn ui(f: &mut Frame, app: &mut App) -> Result<()> {
             .fg(Color::DarkGray)
             .block(
                 Block::bordered()
-                    .title(" lazyjj ")
+                    .title(" blazingjj ")
                     .border_type(BorderType::Rounded)
                     .fg(Color::default()),
             );

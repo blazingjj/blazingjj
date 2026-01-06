@@ -15,3 +15,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Move from bookmark-prefix to bookmark-template for the bookmark generation to match the behaviour from jj 0.31+
+- Fork project and change name from "lazyjj" to "blazingjj"

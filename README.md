@@ -1,8 +1,6 @@
-# lazyjj
+# blazingjj
 
 TUI for [Jujutsu/jj](https://github.com/martinvonz/jj). Built in Rust with Ratatui. Interacts with `jj` CLI.
-
-https://github.com/Cretezy/lazyjj/assets/2672503/b5e6b4f1-ebdb-448f-af9e-361e86f0c148
 
 ## Features
 
@@ -28,45 +26,44 @@ https://github.com/Cretezy/lazyjj/assets/2672503/b5e6b4f1-ebdb-448f-af9e-361e86f
   - Create with `c`, rename with `r`, delete with `d`, forget with `f`
   - Track bookmarks with `t`, untrack bookmarks with `T`
   - Create new change with `n`, edit change with `e`/`E`
-- Command log: View every command lazyjj executes
-- Config: Configure lazyjj with your jj config
-- Command box: Run jj commands directly in lazyjj with `:`
+- Command log: View every command blazingjj executes
+- Config: Configure blazingjj with your jj config
+- Command box: Run jj commands directly in blazingjj with `:`
 - Help: See all key mappings with `?`
 
 ## Setup
 
 Make sure you have [`jj`](https://martinvonz.github.io/jj/latest/install-and-setup) installed first.
 
-- With [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall): `cargo binstall lazyjj`
-- With `cargo install`: `cargo install lazyjj --locked` (may take a few moments to compile)
-- With pre-built binaries: [View releases](https://github.com/Cretezy/lazyjj/releases)
-- For Arch Linux: `pacman -S lazyjj`
+- With [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall): `cargo binstall blazingjj`
+- With `cargo install`: `cargo install blazingjj --locked` (may take a few moments to compile)
+- With pre-built binaries: [View releases](https://github.com/blazingjj/blazingjj/releases)
 
-To build and install a pre-release version: `cargo install --git https://github.com/Cretezy/lazyjj.git --locked`
+To build and install a pre-release version: `cargo install --git https://github.com/blazingjj/blazingjj.git --locked`
 
 ## Configuration
 
 You can optionally configure the following options through your jj config:
 
-- `lazyjj.highlight-color`: Changes the highlight color. Can use named colors. Defaults to `#323264`
-- `lazyjj.diff-format`: Change the default diff format. Can be `color-words` or `git`. Defaults to `color_words`
-  - If `lazyjj.diff-format` is not set but `ui.diff.format` is, the latter will be used
-- `lazyjj.diff-tool`: Specify which diff tool to use by default
-  - If `lazyjj.diff-tool` is not set but `ui.diff.tool` is, the latter will be used
-- `lazyjj.bookmark-template`: Change the bookmark name template for generated bookmark names. Defaults to `'push-' ++ change_id.short()`
-  - If `lazyjj.bookmark-template` is not set but `templates.git_push_bookmark` is, the latter will be used
-- `lazyjj.layout`: Changes the layout of the main and details panel. Can be `horizontal` (default) or `vertical`
-- `lazyjj.layout-percent`: Changes the layout split of the main page. Should be number between 0 and 100. Defaults to `50`
+- `blazingjj.highlight-color`: Changes the highlight color. Can use named colors. Defaults to `#323264`
+- `blazingjj.diff-format`: Change the default diff format. Can be `color-words` or `git`. Defaults to `color_words`
+  - If `blazingjj.diff-format` is not set but `ui.diff.format` is, the latter will be used
+- `blazingjj.diff-tool`: Specify which diff tool to use by default
+  - If `blazingjj.diff-tool` is not set but `ui.diff.tool` is, the latter will be used
+- `blazingjj.bookmark-template`: Change the bookmark name template for generated bookmark names. Defaults to `'push-' ++ change_id.short()`
+  - If `blazingjj.bookmark-template` is not set but `templates.git_push_bookmark` is, the latter will be used
+- `blazingjj.layout`: Changes the layout of the main and details panel. Can be `horizontal` (default) or `vertical`
+- `blazingjj.layout-percent`: Changes the layout split of the main page. Should be number between 0 and 100. Defaults to `50`
 
-Example: `jj config set --user lazyjj.diff-format "color-words"` (for storing in [user config file](https://martinvonz.github.io/jj/latest/config/#user-config-file), repo config is also supported)
+Example: `jj config set --user blazingjj.diff-format "color-words"` (for storing in [user config file](https://martinvonz.github.io/jj/latest/config/#user-config-file), repo config is also supported)
 
 ## Usage
 
-To start lazyjj for the repository in the current directory: `lazyjj`
+To start blazingjj for the repository in the current directory: `blazingjj`
 
-To use a different repository: `lazyjj --path ~/path/to/repo`
+To use a different repository: `blazingjj --path ~/path/to/repo`
 
-To start with a different default revset: `lazyjj -r '::@'`
+To start with a different default revset: `blazingjj -r '::@'`
 
 ## Key mappings
 
@@ -144,7 +141,7 @@ See all key mappings for the current tab with `?`.
 Keys can be configured
 
 ```toml
-[lazyjj.keybinds.log_tab]
+[blazingjj.keybinds.log_tab]
 save = "ctrl+s"
 ```
 
@@ -162,7 +159,11 @@ See more in [keybindings.md](docs/keybindings.md)
 
 ### Logging/Tracing
 
-lazyjj has 2 debugging tools:
+blazingjj has 2 debugging tools:
 
-1. Logging: Enabled by setting `LAZYJJ_LOG=1` when running. Produces a `lazyjj.log` log file
-2. Tracing: Enabled by setting `LAZYJJ_TRACE=1` when running. Produces `trace-*.json` Chrome trace file, for `chrome://tracing` or [ui.perfetto.dev](https://ui.perfetto.dev)
+1. Logging: Enabled by setting `BLAZINGJJ_LOG=1` when running. Produces a `blazingjj.log` log file
+2. Tracing: Enabled by setting `BLAZINGJJ_TRACE=1` when running. Produces `trace-*.json` Chrome trace file, for `chrome://tracing` or [ui.perfetto.dev](https://ui.perfetto.dev)
+
+## Acknowledgements
+
+Blazingjj is a fork of lazyjj, started by Charles Crete in 2023.

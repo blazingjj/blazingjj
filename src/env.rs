@@ -12,20 +12,22 @@ use crate::{
 // TODO: After 0.18, remove Config and replace with JjConfig
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct Config {
-    #[serde(rename = "lazyjj.highlight-color")]
-    lazyjj_highlight_color: Option<Color>,
-    #[serde(rename = "lazyjj.diff-format")]
-    lazyjj_diff_format: Option<DiffFormat>,
-    #[serde(rename = "lazyjj.diff-tool")]
-    lazyjj_diff_tool: Option<String>,
-    #[serde(rename = "lazyjj.bookmark-template")]
-    lazyjj_bookmark_template: Option<String>,
-    #[serde(rename = "lazyjj.layout")]
-    lazyjj_layout: Option<JJLayout>,
-    #[serde(rename = "lazyjj.layout-percent")]
-    lazyjj_layout_percent: Option<u16>,
-    #[serde(rename = "lazyjj.keybinds")]
-    lazyjj_keybinds: Option<KeybindsConfig>,
+    #[serde(rename = "blazingjj.highlight-color")]
+    blazingjj_highlight_color: Option<Color>,
+    #[serde(rename = "blazingjj.describe-mode")]
+    blazingjj_describe_mode: Option<DescribeMode>,
+    #[serde(rename = "blazingjj.diff-format")]
+    blazingjj_diff_format: Option<DiffFormat>,
+    #[serde(rename = "blazingjj.diff-tool")]
+    blazingjj_diff_tool: Option<String>,
+    #[serde(rename = "blazingjj.bookmark-template")]
+    blazingjj_bookmark_template: Option<String>,
+    #[serde(rename = "blazingjj.layout")]
+    blazingjj_layout: Option<JJLayout>,
+    #[serde(rename = "blazingjj.layout-percent")]
+    blazingjj_layout_percent: Option<u16>,
+    #[serde(rename = "blazingjj.keybinds")]
+    blazingjj_keybinds: Option<KeybindsConfig>,
     #[serde(rename = "ui.diff.format")]
     ui_diff_format: Option<DiffFormat>,
     #[serde(rename = "ui.diff.tool")]
@@ -37,15 +39,16 @@ pub struct Config {
 #[derive(Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct JjConfig {
-    lazyjj: Option<JjConfigLazyjj>,
+    blazingjj: Option<JjConfigBlazingjj>,
     ui: Option<JjConfigUi>,
     templates: Option<JjConfigTemplates>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "kebab-case")]
-pub struct JjConfigLazyjj {
+pub struct JjConfigBlazingjj {
     highlight_color: Option<Color>,
+    describe_mode: Option<DescribeMode>,
     diff_format: Option<DiffFormat>,
     diff_tool: Option<String>,
     bookmark_prefix: Option<String>,
@@ -79,13 +82,13 @@ impl Config {
         } else {
             DiffFormat::ColorWords
         };
-        self.lazyjj_diff_format
+        self.blazingjj_diff_format
             .clone()
             .unwrap_or(self.ui_diff_format.clone().unwrap_or(default))
     }
 
     pub fn diff_tool(&self) -> Option<Option<String>> {
-        if let Some(diff_tool) = self.lazyjj_diff_tool.as_ref() {
+        if let Some(diff_tool) = self.blazingjj_diff_tool.as_ref() {
             return Some(Some(diff_tool.to_owned()));
         }
 
@@ -97,27 +100,30 @@ impl Config {
     }
 
     pub fn highlight_color(&self) -> Color {
-        self.lazyjj_highlight_color
+        self.blazingjj_highlight_color
             .unwrap_or(Color::Rgb(50, 50, 150))
     }
 
     pub fn bookmark_template(&self) -> String {
-        self.lazyjj_bookmark_template
+        self.blazingjj_bookmark_template
             .clone()
             .or(self.git_push_bookmark_template.clone())
             .unwrap_or("'push-' ++ change_id.short()".to_string())
     }
+    pub fn describe_mode(&self) -> DescribeMode {
+        self.blazingjj_describe_mode.unwrap_or(DescribeMode::Popup)
+    }
 
     pub fn layout(&self) -> JJLayout {
-        self.lazyjj_layout.unwrap_or(JJLayout::Horizontal)
+        self.blazingjj_layout.unwrap_or(JJLayout::Horizontal)
     }
 
     pub fn layout_percent(&self) -> u16 {
-        self.lazyjj_layout_percent.unwrap_or(50)
+        self.blazingjj_layout_percent.unwrap_or(50)
     }
 
     pub fn keybinds(&self) -> Option<&KeybindsConfig> {
-        self.lazyjj_keybinds.as_ref()
+        self.blazingjj_keybinds.as_ref()
     }
 }
 
@@ -172,31 +178,38 @@ impl Env {
                 toml::from_str::<JjConfig>(&config_toml)
                     .context("Failed to parse jj config")
                     .map(|config| Config {
-                        lazyjj_highlight_color: config
-                            .lazyjj
+                        blazingjj_highlight_color: config
+                            .blazingjj
                             .as_ref()
-                            .and_then(|lazyjj| lazyjj.highlight_color),
-                        lazyjj_diff_format: config
-                            .lazyjj
+                            .and_then(|blazingjj| blazingjj.highlight_color),
+                        blazingjj_describe_mode: config
+                            .blazingjj
                             .as_ref()
-                            .and_then(|lazyjj| lazyjj.diff_format.clone()),
-                        lazyjj_diff_tool: config
-                            .lazyjj
+                            .and_then(|blazingjj| blazingjj.describe_mode),
+                        blazingjj_diff_format: config
+                            .blazingjj
                             .as_ref()
-                            .and_then(|lazyjj| lazyjj.diff_tool.clone()),
-                        lazyjj_bookmark_template: config
-                            .lazyjj
+                            .and_then(|blazingjj| blazingjj.diff_format.clone()),
+                        blazingjj_diff_tool: config
+                            .blazingjj
                             .as_ref()
-                            .and_then(|lazyjj| lazyjj.bookmark_prefix.clone()),
-                        lazyjj_layout: config.lazyjj.as_ref().and_then(|lazyjj| lazyjj.layout),
-                        lazyjj_layout_percent: config
-                            .lazyjj
+                            .and_then(|blazingjj| blazingjj.diff_tool.clone()),
+                        blazingjj_bookmark_template: config
+                            .blazingjj
                             .as_ref()
-                            .and_then(|lazyjj| lazyjj.layout_percent),
-                        lazyjj_keybinds: config
-                            .lazyjj
+                            .and_then(|blazingjj| blazingjj.bookmark_prefix.clone()),
+                        blazingjj_layout: config
+                            .blazingjj
                             .as_ref()
-                            .and_then(|lazyjj| lazyjj.keybinds.clone()),
+                            .and_then(|blazingjj| blazingjj.layout),
+                        blazingjj_layout_percent: config
+                            .blazingjj
+                            .as_ref()
+                            .and_then(|blazingjj| blazingjj.layout_percent),
+                        blazingjj_keybinds: config
+                            .blazingjj
+                            .as_ref()
+                            .and_then(|blazingjj| blazingjj.keybinds.clone()),
                         ui_diff_format: config
                             .ui
                             .as_ref()
@@ -220,6 +233,14 @@ impl Env {
             jj_bin,
         })
     }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DescribeMode {
+    #[default]
+    Popup,
+    Jj,
 }
 
 #[derive(Clone, Debug, Deserialize, Default, PartialEq)]

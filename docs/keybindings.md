@@ -14,7 +14,7 @@ In below examples default values are used.
 ### Log tab
 
 ```toml
-[lazyjj.keybinds.log_tab]
+[blazingjj.keybinds.log_tab]
 save = "ctrl+s"
 cancel = "esc"
 

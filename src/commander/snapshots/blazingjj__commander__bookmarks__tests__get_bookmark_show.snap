@@ -1,0 +1,5 @@
+---
+source: src/commander/bookmarks.rs
+expression: bookmark_show
+---
+"Commit ID: [COMMIT_ID]\nChange ID: [Change ID]\nBookmarks: test test@git\nAuthor   : blazingjj <blazingjj@example.com> (([DATE_TIME]))\nCommitter: blazingjj <blazingjj@example.com> (([DATE_TIME]))\n\n    (no description set)\n"

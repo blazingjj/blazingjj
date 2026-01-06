@@ -11,8 +11,8 @@ use std::{
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use ratatui::{
-    Terminal,
-    backend::{Backend, CrosstermBackend},
+    DefaultTerminal,
+    backend::CrosstermBackend,
     crossterm::{
         event::{
             self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture,
@@ -65,7 +65,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let should_log = std::env::var("LAZYJJ_LOG")
+    let should_log = std::env::var("BLAZINGJJ_LOG")
         .map(|log| log == "1" || log.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
 
@@ -73,7 +73,7 @@ fn main() -> Result<()> {
         let log_file = OpenOptions::new()
             .append(true)
             .create(true)
-            .open("lazyjj.log")
+            .open("blazingjj.log")
             .unwrap();
 
         Some(
@@ -87,7 +87,7 @@ fn main() -> Result<()> {
         None
     };
 
-    let should_trace = std::env::var("LAZYJJ_TRACE")
+    let should_trace = std::env::var("BLAZINGJJ_TRACE")
         .map(|log| log == "1" || log.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
     let (trace_layer, _guard) = if should_trace {
@@ -102,7 +102,7 @@ fn main() -> Result<()> {
         .with(trace_layer);
     tracing::subscriber::set_global_default(subscriber)?;
 
-    info!("Starting lazyjj");
+    info!("Starting blazingjj");
 
     // Parse arguments and determine path
     let args = Args::parse();
@@ -135,8 +135,9 @@ fn main() -> Result<()> {
     // Setup app
     let mut app = App::new(env.clone())?;
 
-    let mut terminal = setup_terminal()?;
+    let mut terminal = create_terminal()?;
     install_panic_hook();
+    setup_terminal()?;
 
     // Run app
     let res = run_app(&mut terminal, &mut app, &mut commander);
@@ -146,13 +147,15 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_app<B: Backend>(
-    terminal: &mut Terminal<B>,
-    app: &mut App,
-    commander: &mut Commander,
-) -> Result<()> {
+fn run_app(terminal: &mut DefaultTerminal, app: &mut App, commander: &mut Commander) -> Result<()> {
     loop {
         app.update(commander)?;
+        if commander.terminal_needs_reset {
+            setup_terminal().unwrap();
+            terminal.clear()?;
+            commander.terminal_needs_reset = false;
+        }
+
         terminal.draw(|f| {
             let _ = ui(f, app);
         })?;
@@ -176,7 +179,12 @@ fn run_app<B: Backend>(
     }
 }
 
-fn setup_terminal() -> Result<Terminal<CrosstermBackend<io::Stdout>>> {
+fn create_terminal() -> Result<DefaultTerminal> {
+    let backend = CrosstermBackend::new(io::stdout());
+    Ok(DefaultTerminal::new(backend)?)
+}
+
+fn setup_terminal() -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(
@@ -194,8 +202,7 @@ fn setup_terminal() -> Result<Terminal<CrosstermBackend<io::Stdout>>> {
         )?;
     }
 
-    let backend = CrosstermBackend::new(stdout);
-    Ok(Terminal::new(backend)?)
+    Ok(())
 }
 
 fn restore_terminal() -> Result<()> {
