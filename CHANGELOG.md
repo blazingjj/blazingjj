@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keybinding for jj duplicate
 - Log panel can mark and abandon multiple commits
 - Log panel create new revision with marked commits as parents
+- Log tab diff is cached
 
 
 ## [0.7.1] - 2026-01-16
