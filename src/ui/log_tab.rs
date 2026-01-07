@@ -8,13 +8,14 @@ use ratatui::{
     prelude::*,
     widgets::*,
 };
+use std::collections::HashMap;
 use tracing::instrument;
 use tui_confirm_dialog::{ButtonLabel, ConfirmDialog, ConfirmDialogState, Listener};
 use tui_textarea::{CursorMove, TextArea};
 
 use crate::{
     ComponentInputResult,
-    commander::{CommandError, Commander, log::Head},
+    commander::{Commander, ids::CommitId, log::Head},
     env::{Config, DiffFormat},
     keybinds::{LogTabEvent, LogTabKeybinds},
     ui::{
@@ -34,6 +35,12 @@ const EDIT_POPUP_ID: u16 = 2;
 const ABANDON_POPUP_ID: u16 = 3;
 const SQUASH_POPUP_ID: u16 = 4;
 
+/// Commit show depends on all these values
+type CommitShowKey = (CommitId, /*inner width*/ usize, DiffFormat);
+
+/// The output from 'jj show'
+type CommitShowValue<'a> = Vec<Line<'a>>;
+
 /// Log tab. Shows `jj log` in main panel and shows selected change details of in details panel.
 pub struct LogTab<'a> {
     /// The revset filter to apply to jj log
@@ -44,7 +51,10 @@ pub struct LogTab<'a> {
 
     /// The change content shown to the right
     head_panel: DetailsPanel,
-    head_output: Result<String, CommandError>,
+    head_content: CommitShowValue<'a>,
+
+    /// Cached change content
+    commit_show_cache: HashMap<CommitShowKey, CommitShowValue<'a>>,
 
     /// The currently selected change. Indicates what to render
     /// in head_output. It is a copy of self.log_panel.head,
@@ -84,9 +94,9 @@ impl<'a> LogTab<'a> {
 
         let head = commander.get_current_head()?;
 
-        let head_output = commander
-            .get_commit_show(&head.commit_id, &diff_format, true)
-            .map(|text| tabs_to_spaces(&text));
+        let inner_width = 40; // Arbitrary width used before tab is rendered
+        let head_content =
+            Self::compute_head_content(commander, inner_width, &head.commit_id, &diff_format);
 
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (bookmark_set_popup_tx, bookmark_set_popup_rx) = std::sync::mpsc::channel();
@@ -108,7 +118,9 @@ impl<'a> LogTab<'a> {
 
             head,
             head_panel: DetailsPanel::new(),
-            head_output,
+            head_content,
+
+            commit_show_cache: HashMap::new(),
 
             panel_rect: [Rect::ZERO, Rect::ZERO],
 
@@ -146,12 +158,57 @@ impl<'a> LogTab<'a> {
         self.refresh_head_output(commander);
     }
 
-    fn refresh_head_output(&mut self, commander: &mut Commander) {
-        let inner_width = self.head_panel.columns() as usize;
+    // TODO Add a function clear_commit_show_cache that is used
+    // if the user asks for an application refresh.
+    //fn clear_commit_show_cache(&mut self) {
+    //    self.commit_show_cache.clear();
+    //}
+
+    /// Extract head content from commander.get_commit_show
+    fn compute_head_content(
+        commander: &mut Commander,
+        inner_width: usize,
+        commit_id: &CommitId,
+        diff_format: &DiffFormat,
+    ) -> CommitShowValue<'a> {
+        // Call jj show
         commander.limit_width(inner_width);
-        self.head_output = commander
-            .get_commit_show(&self.head.commit_id, &self.diff_format, true)
+        let head_output = commander
+            .get_commit_show(commit_id, diff_format, true)
             .map(|text| tabs_to_spaces(&text));
+        // Format output as string
+        match head_output.as_ref() {
+            Ok(head_output) => {
+                head_output
+                    .into_text()
+                    .expect("valid output String can be converted into Text")
+                    .lines
+            }
+            Err(err) => err.into_text("Error getting head details").unwrap().lines,
+        }
+    }
+
+    fn refresh_head_output(&mut self, commander: &mut Commander) {
+        // If the key matches, then we can use the cached value.
+        // This is not entierly true. A reconfiguration of jj could
+        // generate different output for some keys. We probably need
+        // a forced cache clear function.
+        let commit_id = &self.head.commit_id;
+        let inner_width = self.head_panel.columns() as usize;
+        let key = (commit_id.clone(), inner_width, self.diff_format.clone());
+        self.head_content = self
+            .commit_show_cache
+            .entry(key)
+            .or_insert_with(|| {
+                Self::compute_head_content(
+                    commander,
+                    inner_width,
+                    &self.head.commit_id,
+                    &self.diff_format,
+                )
+            })
+            .clone();
+
         self.head_panel.scroll_to(0);
     }
 
@@ -527,10 +584,7 @@ impl Component for LogTab<'_> {
 
         // Draw change details
         {
-            let head_content = match self.head_output.as_ref() {
-                Ok(head_output) => head_output.into_text()?.lines,
-                Err(err) => err.into_text("Error getting head details")?.lines,
-            };
+            let head_content = self.head_content.clone();
             self.head_panel
                 .render_context()
                 .title(format!(" Details for {} ", self.head.change_id))
