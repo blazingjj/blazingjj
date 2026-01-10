@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+<!-- next-header -->
+
+## [Unreleased] - ReleaseDate
 
 ### Added
 
@@ -16,3 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Move from bookmark-prefix to bookmark-template for the bookmark generation to match the behaviour from jj 0.31+
 - Fork project and change name from "lazyjj" to "blazingjj"
+
+<!-- next-url -->
+[Unreleased]: https://github.com/blazingjj/blazingjj/compare/v0.6.1...HEAD
