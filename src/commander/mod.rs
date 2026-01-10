@@ -31,19 +31,12 @@ use crate::env::Env;
 
 use ansi_to_tui::IntoText;
 use anyhow::{Context, Result, bail};
-use chrono::{DateTime, Local, TimeDelta};
 use ratatui::{
     style::{Color, Stylize},
     text::{Line, Text},
 };
 use std::sync::Mutex;
-use std::{
-    ffi::OsStr,
-    io,
-    process::{Command, Output},
-    string::FromUtf8Error,
-    sync::Arc,
-};
+use std::{ffi::OsStr, io, process::Command, string::FromUtf8Error, sync::Arc};
 use thiserror::Error;
 use tracing::{instrument, trace};
 use version_compare::{Cmp, compare};
@@ -90,15 +83,6 @@ impl CommandError {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct CommandLogItem {
-    pub program: String,
-    pub args: Vec<String>,
-    pub output: Arc<Result<Output>>,
-    pub time: DateTime<Local>,
-    pub duration: TimeDelta,
-}
-
 /// Struct used to interact with the jj cli using commanders.
 ///
 /// Handles arguments and recording of history.
@@ -107,7 +91,6 @@ pub struct Commander {
     pub env: Env,
     /// Environment variables.
     env_var: Arc<Mutex<Vec<(String, String)>>>,
-    pub command_history: Arc<Mutex<Vec<CommandLogItem>>>,
 
     // Used for testing
     pub jj_config_toml: Option<Vec<String>>,
@@ -119,7 +102,6 @@ impl Commander {
         Self {
             env: env.clone(),
             env_var: Arc::new(Mutex::new(Vec::new())),
-            command_history: Arc::new(Mutex::new(Vec::new())),
             jj_config_toml: None,
             force_no_color: false,
         }
@@ -156,32 +138,7 @@ impl Commander {
         command.envs(self.env_var.lock().unwrap().iter().cloned());
         self.env_var.lock().unwrap().clear();
 
-        let program = command.get_program().to_str().unwrap_or("").to_owned();
-        let args: Vec<String> = command
-            .get_args()
-            .map(|arg| arg.to_str().unwrap_or("").to_owned())
-            .collect();
-
-        let time = Local::now();
         let output = command.output();
-        let duration = Local::now() - time;
-
-        // unwrap is enough, because mutex can only poison in the case of push panic
-        self.command_history.lock().unwrap().push(CommandLogItem {
-            program,
-            args,
-            output: Arc::new(match output.as_ref() {
-                Ok(value) => Ok(value.clone()),
-                // Clone io::Error
-                Err(err) => Err(anyhow::Error::new(io::Error::new(
-                    err.kind(),
-                    err.to_string(),
-                ))),
-            }),
-            time,
-            duration,
-        });
-
         let output = output?;
 
         if !output.status.success() {
