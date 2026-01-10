@@ -3,8 +3,8 @@ use crate::{
     commander::Commander,
     env::Env,
     ui::{
-        Component, ComponentAction, bookmarks_tab::BookmarksTab, command_log_tab::CommandLogTab,
-        command_popup::CommandPopup, files_tab::FilesTab, log_tab::LogTab,
+        Component, ComponentAction, bookmarks_tab::BookmarksTab, command_popup::CommandPopup,
+        files_tab::FilesTab, log_tab::LogTab,
     },
 };
 use anyhow::{Result, anyhow};
@@ -18,7 +18,6 @@ pub enum Tab {
     Log,
     Files,
     Bookmarks,
-    CommandLog,
 }
 
 impl fmt::Display for Tab {
@@ -27,13 +26,12 @@ impl fmt::Display for Tab {
             Tab::Log => write!(f, "Log"),
             Tab::Files => write!(f, "Files"),
             Tab::Bookmarks => write!(f, "Bookmarks"),
-            Tab::CommandLog => write!(f, "Command Log"),
         }
     }
 }
 
 impl Tab {
-    pub const VALUES: [Self; 4] = [Tab::Log, Tab::Files, Tab::Bookmarks, Tab::CommandLog];
+    pub const VALUES: [Self; 3] = [Tab::Log, Tab::Files, Tab::Bookmarks];
 }
 
 pub struct Stats {
@@ -46,7 +44,6 @@ pub struct App<'a> {
     pub log: Option<LogTab<'a>>,
     pub files: Option<FilesTab>,
     pub bookmarks: Option<BookmarksTab<'a>>,
-    pub command_log: Option<CommandLogTab>,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
 }
@@ -59,7 +56,6 @@ impl<'a> App<'a> {
             log: None,
             files: None,
             bookmarks: None,
-            command_log: None,
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
@@ -134,16 +130,6 @@ impl<'a> App<'a> {
             .ok_or_else(|| anyhow!("Failed to get mutable reference to BookmarksTab"))
     }
 
-    pub fn get_command_log_tab(&mut self, commander: &mut Commander) -> Result<&mut CommandLogTab> {
-        if self.command_log.is_none() {
-            self.command_log = Some(CommandLogTab::new(commander)?);
-        }
-
-        self.command_log
-            .as_mut()
-            .ok_or_else(|| anyhow!("Failed to get mutable reference to CommandLogTab"))
-    }
-
     pub fn get_or_init_tab(
         &mut self,
         commander: &mut Commander,
@@ -153,7 +139,6 @@ impl<'a> App<'a> {
             Tab::Log => self.get_log_tab(commander)?,
             Tab::Files => self.get_files_tab(commander)?,
             Tab::Bookmarks => self.get_bookmarks_tab(commander)?,
-            Tab::CommandLog => self.get_command_log_tab(commander)?,
         })
     }
 
@@ -171,10 +156,6 @@ impl<'a> App<'a> {
                 .bookmarks
                 .as_mut()
                 .map(|bookmarks_tab| bookmarks_tab as &mut dyn Component),
-            Tab::CommandLog => self
-                .command_log
-                .as_mut()
-                .map(|command_log_tab| command_log_tab as &mut dyn Component),
         }
     }
 
@@ -205,15 +186,9 @@ impl<'a> App<'a> {
             }
             ComponentAction::RefreshTab() => {
                 self.set_tab(commander, self.current_tab)?;
-                match self.current_tab {
-                    Tab::Log => {
-                        let head = commander.get_current_head()?;
-                        self.get_log_tab(commander)?.set_head(commander, head);
-                    }
-                    Tab::CommandLog => {
-                        self.get_command_log_tab(commander)?.update(commander)?;
-                    }
-                    _ => {}
+                if self.current_tab == Tab::Log {
+                    let head = commander.get_current_head()?;
+                    self.get_log_tab(commander)?.set_head(commander, head);
                 };
             }
         }

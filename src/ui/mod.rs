@@ -1,6 +1,5 @@
 pub mod bookmark_set_popup;
 pub mod bookmarks_tab;
-pub mod command_log_tab;
 pub mod command_popup;
 pub mod files_tab;
 pub mod help_popup;
@@ -87,7 +86,7 @@ pub fn ui(f: &mut Frame, app: &mut App) -> Result<()> {
         f.render_widget(tabs, header_chunks[0]);
     }
     {
-        let tabs = Paragraph::new("q: quit | ?: help | R: refresh | 1/2/3/4: change tab")
+        let tabs = Paragraph::new("q: quit | ?: help | R: refresh | 1/2/3: change tab")
             .fg(Color::DarkGray)
             .block(
                 Block::bordered()
