@@ -69,6 +69,9 @@ pub struct LogPanel<'a> {
     config: Config,
 }
 
+const LEFT_MARGIN_BLANK: char = ' ';
+const LEFT_MARGIN_MARKED: char = '>';
+
 /*
 pub enum LogPanelEvent {
     /* Commands to LogPanel */
@@ -162,6 +165,21 @@ impl<'a> LogPanel<'a> {
 
     /// Convert log output to a list of formatted lines
     fn output_to_lines(&self, log_output: &LogOutput) -> Vec<Line<'a>> {
+        // Add commit mark
+        let add_mark = |line: &mut Line, i: usize| {
+            let at_marked_commit = log_output
+                .head_at(i)
+                .is_some_and(|head| self.is_head_marked(head));
+
+            let symbol = if at_marked_commit {
+                LEFT_MARGIN_MARKED
+            } else {
+                LEFT_MARGIN_BLANK
+            };
+            let span = Span::from(symbol.to_string());
+            line.spans.insert(0, span);
+        };
+
         // Set the background color of the line
         fn set_bg(line: &mut Line, bg_color: Color) {
             // Set background to use when no Span is present
@@ -180,7 +198,7 @@ impl<'a> LogPanel<'a> {
                 let mut line = line.to_owned();
 
                 // Add padding at start
-                line.spans.insert(0, Span::from(" "));
+                add_mark(&mut line, i);
 
                 // Highlight lines that correspond to self.head
                 if log_output.head_at(i) == Some(&self.head) {
