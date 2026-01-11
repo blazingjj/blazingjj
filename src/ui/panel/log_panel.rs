@@ -10,10 +10,12 @@ use ratatui::{
     text::ToText,
     widgets::*,
 };
+use std::collections::HashSet;
 
 use crate::{
     commander::{
         CommandError, Commander,
+        ids::CommitId,
         log::{Head, LogOutput},
     },
     env::Config,
@@ -56,6 +58,9 @@ pub struct LogPanel<'a> {
 
     /// Currently selected commit
     pub head: Head,
+
+    /// Currently marked commits
+    pub marked_heads: HashSet<CommitId>,
 
     /// Area where panel was drawn. This includes the border.
     panel_rect: Rect,
@@ -131,6 +136,7 @@ impl<'a> LogPanel<'a> {
             log_revset,
 
             head,
+            marked_heads: HashSet::new(),
 
             panel_rect: Rect::ZERO,
 
@@ -257,6 +263,30 @@ impl<'a> LogPanel<'a> {
             self.set_head(next_head.clone());
         }
         // TODO Notify about change of head
+    }
+
+    //
+    //  Marked heads
+    //
+
+    /// Mark or unmark the specified head
+    pub fn set_head_mark(&mut self, head: &Head, mark: bool) {
+        if mark {
+            self.marked_heads.insert(head.commit_id.clone());
+        } else {
+            self.marked_heads.remove(&head.commit_id);
+        }
+    }
+
+    /// Check if a head is marked for batch operation
+    pub fn is_head_marked(&self, head: &Head) -> bool {
+        self.marked_heads.contains(&head.commit_id)
+    }
+
+    /// LogTabEvent: Toggle mark on the current head
+    pub fn toggle_head_mark(&mut self) {
+        let was_marked = self.is_head_marked(&self.head);
+        self.set_head_mark(&self.head.clone(), !was_marked);
     }
 
     //
