@@ -33,26 +33,34 @@ use crate::{
     - line index (into self.log_output.text)
     - head index (into self.log_output.heads)
 
-    The line index is used for scrolling at the display leve.
+    The line index is used for scrolling at the display level.
 
     The head index is used for scrolling at the user level
     as well as for selecting which lines to highlight.
 */
 pub struct LogPanel<'a> {
+    /// Output from 'jj log' as provided by command::get_show_log
     log_output: Result<LogOutput, CommandError>,
+
+    /// Output from 'jj log' converted to Ratatui Text
     log_output_text: Text<'a>,
+
+    /// Scroll offset and cursor position
     log_list_state: ListState,
+
+    /// Area were log content was drawn. This excludes the border.
     pub log_rect: Rect,
 
-    /// The revision set to show in the log
+    /// The revision filter used for the log
     pub log_revset: Option<String>,
 
-    /// Currently selected change
+    /// Currently selected commit
     pub head: Head,
 
-    /// Rect used last time draw was called. Can be used to check if mouse clicks
+    /// Area where panel was drawn. This includes the border.
     panel_rect: Rect,
 
+    /// Configuration of colours
     config: Config,
 }
 
