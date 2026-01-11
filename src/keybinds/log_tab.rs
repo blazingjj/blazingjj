@@ -25,6 +25,7 @@ pub enum LogTabEvent {
     ScrollUpHalf,
 
     FocusCurrent,
+    ToggleHeadMark,
     ToggleDiffFormat,
 
     Refresh,
@@ -73,6 +74,7 @@ impl Default for LogTabKeybinds {
             LogTabEvent::ScrollDownHalf => "shift+j",
             LogTabEvent::ScrollUpHalf => "shift+k",
             LogTabEvent::FocusCurrent => "@",
+            LogTabEvent::ToggleHeadMark => "space",
             // todo: move to DetailsKeybindings
             LogTabEvent::ToggleDiffFormat => "w",
             LogTabEvent::Refresh => "shift+r",

@@ -332,6 +332,9 @@ impl<'a> LogPanel<'a> {
                     (self.visible_heads() as isize / 2).saturating_neg(),
                 );
             }
+            LogTabEvent::ToggleHeadMark => {
+                self.toggle_head_mark();
+            }
             _ => {
                 return Ok(ComponentInputResult::NotHandled);
             }
