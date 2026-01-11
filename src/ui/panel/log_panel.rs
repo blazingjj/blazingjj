@@ -10,10 +10,12 @@ use ratatui::{
     text::ToText,
     widgets::*,
 };
+use std::collections::HashSet;
 
 use crate::{
     commander::{
         CommandError, Commander,
+        ids::CommitId,
         log::{Head, LogOutput},
     },
     env::Config,
@@ -33,26 +35,37 @@ use crate::{
     - line index (into self.log_output.text)
     - head index (into self.log_output.heads)
 
-    The line index is used for scrolling at the display leve.
+    The line index is used for scrolling at the display level.
 
     The head index is used for scrolling at the user level
     as well as for selecting which lines to highlight.
 */
 pub struct LogPanel<'a> {
+    /// Output from 'jj log' as provided by command::get_show_log
     log_output: Result<LogOutput, CommandError>,
+
+    /// Oputput from 'jj log' converted to Ratatui Text
     log_output_text: Text<'a>,
+
+    /// Scroll offset and cursor position
     log_list_state: ListState,
+
+    /// Area were log content was drawn. This excludes the border.
     pub log_rect: Rect,
 
-    /// The revision set to show in the log
+    /// The revision filter used for the log
     pub log_revset: Option<String>,
 
-    /// Currently selected change
+    /// Currently selected commit
     pub head: Head,
 
-    /// Rect used last time draw was called. Can be used to check if mouse clicks
+    /// Currently marked commits
+    pub marked_heads: HashSet<CommitId>,
+
+    /// Area where panel was drawn. This includes the border.
     panel_rect: Rect,
 
+    /// Configuration of colours
     config: Config,
 }
 
@@ -123,6 +136,7 @@ impl<'a> LogPanel<'a> {
             log_revset,
 
             head,
+            marked_heads: HashSet::new(),
 
             panel_rect: Rect::ZERO,
 
@@ -256,6 +270,30 @@ impl<'a> LogPanel<'a> {
             self.set_head(next_head.clone());
         }
         // TODO Notify about change of head
+    }
+
+    //
+    //  Marked heads
+    //
+
+    /// Mark or unmark the specified head
+    fn set_head_mark(&mut self, head: &Head, mark: bool) {
+        if mark {
+            self.marked_heads.insert(head.commit_id.clone());
+        } else {
+            self.marked_heads.remove(&head.commit_id);
+        }
+    }
+
+    /// Check if a head is marked for batch operation
+    fn is_head_marked(&self, head: &Head) -> bool {
+        self.marked_heads.contains(&head.commit_id)
+    }
+
+    /// LogTabEvent: Toggle mark on the current head
+    fn toggle_head_mark(&mut self) {
+        let was_marked = self.is_head_marked(&self.head);
+        self.set_head_mark(&self.head.clone(), !was_marked);
     }
 
     //
