@@ -69,6 +69,9 @@ pub struct LogPanel<'a> {
     config: Config,
 }
 
+const LEFT_MARGIN_BLANK: char = ' ';
+const LEFT_MARGIN_MARKED: char = '>';
+
 /*
 pub enum LogPanelEvent {
     /* Commands to LogPanel */
@@ -162,6 +165,22 @@ impl<'a> LogPanel<'a> {
 
     /// Convert log output to a list of formatted lines
     fn output_to_lines(&self, log_output: &LogOutput) -> Vec<Line<'a>> {
+        // Add commit mark
+        let add_mark = |line: &mut Line, i: usize| {
+            let line_head = log_output.graph_heads.get(i).unwrap_or(&None);
+
+            let at_marked_commit =
+                line_head.is_some() && self.is_head_marked(line_head.as_ref().unwrap());
+
+            let symbol = if at_marked_commit {
+                LEFT_MARGIN_MARKED
+            } else {
+                LEFT_MARGIN_BLANK
+            };
+            let span = Span::from(symbol.to_string());
+            line.spans.insert(0, span);
+        };
+
         // Set the background color of the line
         fn set_bg(line: &mut Line, bg_color: Color) {
             // Set background to use when no Span is present
@@ -178,12 +197,12 @@ impl<'a> LogPanel<'a> {
             .enumerate()
             .map(|(i, line)| {
                 let mut line = line.to_owned();
+                let line_head = log_output.graph_heads.get(i).unwrap_or(&None);
 
                 // Add padding at start
-                line.spans.insert(0, Span::from(" "));
+                add_mark(&mut line, i);
 
                 // Highlight lines that correspond to self.head
-                let line_head = log_output.graph_heads.get(i).unwrap_or(&None);
                 if let Some(line_change) = line_head
                     && line_change == &self.head
                 {
