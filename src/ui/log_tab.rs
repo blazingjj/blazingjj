@@ -168,6 +168,53 @@ impl<'a> LogTab<'a> {
         self.sync_head_output(commander);
     }
 
+    fn handle_abandon(&mut self) -> Result<ComponentInputResult> {
+        // Cannot abandon immutable changes
+        if self.head.immutable {
+            return Ok(ComponentInputResult::HandledAction(
+                ComponentAction::SetPopup(Some(Box::new(MessagePopup {
+                    title: "Abandon".into(),
+                    messages: vec![
+                        "The change cannot be abandoned because it is immutable.".into(),
+                    ]
+                    .into(),
+                    text_align: None,
+                }))),
+            ));
+        }
+
+        // Ask for confirmation by launching a popup
+        self.popup = ConfirmDialogState::new(
+            ABANDON_POPUP_ID,
+            Span::styled(" Abandon ", Style::new().bold().cyan()),
+            Text::from(vec![
+                Line::from("Are you sure you want to abandon this change?"),
+                Line::from(format!("Change: {}", self.head.change_id.as_str())),
+            ])
+            .fg(Color::default()),
+        );
+        self.popup
+            .with_yes_button(ButtonLabel::YES.clone())
+            .with_no_button(ButtonLabel::NO.clone())
+            .with_listener(Some(self.popup_tx.clone()))
+            .open();
+        Ok(ComponentInputResult::Handled)
+    }
+
+    // Execute abandon command, after self.popup returned
+    fn execute_abandon(&mut self, commander: &mut Commander) -> Result<Option<ComponentAction>> {
+        if self.head == commander.get_current_head()? {
+            commander.run_abandon(&self.head.commit_id)?;
+            self.set_head(commander, commander.get_current_head()?);
+            return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
+        } else {
+            let head_parent = commander.get_commit_parent(&self.head.commit_id)?;
+            commander.run_abandon(&self.head.commit_id)?;
+            self.set_head(commander, head_parent);
+            Ok(None)
+        }
+    }
+
     fn handle_event(
         &mut self,
         commander: &mut Commander,
@@ -298,33 +345,7 @@ impl<'a> LogTab<'a> {
                 self.edit_ignore_immutable = ignore_immutable;
             }
             LogTabEvent::Abandon => {
-                if self.head.immutable {
-                    return Ok(ComponentInputResult::HandledAction(
-                        ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                            title: "Abandon".into(),
-                            messages: vec![
-                                "The change cannot be abandoned because it is immutable.".into(),
-                            ]
-                            .into(),
-                            text_align: None,
-                        }))),
-                    ));
-                } else {
-                    self.popup = ConfirmDialogState::new(
-                        ABANDON_POPUP_ID,
-                        Span::styled(" Abandon ", Style::new().bold().cyan()),
-                        Text::from(vec![
-                            Line::from("Are you sure you want to abandon this change?"),
-                            Line::from(format!("Change: {}", self.head.change_id.as_str())),
-                        ])
-                        .fg(Color::default()),
-                    );
-                    self.popup
-                        .with_yes_button(ButtonLabel::YES.clone())
-                        .with_no_button(ButtonLabel::NO.clone())
-                        .with_listener(Some(self.popup_tx.clone()))
-                        .open();
-                }
+                return self.handle_abandon();
             }
             LogTabEvent::Describe => {
                 if self.head.immutable {
@@ -466,15 +487,7 @@ impl Component for LogTab<'_> {
                     return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
                 }
                 ABANDON_POPUP_ID => {
-                    if self.head == commander.get_current_head()? {
-                        commander.run_abandon(&self.head.commit_id)?;
-                        self.set_head(commander, commander.get_current_head()?);
-                        return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
-                    } else {
-                        let head_parent = commander.get_commit_parent(&self.head.commit_id)?;
-                        commander.run_abandon(&self.head.commit_id)?;
-                        self.set_head(commander, head_parent);
-                    }
+                    return self.execute_abandon(commander);
                 }
                 SQUASH_POPUP_ID => {
                     commander
