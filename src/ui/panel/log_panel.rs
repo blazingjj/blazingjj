@@ -307,6 +307,11 @@ impl<'a> LogPanel<'a> {
         self.set_head_mark(&self.head.clone(), !was_marked);
     }
 
+    /// Extract the list of all marked heads and clear it
+    pub fn extract_and_clear_head_marks(&mut self) -> Vec<CommitId> {
+        self.marked_heads.drain().collect()
+    }
+
     //
     //  Event handling
     //

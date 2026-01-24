@@ -162,6 +162,7 @@ impl<'a> LogTab<'a> {
         }
     }
 
+    /// Set cursor and update log panel and diff panel
     pub fn set_head(&mut self, commander: &mut Commander, head: Head) {
         self.log_panel.set_head(head);
         self.log_panel.refresh_log_output(commander);
@@ -184,14 +185,24 @@ impl<'a> LogTab<'a> {
         }
 
         // Ask for confirmation by launching a popup
-        self.popup = ConfirmDialogState::new(
-            ABANDON_POPUP_ID,
-            Span::styled(" Abandon ", Style::new().bold().cyan()),
+        let mark_count = self.log_panel.marked_heads.len();
+        let text = if mark_count > 0 {
+            Text::from(vec![Line::from(format!(
+                "Are you sure you want to abandon {} marked changes?",
+                mark_count
+            ))])
+            .fg(Color::default())
+        } else {
             Text::from(vec![
                 Line::from("Are you sure you want to abandon this change?"),
                 Line::from(format!("Change: {}", self.head.change_id.as_str())),
             ])
-            .fg(Color::default()),
+            .fg(Color::default())
+        };
+        self.popup = ConfirmDialogState::new(
+            ABANDON_POPUP_ID,
+            Span::styled(" Abandon ", Style::new().bold().cyan()),
+            text,
         );
         self.popup
             .with_yes_button(ButtonLabel::YES.clone())
@@ -203,14 +214,27 @@ impl<'a> LogTab<'a> {
 
     // Execute abandon command, after self.popup returned
     fn execute_abandon(&mut self, commander: &mut Commander) -> Result<Option<ComponentAction>> {
-        if self.head == commander.get_current_head()? {
-            commander.run_abandon(&self.head.commit_id)?;
-            self.set_head(commander, commander.get_current_head()?);
-            return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
+        // If none marked, mark current head
+        if self.log_panel.marked_heads.is_empty() {
+            self.log_panel.toggle_head_mark();
+        }
+        // Move selection to parent until it is no longer inside the marked commits
+        let old_selection = self.head.clone();
+        let mut selection = self.head.clone();
+        while self.log_panel.is_head_marked(&selection) {
+            selection = commander.get_commit_parent(&selection.commit_id)?;
+        }
+        // Abandon marked commmits
+        let commit_id_list = self.log_panel.extract_and_clear_head_marks();
+        commander.run_abandon(&commit_id_list)?;
+        // Update selection to latest version, in case abandon triggered a rebase.
+        let new_selection = commander.get_head_latest(&selection)?;
+        // Update log panel and diff panel
+        self.set_head(commander, new_selection.clone());
+        // If selection was moved, tell the application
+        if new_selection != old_selection {
+            Ok(Some(ComponentAction::ChangeHead(self.head.clone())))
         } else {
-            let head_parent = commander.get_commit_parent(&self.head.commit_id)?;
-            commander.run_abandon(&self.head.commit_id)?;
-            self.set_head(commander, head_parent);
             Ok(None)
         }
     }

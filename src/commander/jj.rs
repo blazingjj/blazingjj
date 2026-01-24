@@ -38,8 +38,11 @@ impl Commander {
 
     /// Abandon change. Maps to `jj abandon <revision>`
     #[instrument(level = "trace", skip(self))]
-    pub fn run_abandon(&self, commit_id: &CommitId) -> Result<()> {
-        self.execute_void_jj_command(vec!["abandon", commit_id.as_str()])
+    pub fn run_abandon(&self, commit_ids: &[CommitId]) -> Result<()> {
+        let args = ["abandon"]
+            .into_iter()
+            .chain(commit_ids.iter().map(CommitId::as_str));
+        self.execute_void_jj_command(args)
             .context("Failed executing jj abandon")
     }
 
@@ -188,6 +191,8 @@ impl Commander {
 
 #[cfg(test)]
 mod tests {
+    use core::slice;
+
     use super::*;
     use crate::commander::tests::TestRepo;
 
@@ -222,7 +227,9 @@ mod tests {
         let test_repo = TestRepo::new()?;
 
         let head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_abandon(&head.commit_id)?;
+        test_repo
+            .commander
+            .run_abandon(slice::from_ref(&head.commit_id))?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
 
         Ok(())
