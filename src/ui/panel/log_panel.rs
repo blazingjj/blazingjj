@@ -305,14 +305,21 @@ impl<'a> LogPanel<'a> {
     }
 
     /// Check if a head is marked for batch operation
-    fn is_head_marked(&self, head: &Head) -> bool {
+    pub fn is_head_marked(&self, head: &Head) -> bool {
         self.marked_heads.contains(&head.commit_id)
     }
 
     /// LogTabEvent: Toggle mark on the current head
-    fn toggle_head_mark(&mut self) {
+    pub fn toggle_head_mark(&mut self) {
         let was_marked = self.is_head_marked(&self.head);
         self.set_head_mark(&self.head.clone(), !was_marked);
+    }
+
+    /// Extract the list of all marked heads and clear it
+    pub fn extract_and_clear_head_marks(&mut self) -> Vec<CommitId> {
+        let result = self.marked_heads.iter().map(|cr| (*cr).clone()).collect();
+        self.marked_heads.clear();
+        result
     }
 
     //
