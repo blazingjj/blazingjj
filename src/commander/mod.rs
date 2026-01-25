@@ -258,7 +258,7 @@ pub mod tests {
     use super::*;
     use crate::env::{Config, Env};
 
-    use tempdir::TempDir;
+    use tempfile::TempDir;
 
     macro_rules! apply_common_filters {
         {} => {
@@ -276,7 +276,7 @@ pub mod tests {
 
     impl TestRepo {
         pub fn new() -> Result<Self> {
-            let directory = TempDir::new("blazingjj")?;
+            let directory = TempDir::with_prefix("blazingjj")?;
 
             let jj_config_toml = vec![
                 r#"user.email="blazingjj@example.com""#.to_owned(),
