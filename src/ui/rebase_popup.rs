@@ -26,7 +26,7 @@ use ratatui::{
     crossterm::event::Event,
     layout::{Alignment, Rect},
     prelude::{Buffer, Constraint, Direction, Layout},
-    style::{Color, Style, Stylize},
+    style::{Color, Style},
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Clear, Paragraph, StatefulWidget},
 };

@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use ratatui::{
     layout::Alignment,
-    style::{Color, Style, Stylize},
+    style::{Color, Style},
     text::Span,
     widgets::{Block, BorderType, Padding},
 };
