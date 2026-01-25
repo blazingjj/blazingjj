@@ -14,6 +14,8 @@ use crate::{
 pub struct Config {
     #[serde(rename = "blazingjj.highlight-color")]
     blazingjj_highlight_color: Option<Color>,
+    #[serde(rename = "blazingjj.describe-mode")]
+    blazingjj_describe_mode: Option<DescribeMode>,
     #[serde(rename = "blazingjj.diff-format")]
     blazingjj_diff_format: Option<DiffFormat>,
     #[serde(rename = "blazingjj.diff-tool")]
@@ -46,6 +48,7 @@ pub struct JjConfig {
 #[serde(rename_all = "kebab-case")]
 pub struct JjConfigBlazingjj {
     highlight_color: Option<Color>,
+    describe_mode: Option<DescribeMode>,
     diff_format: Option<DiffFormat>,
     diff_tool: Option<String>,
     bookmark_prefix: Option<String>,
@@ -106,6 +109,9 @@ impl Config {
             .clone()
             .or(self.git_push_bookmark_template.clone())
             .unwrap_or("'push-' ++ change_id.short()".to_string())
+    }
+    pub fn describe_mode(&self) -> DescribeMode {
+        self.blazingjj_describe_mode.unwrap_or(DescribeMode::Popup)
     }
 
     pub fn layout(&self) -> JJLayout {
@@ -176,6 +182,10 @@ impl Env {
                             .blazingjj
                             .as_ref()
                             .and_then(|blazingjj| blazingjj.highlight_color),
+                        blazingjj_describe_mode: config
+                            .blazingjj
+                            .as_ref()
+                            .and_then(|blazingjj| blazingjj.describe_mode),
                         blazingjj_diff_format: config
                             .blazingjj
                             .as_ref()
@@ -223,6 +233,14 @@ impl Env {
             jj_bin,
         })
     }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DescribeMode {
+    #[default]
+    Popup,
+    Jj,
 }
 
 #[derive(Clone, Debug, Deserialize, Default, PartialEq)]
