@@ -9,11 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- Log panel can mark and abandon multiple commits
+
+
 ## [0.7.1] - 2026-01-16
 
 ### Fixed
 
  - Avoid unnecessary redraws on mouse move events which caused massive CPU spikes
+
 
 ## [0.7.0] - 2026-01-13
 
