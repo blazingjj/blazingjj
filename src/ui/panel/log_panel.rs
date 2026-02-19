@@ -10,10 +10,12 @@ use ratatui::{
     text::ToText,
     widgets::*,
 };
+use std::collections::HashSet;
 
 use crate::{
     commander::{
         CommandError, Commander,
+        ids::CommitId,
         log::{Head, LogOutput},
     },
     env::Config,
@@ -33,28 +35,42 @@ use crate::{
     - line index (into self.log_output.text)
     - head index (into self.log_output.heads)
 
-    The line index is used for scrolling at the display leve.
+    The line index is used for scrolling at the display level.
 
     The head index is used for scrolling at the user level
     as well as for selecting which lines to highlight.
 */
 pub struct LogPanel<'a> {
+    /// Output from 'jj log' as provided by command::get_show_log
     log_output: Result<LogOutput, CommandError>,
+
+    /// Output from 'jj log' converted to Ratatui Text
     log_output_text: Text<'a>,
+
+    /// Scroll offset and cursor position
     log_list_state: ListState,
+
+    /// Area were log content was drawn. This excludes the border.
     pub log_rect: Rect,
 
-    /// The revision set to show in the log
+    /// The revision filter used for the log
     pub log_revset: Option<String>,
 
-    /// Currently selected change
+    /// Currently selected commit
     pub head: Head,
 
-    /// Rect used last time draw was called. Can be used to check if mouse clicks
+    /// Currently marked commits
+    pub marked_heads: HashSet<CommitId>,
+
+    /// Area where panel was drawn. This includes the border.
     panel_rect: Rect,
 
+    /// Configuration of colours
     config: Config,
 }
+
+const LEFT_MARGIN_BLANK: char = ' ';
+const LEFT_MARGIN_MARKED: char = '>';
 
 /*
 pub enum LogPanelEvent {
@@ -123,6 +139,7 @@ impl<'a> LogPanel<'a> {
             log_revset,
 
             head,
+            marked_heads: HashSet::new(),
 
             panel_rect: Rect::ZERO,
 
@@ -148,6 +165,21 @@ impl<'a> LogPanel<'a> {
 
     /// Convert log output to a list of formatted lines
     fn output_to_lines(&self, log_output: &LogOutput) -> Vec<Line<'a>> {
+        // Add commit mark
+        let add_mark = |line: &mut Line, i: usize| {
+            let at_marked_commit = log_output
+                .head_at(i)
+                .is_some_and(|head| self.is_head_marked(head));
+
+            let symbol = if at_marked_commit {
+                LEFT_MARGIN_MARKED
+            } else {
+                LEFT_MARGIN_BLANK
+            };
+            let span = Span::from(symbol.to_string());
+            line.spans.insert(0, span);
+        };
+
         // Set the background color of the line
         fn set_bg(line: &mut Line, bg_color: Color) {
             // Set background to use when no Span is present
@@ -166,13 +198,10 @@ impl<'a> LogPanel<'a> {
                 let mut line = line.to_owned();
 
                 // Add padding at start
-                line.spans.insert(0, Span::from(" "));
+                add_mark(&mut line, i);
 
                 // Highlight lines that correspond to self.head
-                let line_head = log_output.graph_heads.get(i).unwrap_or(&None);
-                if let Some(line_change) = line_head
-                    && line_change == &self.head
-                {
+                if log_output.head_at(i) == Some(&self.head) {
                     set_bg(&mut line, self.config.highlight_color());
                 };
 
@@ -205,11 +234,7 @@ impl<'a> LogPanel<'a> {
 
     /// Find head of the provided log_output line
     fn head_at_log_line(&mut self, log_line: usize) -> Option<Head> {
-        let log_output = self.log_output.as_ref().ok()?;
-
-        let graph_head = log_output.graph_heads.get(log_line)?;
-
-        graph_head.clone()
+        self.log_output.as_ref().ok()?.head_at(log_line).cloned()
     }
 
     // Return the head-index for the selection
@@ -259,6 +284,35 @@ impl<'a> LogPanel<'a> {
     }
 
     //
+    //  Marked heads
+    //
+
+    /// Mark or unmark the specified head
+    pub fn set_head_mark(&mut self, head: &Head, mark: bool) {
+        if mark {
+            self.marked_heads.insert(head.commit_id.clone());
+        } else {
+            self.marked_heads.remove(&head.commit_id);
+        }
+    }
+
+    /// Check if a head is marked for batch operation
+    pub fn is_head_marked(&self, head: &Head) -> bool {
+        self.marked_heads.contains(&head.commit_id)
+    }
+
+    /// LogTabEvent: Toggle mark on the current head
+    pub fn toggle_head_mark(&mut self) {
+        let was_marked = self.is_head_marked(&self.head);
+        self.set_head_mark(&self.head.clone(), !was_marked);
+    }
+
+    /// Extract the list of all marked heads and clear it
+    pub fn extract_and_clear_head_marks(&mut self) -> Vec<CommitId> {
+        self.marked_heads.drain().collect()
+    }
+
+    //
     //  Event handling
     //
 
@@ -282,6 +336,9 @@ impl<'a> LogPanel<'a> {
                     commander,
                     (self.visible_heads() as isize / 2).saturating_neg(),
                 );
+            }
+            LogTabEvent::ToggleHeadMark => {
+                self.toggle_head_mark();
             }
             _ => {
                 return Ok(ComponentInputResult::NotHandled);

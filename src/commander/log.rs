@@ -37,6 +37,12 @@ pub struct LogOutput {
     pub heads: Vec<Head>,
 }
 
+impl LogOutput {
+    pub fn head_at(&self, line: usize) -> Option<&Head> {
+        self.graph_heads.get(line).and_then(Option::as_ref)
+    }
+}
+
 #[derive(Error, Debug)]
 pub struct HeadParseError(String);
 
