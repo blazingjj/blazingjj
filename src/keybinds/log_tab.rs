@@ -157,6 +157,7 @@ impl LogTabKeybinds {
             LogTabEvent::FocusCurrent => "current change",
             LogTabEvent::EditRevset => "set revset",
             LogTabEvent::Describe => "describe change",
+            LogTabEvent::Duplicate => "duplicate change",
             LogTabEvent::EditChange { ignore_immutable: false } => "edit change",
             LogTabEvent::EditChange { ignore_immutable: true } => "edit change ignoring immutability",
             LogTabEvent::CreateNew { describe: false } => "new change",
