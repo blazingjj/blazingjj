@@ -177,10 +177,7 @@ impl<'a> LogPanel<'a> {
                 line.spans.insert(0, Span::from(" "));
 
                 // Highlight lines that correspond to self.head
-                let line_head = log_output.graph_heads.get(i).unwrap_or(&None);
-                if let Some(line_change) = line_head
-                    && line_change == &self.head
-                {
+                if log_output.head_at(i) == Some(&self.head) {
                     set_bg(&mut line, self.config.highlight_color());
                 };
 
@@ -213,11 +210,7 @@ impl<'a> LogPanel<'a> {
 
     /// Find head of the provided log_output line
     fn head_at_log_line(&mut self, log_line: usize) -> Option<Head> {
-        let log_output = self.log_output.as_ref().ok()?;
-
-        let graph_head = log_output.graph_heads.get(log_line)?;
-
-        graph_head.clone()
+        self.log_output.as_ref().ok()?.head_at(log_line).cloned()
     }
 
     // Return the head-index for the selection
