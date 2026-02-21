@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use ratatui::crossterm::event::KeyEvent;
 
-use super::{Keybind, Shortcut};
+use super::Keybind;
+use super::Shortcut;
 
 #[derive(Debug)]
 pub struct KeybindsStore<A> {

@@ -2,32 +2,40 @@
 
 use ansi_to_tui::IntoText;
 use anyhow::Result;
-use ratatui::{
-    crossterm::event::{Event, KeyEventKind},
-    layout::Rect,
-    prelude::*,
-    widgets::*,
-};
+use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyEventKind;
+use ratatui::layout::Rect;
+use ratatui::prelude::*;
+use ratatui::widgets::*;
 use tracing::instrument;
-use tui_confirm_dialog::{ButtonLabel, ConfirmDialog, ConfirmDialogState, Listener};
-use tui_textarea::{CursorMove, TextArea};
+use tui_confirm_dialog::ButtonLabel;
+use tui_confirm_dialog::ConfirmDialog;
+use tui_confirm_dialog::ConfirmDialogState;
+use tui_confirm_dialog::Listener;
+use tui_textarea::CursorMove;
+use tui_textarea::TextArea;
 
-use crate::{
-    ComponentInputResult,
-    commander::{CommandError, Commander, ids::CommitId, log::Head},
-    env::{Config, DiffFormat},
-    keybinds::{LogTabEvent, LogTabKeybinds},
-    ui::{
-        Component, ComponentAction,
-        bookmark_set_popup::BookmarkSetPopup,
-        help_popup::HelpPopup,
-        loader_popup::LoaderPopup,
-        message_popup::MessagePopup,
-        panel::{DetailsPanel, LogPanel},
-        rebase_popup::RebasePopup,
-        utils::{centered_rect, centered_rect_line_height, tabs_to_spaces},
-    },
-};
+use crate::ComponentInputResult;
+use crate::commander::CommandError;
+use crate::commander::Commander;
+use crate::commander::ids::CommitId;
+use crate::commander::log::Head;
+use crate::env::Config;
+use crate::env::DiffFormat;
+use crate::keybinds::LogTabEvent;
+use crate::keybinds::LogTabKeybinds;
+use crate::ui::Component;
+use crate::ui::ComponentAction;
+use crate::ui::bookmark_set_popup::BookmarkSetPopup;
+use crate::ui::help_popup::HelpPopup;
+use crate::ui::loader_popup::LoaderPopup;
+use crate::ui::message_popup::MessagePopup;
+use crate::ui::panel::DetailsPanel;
+use crate::ui::panel::LogPanel;
+use crate::ui::rebase_popup::RebasePopup;
+use crate::ui::utils::centered_rect;
+use crate::ui::utils::centered_rect_line_height;
+use crate::ui::utils::tabs_to_spaces;
 
 const NEW_POPUP_ID: u16 = 1;
 const EDIT_POPUP_ID: u16 = 2;

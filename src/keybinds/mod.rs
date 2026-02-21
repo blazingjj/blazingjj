@@ -1,9 +1,13 @@
-use std::{fmt::Display, str::FromStr};
+use std::fmt::Display;
+use std::str::FromStr;
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
-pub use config::{Keybind, KeybindsConfig};
-pub use log_tab::{LogTabEvent, LogTabKeybinds};
+pub use config::Keybind;
+pub use config::KeybindsConfig;
+pub use log_tab::LogTabEvent;
+pub use log_tab::LogTabKeybinds;
+use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::KeyEvent;
+use ratatui::crossterm::event::KeyModifiers;
 
 mod config;
 mod keybinds_store;

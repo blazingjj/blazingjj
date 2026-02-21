@@ -1,29 +1,29 @@
 /*! The log panel shows the list of changes on the left side of the
 log tab. */
 
-use ansi_to_tui::IntoText;
-use anyhow::Result;
-use ratatui::{
-    crossterm::event::{Event, MouseEvent, MouseEventKind},
-    layout::Rect,
-    prelude::*,
-    text::ToText,
-    widgets::*,
-};
 use std::collections::HashSet;
 
-use crate::{
-    commander::{
-        CommandError, Commander,
-        ids::CommitId,
-        log::{Head, LogOutput},
-    },
-    env::Config,
-    keybinds::{LogTabEvent, LogTabKeybinds},
-    ui::Component,
-    ui::ComponentAction,
-    ui::ComponentInputResult,
-};
+use ansi_to_tui::IntoText;
+use anyhow::Result;
+use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::MouseEvent;
+use ratatui::crossterm::event::MouseEventKind;
+use ratatui::layout::Rect;
+use ratatui::prelude::*;
+use ratatui::text::ToText;
+use ratatui::widgets::*;
+
+use crate::commander::CommandError;
+use crate::commander::Commander;
+use crate::commander::ids::CommitId;
+use crate::commander::log::Head;
+use crate::commander::log::LogOutput;
+use crate::env::Config;
+use crate::keybinds::LogTabEvent;
+use crate::keybinds::LogTabKeybinds;
+use crate::ui::Component;
+use crate::ui::ComponentAction;
+use crate::ui::ComponentInputResult;
 
 /**
     A panel that displays the output of jj log.

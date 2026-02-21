@@ -21,22 +21,34 @@ a radiobutton, and shortcuts Enter, Esc, q for closing the popup.
 */
 
 use anyhow::Result;
-use ratatui::{
-    Frame,
-    crossterm::event::Event,
-    layout::{Alignment, Rect},
-    prelude::{Buffer, Constraint, Direction, Layout},
-    style::{Color, Style, Stylize},
-    text::{Line, Span, Text},
-    widgets::{Block, BorderType, Clear, Paragraph, StatefulWidget},
-};
+use ratatui::Frame;
+use ratatui::crossterm::event::Event;
+use ratatui::layout::Alignment;
+use ratatui::layout::Rect;
+use ratatui::prelude::Buffer;
+use ratatui::prelude::Constraint;
+use ratatui::prelude::Direction;
+use ratatui::prelude::Layout;
+use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::style::Stylize;
+use ratatui::text::Line;
+use ratatui::text::Span;
+use ratatui::text::Text;
+use ratatui::widgets::Block;
+use ratatui::widgets::BorderType;
+use ratatui::widgets::Clear;
+use ratatui::widgets::Paragraph;
+use ratatui::widgets::StatefulWidget;
 
-use crate::{
-    ComponentInputResult,
-    commander::{Commander, log::Head},
-    keybinds::rebase_popup::{CutOption, PasteOption, PopupAction},
-    ui::{Component, utils::centered_rect_fixed},
-};
+use crate::ComponentInputResult;
+use crate::commander::Commander;
+use crate::commander::log::Head;
+use crate::keybinds::rebase_popup::CutOption;
+use crate::keybinds::rebase_popup::PasteOption;
+use crate::keybinds::rebase_popup::PopupAction;
+use crate::ui::Component;
+use crate::ui::utils::centered_rect_fixed;
 
 type Keybinds = crate::keybinds::rebase_popup::Keybinds;
 

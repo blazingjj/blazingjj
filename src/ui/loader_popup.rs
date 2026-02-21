@@ -1,25 +1,33 @@
 //! The loader popup presents a cute little animation and an operation name and should be used for
 //! operations known to possibly take some time.
 
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
+use std::sync::mpsc::{self};
+use std::thread;
+use std::time::Duration;
+use std::time::Instant;
+
 use ansi_to_tui::IntoText;
 use anyhow::Result;
-use ratatui::{
-    Frame,
-    crossterm::event::Event,
-    layout::Rect,
-    style::{Color, Style},
-    widgets::{Block, BorderType, Clear},
-};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
-use std::time::{Duration, Instant};
-use throbber_widgets_tui::{Throbber, ThrobberState};
+use ratatui::Frame;
+use ratatui::crossterm::event::Event;
+use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::widgets::Block;
+use ratatui::widgets::BorderType;
+use ratatui::widgets::Clear;
+use throbber_widgets_tui::Throbber;
+use throbber_widgets_tui::ThrobberState;
 
-use crate::{
-    ComponentInputResult,
-    commander::{CommandError, Commander},
-    ui::{Component, ComponentAction, message_popup::MessagePopup, utils::centered_rect_fixed},
-};
+use crate::ComponentInputResult;
+use crate::commander::CommandError;
+use crate::commander::Commander;
+use crate::ui::Component;
+use crate::ui::ComponentAction;
+use crate::ui::message_popup::MessagePopup;
+use crate::ui::utils::centered_rect_fixed;
 
 type OperationResult = Result<String, CommandError>;
 

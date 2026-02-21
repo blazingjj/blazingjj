@@ -1,27 +1,36 @@
 #![expect(clippy::borrow_interior_mutable_const)]
 
-use crate::{
-    ComponentInputResult,
-    commander::{CommandError, Commander, bookmarks::BookmarkLine, ids::ChangeId},
-    env::{Config, DiffFormat},
-    ui::{
-        Component, ComponentAction,
-        help_popup::HelpPopup,
-        message_popup::MessagePopup,
-        panel::DetailsPanel,
-        utils::{centered_rect, centered_rect_line_height, tabs_to_spaces},
-    },
-};
 use ansi_to_tui::IntoText;
 use anyhow::Result;
-use ratatui::{
-    crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers},
-    prelude::*,
-    widgets::*,
-};
+use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::KeyEventKind;
+use ratatui::crossterm::event::KeyModifiers;
+use ratatui::prelude::*;
+use ratatui::widgets::*;
 use tracing::instrument;
-use tui_confirm_dialog::{ButtonLabel, ConfirmDialog, ConfirmDialogState, Listener};
-use tui_textarea::{CursorMove, TextArea};
+use tui_confirm_dialog::ButtonLabel;
+use tui_confirm_dialog::ConfirmDialog;
+use tui_confirm_dialog::ConfirmDialogState;
+use tui_confirm_dialog::Listener;
+use tui_textarea::CursorMove;
+use tui_textarea::TextArea;
+
+use crate::ComponentInputResult;
+use crate::commander::CommandError;
+use crate::commander::Commander;
+use crate::commander::bookmarks::BookmarkLine;
+use crate::commander::ids::ChangeId;
+use crate::env::Config;
+use crate::env::DiffFormat;
+use crate::ui::Component;
+use crate::ui::ComponentAction;
+use crate::ui::help_popup::HelpPopup;
+use crate::ui::message_popup::MessagePopup;
+use crate::ui::panel::DetailsPanel;
+use crate::ui::utils::centered_rect;
+use crate::ui::utils::centered_rect_line_height;
+use crate::ui::utils::tabs_to_spaces;
 
 struct CreateBookmark<'a> {
     textarea: TextArea<'a>,

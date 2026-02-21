@@ -6,17 +6,21 @@ other jj bookmark commands are defined in module [jj][super::jj].
 
 It is mostly used in the [bookmarks_tab][crate::ui::bookmarks_tab] module.
 */
-use crate::{
-    commander::{CommandError, Commander, RemoveEndLine, ids::ChangeId},
-    env::DiffFormat,
-};
+use std::fmt::Display;
+use std::sync::LazyLock;
+
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use itertools::Itertools;
 use ratatui::text::Text;
 use regex::Regex;
-use std::{fmt::Display, sync::LazyLock};
 use tracing::instrument;
+
+use crate::commander::CommandError;
+use crate::commander::Commander;
+use crate::commander::RemoveEndLine;
+use crate::commander::ids::ChangeId;
+use crate::env::DiffFormat;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bookmark {
@@ -209,9 +213,8 @@ mod tests {
 
     use insta::assert_debug_snapshot;
 
-    use crate::commander::tests::TestRepo;
-
     use super::*;
+    use crate::commander::tests::TestRepo;
 
     #[test]
     fn get_bookmarks() -> Result<()> {

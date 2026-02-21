@@ -1,28 +1,28 @@
 use std::vec;
 
+use ansi_to_tui::IntoText;
 use anyhow::Result;
+use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::KeyEventKind;
+use ratatui::prelude::*;
+use ratatui::widgets::*;
 use tracing::instrument;
 
-use crate::{
-    ComponentInputResult,
-    commander::{
-        CommandError, Commander,
-        files::{Conflict, File},
-        log::Head,
-    },
-    env::{Config, DiffFormat},
-    ui::{
-        Component, ComponentAction, help_popup::HelpPopup, message_popup::MessagePopup,
-        panel::DetailsPanel, utils::tabs_to_spaces,
-    },
-};
-
-use ansi_to_tui::IntoText;
-use ratatui::{
-    crossterm::event::{Event, KeyCode, KeyEventKind},
-    prelude::*,
-    widgets::*,
-};
+use crate::ComponentInputResult;
+use crate::commander::CommandError;
+use crate::commander::Commander;
+use crate::commander::files::Conflict;
+use crate::commander::files::File;
+use crate::commander::log::Head;
+use crate::env::Config;
+use crate::env::DiffFormat;
+use crate::ui::Component;
+use crate::ui::ComponentAction;
+use crate::ui::help_popup::HelpPopup;
+use crate::ui::message_popup::MessagePopup;
+use crate::ui::panel::DetailsPanel;
+use crate::ui::utils::tabs_to_spaces;
 
 /// Files tab. Shows files in selected change in main panel and selected file diff in details panel
 pub struct FilesTab {

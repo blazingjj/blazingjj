@@ -1,9 +1,11 @@
 /*! Key bindings specific for rebase popup */
 
-use ratatui::crossterm::event::KeyEvent;
 use std::str::FromStr; // used by set_keybinds macro
 
-use super::{Shortcut, keybinds_store::KeybindsStore};
+use ratatui::crossterm::event::KeyEvent;
+
+use super::Shortcut;
+use super::keybinds_store::KeybindsStore;
 use crate::set_keybinds;
 
 /// How should rebase cut revisions from source

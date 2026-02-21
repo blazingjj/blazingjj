@@ -26,20 +26,29 @@ pub mod ids;
 pub mod jj;
 pub mod log;
 
-use crate::env::DiffFormat;
-use crate::env::Env;
+use std::ffi::OsStr;
+use std::io;
+use std::process::Command;
+use std::string::FromUtf8Error;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use ansi_to_tui::IntoText;
-use anyhow::{Context, Result, bail};
-use ratatui::{
-    style::{Color, Stylize},
-    text::{Line, Text},
-};
-use std::sync::Mutex;
-use std::{ffi::OsStr, io, process::Command, string::FromUtf8Error, sync::Arc};
+use anyhow::Context;
+use anyhow::Result;
+use anyhow::bail;
+use ratatui::style::Color;
+use ratatui::style::Stylize;
+use ratatui::text::Line;
+use ratatui::text::Text;
 use thiserror::Error;
-use tracing::{instrument, trace};
-use version_compare::{Cmp, compare};
+use tracing::instrument;
+use tracing::trace;
+use version_compare::Cmp;
+use version_compare::compare;
+
+use crate::env::DiffFormat;
+use crate::env::Env;
 
 /// The oldest version of jj that is known to work with blazingjj.
 /// 0.33.0 changed the template language for evolog/obslog
@@ -255,10 +264,11 @@ pub fn get_output_args(color: bool, quiet: bool) -> Vec<String> {
 
 #[cfg(test)]
 pub mod tests {
-    use super::*;
-    use crate::env::{Config, Env};
-
     use tempfile::TempDir;
+
+    use super::*;
+    use crate::env::Config;
+    use crate::env::Env;
 
     macro_rules! apply_common_filters {
         {} => {

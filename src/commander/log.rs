@@ -5,21 +5,25 @@ This module has features to parse the log output to extract change id and commit
 It is mostly used in the [log_tab][crate::ui::log_tab] module.
 */
 
-use crate::{
-    commander::{
-        CommandError, Commander, RemoveEndLine,
-        bookmarks::Bookmark,
-        ids::{ChangeId, CommitId},
-    },
-    env::DiffFormat,
-};
+use std::fmt::Display;
+use std::sync::LazyLock;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::Context;
+use anyhow::Result;
+use anyhow::anyhow;
+use anyhow::bail;
 use itertools::Itertools;
 use regex::Regex;
-use std::{fmt::Display, sync::LazyLock};
 use thiserror::Error;
 use tracing::instrument;
+
+use crate::commander::CommandError;
+use crate::commander::Commander;
+use crate::commander::RemoveEndLine;
+use crate::commander::bookmarks::Bookmark;
+use crate::commander::ids::ChangeId;
+use crate::commander::ids::CommitId;
+use crate::env::DiffFormat;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Head {
@@ -356,9 +360,10 @@ impl Commander {
 mod tests {
     use std::fs;
 
+    use insta::assert_debug_snapshot;
+
     use super::*;
     use crate::commander::tests::TestRepo;
-    use insta::assert_debug_snapshot;
 
     #[test]
     fn get_log() -> Result<()> {

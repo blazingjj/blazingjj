@@ -11,21 +11,25 @@ pub mod rebase_popup;
 pub mod styles;
 pub mod utils;
 
-use crate::{
-    ComponentInputResult,
-    app::{App, Tab},
-    commander::{Commander, log::Head},
-};
 use anyhow::Result;
-use ratatui::{
-    Frame,
-    crossterm::event::Event,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
-    symbols,
-};
-use ratatui::{prelude::*, widgets::*};
+use ratatui::Frame;
+use ratatui::crossterm::event::Event;
+use ratatui::layout::Constraint;
+use ratatui::layout::Direction;
+use ratatui::layout::Layout;
+use ratatui::layout::Rect;
+use ratatui::prelude::*;
+use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::symbols;
+use ratatui::widgets::*;
 use tracing::instrument;
+
+use crate::ComponentInputResult;
+use crate::app::App;
+use crate::app::Tab;
+use crate::commander::Commander;
+use crate::commander::log::Head;
 
 pub enum ComponentAction {
     ViewFiles(Head),

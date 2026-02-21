@@ -1,15 +1,20 @@
-use ratatui::{
-    crossterm::event::{self, Event, KeyCode},
-    layout::{Constraint, Direction, Layout},
-    style::Stylize,
-    text::Span,
-    widgets::{Block, Clear, Row, Table},
-};
+use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::{self};
+use ratatui::layout::Constraint;
+use ratatui::layout::Direction;
+use ratatui::layout::Layout;
+use ratatui::style::Stylize;
+use ratatui::text::Span;
+use ratatui::widgets::Block;
+use ratatui::widgets::Clear;
+use ratatui::widgets::Row;
+use ratatui::widgets::Table;
 
-use crate::{
-    ComponentInputResult,
-    ui::{Component, styles::create_popup_block, utils::centered_rect},
-};
+use crate::ComponentInputResult;
+use crate::ui::Component;
+use crate::ui::styles::create_popup_block;
+use crate::ui::utils::centered_rect;
 
 pub struct HelpPopup {
     pub left_items: Vec<(String, String)>,

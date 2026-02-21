@@ -5,10 +5,14 @@ The module implementes a number of jj commands.
 Surprisingly, this module also contains jj bookmark commands.
 These functions are used everywhere (bookmark tab, log tab).
 */
-use crate::commander::{CommandError, Commander, bookmarks::Bookmark, ids::CommitId};
-
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use tracing::instrument;
+
+use crate::commander::CommandError;
+use crate::commander::Commander;
+use crate::commander::bookmarks::Bookmark;
+use crate::commander::ids::CommitId;
 
 impl Commander {
     /// Create a new change after revisions. Maps to `jj new <revision>...`

@@ -1,21 +1,29 @@
-use anyhow::{Context, Result};
-use ratatui::{
-    crossterm::event::{Event, KeyCode},
-    layout::{Alignment, Constraint, Direction, Layout},
-    style::{Color, Style, Stylize},
-    text::Span,
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
-};
+use anyhow::Context;
+use anyhow::Result;
+use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyCode;
+use ratatui::layout::Alignment;
+use ratatui::layout::Constraint;
+use ratatui::layout::Direction;
+use ratatui::layout::Layout;
+use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::style::Stylize;
+use ratatui::text::Span;
+use ratatui::widgets::Block;
+use ratatui::widgets::BorderType;
+use ratatui::widgets::Borders;
+use ratatui::widgets::Clear;
+use ratatui::widgets::Paragraph;
 use shell_words::split;
 use tui_textarea::TextArea;
 
-use crate::{
-    ComponentInputResult,
-    commander::Commander,
-    ui::{
-        Component, ComponentAction, message_popup::MessagePopup, utils::centered_rect_line_height,
-    },
-};
+use crate::ComponentInputResult;
+use crate::commander::Commander;
+use crate::ui::Component;
+use crate::ui::ComponentAction;
+use crate::ui::message_popup::MessagePopup;
+use crate::ui::utils::centered_rect_line_height;
 
 pub struct CommandPopup<'a> {
     command_textarea: TextArea<'a>,

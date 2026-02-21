@@ -6,15 +6,17 @@ It is mostly used in the [files_tab][crate::ui::files_tab] module.
 */
 use std::sync::LazyLock;
 
-use crate::{
-    commander::{CommandError, Commander, ids::CommitId, log::Head},
-    env::DiffFormat,
-};
-
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use ratatui::style::Color;
 use regex::Regex;
 use tracing::instrument;
+
+use crate::commander::CommandError;
+use crate::commander::Commander;
+use crate::commander::ids::CommitId;
+use crate::commander::log::Head;
+use crate::env::DiffFormat;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct File {
@@ -221,10 +223,12 @@ impl Commander {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use insta::assert_debug_snapshot;
+
     use super::*;
     use crate::commander::tests::TestRepo;
-    use insta::assert_debug_snapshot;
-    use std::fs;
 
     #[test]
     fn get_files() -> Result<()> {

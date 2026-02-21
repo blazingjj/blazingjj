@@ -1,13 +1,15 @@
-use std::{path::PathBuf, process::Command};
+use std::path::PathBuf;
+use std::process::Command;
 
-use anyhow::{Context, Result, bail};
+use anyhow::Context;
+use anyhow::Result;
+use anyhow::bail;
 use ratatui::style::Color;
 use serde::Deserialize;
 
-use crate::{
-    commander::{RemoveEndLine, get_output_args},
-    keybinds::KeybindsConfig,
-};
+use crate::commander::RemoveEndLine;
+use crate::commander::get_output_args;
+use crate::keybinds::KeybindsConfig;
 
 // TODO: After 0.18, remove Config and replace with JjConfig
 #[derive(Deserialize, Debug, Clone, Default)]

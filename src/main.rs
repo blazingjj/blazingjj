@@ -1,31 +1,38 @@
 extern crate thiserror;
 
-use std::{
-    env::current_dir,
-    fs::{OpenOptions, canonicalize},
-    io::{self, ErrorKind},
-    process::Command,
-    time::{Duration, Instant},
-};
+use std::env::current_dir;
+use std::fs::OpenOptions;
+use std::fs::canonicalize;
+use std::io::ErrorKind;
+use std::io::{self};
+use std::process::Command;
+use std::time::Duration;
+use std::time::Instant;
 
-use anyhow::{Context, Result, bail};
+use anyhow::Context;
+use anyhow::Result;
+use anyhow::bail;
 use clap::Parser;
-use ratatui::{
-    Terminal,
-    backend::{Backend, CrosstermBackend},
-    crossterm::{
-        event::{
-            self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture,
-            Event, KeyboardEnhancementFlags, MouseEvent, MouseEventKind,
-            PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
-        },
-        execute,
-        terminal::{
-            EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-            supports_keyboard_enhancement,
-        },
-    },
-};
+use ratatui::Terminal;
+use ratatui::backend::Backend;
+use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm::event::DisableFocusChange;
+use ratatui::crossterm::event::DisableMouseCapture;
+use ratatui::crossterm::event::EnableFocusChange;
+use ratatui::crossterm::event::EnableMouseCapture;
+use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyboardEnhancementFlags;
+use ratatui::crossterm::event::MouseEvent;
+use ratatui::crossterm::event::MouseEventKind;
+use ratatui::crossterm::event::PopKeyboardEnhancementFlags;
+use ratatui::crossterm::event::PushKeyboardEnhancementFlags;
+use ratatui::crossterm::event::{self};
+use ratatui::crossterm::execute;
+use ratatui::crossterm::terminal::EnterAlternateScreen;
+use ratatui::crossterm::terminal::LeaveAlternateScreen;
+use ratatui::crossterm::terminal::disable_raw_mode;
+use ratatui::crossterm::terminal::enable_raw_mode;
+use ratatui::crossterm::terminal::supports_keyboard_enhancement;
 use tracing::info;
 use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::layer::SubscriberExt;
@@ -36,12 +43,11 @@ mod env;
 mod keybinds;
 mod ui;
 
-use crate::{
-    app::App,
-    commander::Commander,
-    env::Env,
-    ui::{ComponentAction, ui},
-};
+use crate::app::App;
+use crate::commander::Commander;
+use crate::env::Env;
+use crate::ui::ComponentAction;
+use crate::ui::ui;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]

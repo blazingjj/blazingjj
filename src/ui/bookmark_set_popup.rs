@@ -1,29 +1,39 @@
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use anyhow::bail;
-use ratatui::{
-    crossterm::event::{Event, KeyCode, KeyModifiers},
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Style, Stylize},
-    text::{Span, Text},
-    widgets::{Block, BorderType, Borders, Clear, List, ListState, Paragraph},
-};
+use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::KeyModifiers;
+use ratatui::layout::Alignment;
+use ratatui::layout::Constraint;
+use ratatui::layout::Direction;
+use ratatui::layout::Layout;
+use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::style::Stylize;
+use ratatui::text::Span;
+use ratatui::text::Text;
+use ratatui::widgets::Block;
+use ratatui::widgets::BorderType;
+use ratatui::widgets::Borders;
+use ratatui::widgets::Clear;
+use ratatui::widgets::List;
+use ratatui::widgets::ListState;
+use ratatui::widgets::Paragraph;
 use tui_textarea::TextArea;
 
-use crate::{
-    ComponentInputResult,
-    commander::{
-        Commander,
-        bookmarks::Bookmark,
-        ids::{ChangeId, CommitId},
-    },
-    env::Config,
-    ui::{
-        Component, ComponentAction,
-        styles::create_popup_block,
-        utils::{centered_rect, centered_rect_line_height},
-    },
-};
+use crate::ComponentInputResult;
+use crate::commander::Commander;
+use crate::commander::bookmarks::Bookmark;
+use crate::commander::ids::ChangeId;
+use crate::commander::ids::CommitId;
+use crate::env::Config;
+use crate::ui::Component;
+use crate::ui::ComponentAction;
+use crate::ui::styles::create_popup_block;
+use crate::ui::utils::centered_rect;
+use crate::ui::utils::centered_rect_line_height;
 
 enum BookmarkSetOption {
     CreateBookmark,
