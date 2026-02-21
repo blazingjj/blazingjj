@@ -15,8 +15,8 @@ use ratatui::widgets::BorderType;
 use ratatui::widgets::Borders;
 use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
+use ratatui_textarea::TextArea;
 use shell_words::split;
-use tui_textarea::TextArea;
 
 use crate::ComponentInputResult;
 use crate::commander::Commander;

@@ -13,8 +13,7 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::bail;
 use clap::Parser;
-use ratatui::Terminal;
-use ratatui::backend::Backend;
+use ratatui::DefaultTerminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::DisableFocusChange;
 use ratatui::crossterm::event::DisableMouseCapture;
@@ -141,8 +140,8 @@ fn main() -> Result<()> {
     // Setup app
     let mut app = App::new(env.clone())?;
 
-    let mut terminal = setup_terminal()?;
     install_panic_hook();
+    let mut terminal = setup_terminal()?;
 
     // Run app
     let res = run_app(&mut terminal, &mut app, &mut commander);
@@ -152,11 +151,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_app<B: Backend>(
-    terminal: &mut Terminal<B>,
-    app: &mut App,
-    commander: &mut Commander,
-) -> Result<()> {
+fn run_app(terminal: &mut DefaultTerminal, app: &mut App, commander: &mut Commander) -> Result<()> {
     let mut wait_duration = Duration::from_millis(0);
     loop {
         if event::poll(wait_duration)? {
@@ -190,7 +185,7 @@ fn run_app<B: Backend>(
     }
 }
 
-fn setup_terminal() -> Result<Terminal<CrosstermBackend<io::Stdout>>> {
+fn setup_terminal() -> Result<DefaultTerminal> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(
@@ -209,7 +204,7 @@ fn setup_terminal() -> Result<Terminal<CrosstermBackend<io::Stdout>>> {
     }
 
     let backend = CrosstermBackend::new(stdout);
-    Ok(Terminal::new(backend)?)
+    Ok(DefaultTerminal::new(backend)?)
 }
 
 fn restore_terminal() -> Result<()> {

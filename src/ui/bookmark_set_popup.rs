@@ -21,7 +21,7 @@ use ratatui::widgets::Clear;
 use ratatui::widgets::List;
 use ratatui::widgets::ListState;
 use ratatui::widgets::Paragraph;
-use tui_textarea::TextArea;
+use ratatui_textarea::TextArea;
 
 use crate::ComponentInputResult;
 use crate::commander::Commander;
