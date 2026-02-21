@@ -1,11 +1,13 @@
 use std::sync::LazyLock;
 
-use ratatui::{
-    layout::Alignment,
-    style::{Color, Style, Stylize},
-    text::Span,
-    widgets::{Block, BorderType, Padding},
-};
+use ratatui::layout::Alignment;
+use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::style::Stylize;
+use ratatui::text::Span;
+use ratatui::widgets::Block;
+use ratatui::widgets::BorderType;
+use ratatui::widgets::Padding;
 
 pub static POPUP_BLOCK: LazyLock<Block<'static>> = LazyLock::new(|| {
     Block::<'static>::bordered()

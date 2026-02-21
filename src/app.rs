@@ -1,17 +1,24 @@
-use crate::{
-    ComponentInputResult,
-    commander::Commander,
-    env::Env,
-    ui::{
-        Component, ComponentAction, bookmarks_tab::BookmarksTab, command_popup::CommandPopup,
-        files_tab::FilesTab, log_tab::LogTab,
-    },
-};
-use anyhow::{Result, anyhow};
 use core::fmt;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use std::time::Instant;
-use tracing::{info, instrument};
+
+use anyhow::Result;
+use anyhow::anyhow;
+use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::KeyModifiers;
+use ratatui::crossterm::event::{self};
+use tracing::info;
+use tracing::instrument;
+
+use crate::ComponentInputResult;
+use crate::commander::Commander;
+use crate::env::Env;
+use crate::ui::Component;
+use crate::ui::ComponentAction;
+use crate::ui::bookmarks_tab::BookmarksTab;
+use crate::ui::command_popup::CommandPopup;
+use crate::ui::files_tab::FilesTab;
+use crate::ui::log_tab::LogTab;
 
 #[derive(PartialEq, Copy, Clone)]
 pub enum Tab {

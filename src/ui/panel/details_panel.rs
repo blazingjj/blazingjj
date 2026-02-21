@@ -1,12 +1,21 @@
-use ratatui::{
-    crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind},
-    layout::{Margin, Position, Rect},
-    text::{Line, Text},
-    widgets::{
-        Block, BorderType, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
-        Wrap,
-    },
-};
+use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::KeyEvent;
+use ratatui::crossterm::event::KeyModifiers;
+use ratatui::crossterm::event::MouseEvent;
+use ratatui::crossterm::event::MouseEventKind;
+use ratatui::layout::Margin;
+use ratatui::layout::Position;
+use ratatui::layout::Rect;
+use ratatui::text::Line;
+use ratatui::text::Text;
+use ratatui::widgets::Block;
+use ratatui::widgets::BorderType;
+use ratatui::widgets::Padding;
+use ratatui::widgets::Paragraph;
+use ratatui::widgets::Scrollbar;
+use ratatui::widgets::ScrollbarOrientation;
+use ratatui::widgets::ScrollbarState;
+use ratatui::widgets::Wrap;
 use tracing::trace;
 
 /// Details panel used for the right side of each tab.

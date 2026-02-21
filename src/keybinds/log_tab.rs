@@ -2,9 +2,12 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
-use crate::{make_keybinds_help, set_keybinds, update_keybinds};
-
-use super::{Shortcut, config::LogTabKeybindsConfig, keybinds_store::KeybindsStore};
+use super::Shortcut;
+use super::config::LogTabKeybindsConfig;
+use super::keybinds_store::KeybindsStore;
+use crate::make_keybinds_help;
+use crate::set_keybinds;
+use crate::update_keybinds;
 
 #[derive(Debug)]
 pub struct LogTabKeybinds {

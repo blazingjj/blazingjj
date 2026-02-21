@@ -1,7 +1,8 @@
 /*!
 Helper structs [ChangeId] and [CommitId]
 */
-use std::{ffi::OsStr, fmt::Display};
+use std::ffi::OsStr;
+use std::fmt::Display;
 
 /// Wrapper around change ID.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
