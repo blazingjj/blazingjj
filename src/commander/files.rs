@@ -418,11 +418,11 @@ mod tests {
         let head0 = test_repo.commander.get_current_head()?;
 
         // First change
-        test_repo.commander.run_new(head0.commit_id.as_str())?;
+        test_repo.commander.run_new([head0.commit_id.as_str()])?;
         let head1 = test_repo.commander.get_current_head()?;
         fs::write(&file_path, b"AAA")?;
 
-        test_repo.commander.run_new(head0.commit_id.as_str())?;
+        test_repo.commander.run_new([head0.commit_id.as_str()])?;
         let head2 = test_repo.commander.get_current_head()?;
         fs::write(&file_path, b"BBB")?;
 

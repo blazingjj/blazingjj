@@ -11,10 +11,11 @@ use anyhow::{Context, Result};
 use tracing::instrument;
 
 impl Commander {
-    /// Create a new change after revision. Maps to `jj new <revision>`
-    #[instrument(level = "trace", skip(self))]
-    pub fn run_new(&self, revision: &str) -> Result<()> {
-        self.execute_void_jj_command(vec!["new", revision])
+    /// Create a new change after revisions. Maps to `jj new <revision>...`
+    #[instrument(level = "trace", skip(self, revisions))]
+    pub fn run_new<'a, T: IntoIterator<Item = &'a str>>(&self, revisions: T) -> Result<()> {
+        let args = ["new"].into_iter().chain::<T>(revisions);
+        self.execute_void_jj_command(args)
             .context("Failed executing jj new")
     }
 
@@ -201,7 +202,7 @@ mod tests {
         let test_repo = TestRepo::new()?;
 
         let head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new(head.commit_id.as_str())?;
+        test_repo.commander.run_new([head.commit_id.as_str()])?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
 
         Ok(())
@@ -212,7 +213,7 @@ mod tests {
         let test_repo = TestRepo::new()?;
 
         let head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new(head.commit_id.as_str())?;
+        test_repo.commander.run_new([head.commit_id.as_str()])?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
         test_repo
             .commander
@@ -276,7 +277,7 @@ mod tests {
 
         // Create new change, since by default `jj bookmark create` uses current change
         let head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new(head.commit_id.as_str())?;
+        test_repo.commander.run_new([head.commit_id.as_str()])?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
 
         let bookmark = test_repo
@@ -309,7 +310,7 @@ mod tests {
 
         // Create new change, since by default `jj bookmark create` uses current change
         let old_head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new(old_head.commit_id.as_str())?;
+        test_repo.commander.run_new([old_head.commit_id.as_str()])?;
         let new_head = test_repo.commander.get_current_head()?;
         assert_ne!(old_head, new_head);
 

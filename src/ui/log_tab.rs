@@ -14,7 +14,7 @@ use tui_textarea::{CursorMove, TextArea};
 
 use crate::{
     ComponentInputResult,
-    commander::{CommandError, Commander, log::Head},
+    commander::{CommandError, Commander, ids::CommitId, log::Head},
     env::{Config, DiffFormat},
     keybinds::{LogTabEvent, LogTabKeybinds},
     ui::{
@@ -23,8 +23,7 @@ use crate::{
         help_popup::HelpPopup,
         loader_popup::LoaderPopup,
         message_popup::MessagePopup,
-        panel::DetailsPanel,
-        panel::LogPanel,
+        panel::{DetailsPanel, LogPanel},
         rebase_popup::RebasePopup,
         utils::{centered_rect, centered_rect_line_height, tabs_to_spaces},
     },
@@ -169,6 +168,51 @@ impl<'a> LogTab<'a> {
         self.sync_head_output(commander);
     }
 
+    fn handle_new(&mut self, describe: bool) -> Result<ComponentInputResult> {
+        let mark_count = self.log_panel.marked_heads.len();
+        let text = if mark_count > 0 {
+            Text::from(vec![Line::from(format!(
+                "Are you sure you want to create a new change with {mark_count} marked parents?"
+            ))])
+            .fg(Color::default())
+        } else {
+            Text::from(vec![
+                Line::from("Are you sure you want to create a new change?"),
+                Line::from(format!("New parent: {}", self.head.change_id.as_str())),
+            ])
+            .fg(Color::default())
+        };
+        self.popup = ConfirmDialogState::new(
+            NEW_POPUP_ID,
+            Span::styled(" New ", Style::new().bold().cyan()),
+            text,
+        );
+        self.popup
+            .with_yes_button(ButtonLabel::YES.clone())
+            .with_no_button(ButtonLabel::NO.clone())
+            .with_listener(Some(self.popup_tx.clone()))
+            .open();
+        self.describe_after_new = describe;
+        Ok(ComponentInputResult::Handled)
+    }
+
+    // Execute new command, after self.popup returned
+    fn execute_new(&mut self, commander: &mut Commander) -> Result<Option<ComponentAction>> {
+        let commit_ids = self.log_panel.extract_and_clear_head_marks();
+        if commit_ids.is_empty() {
+            commander.run_new([self.head.commit_id.as_str()])?;
+        } else {
+            commander.run_new(commit_ids.iter().map(CommitId::as_str))?;
+        }
+        self.set_head(commander, commander.get_current_head()?);
+        if self.describe_after_new {
+            self.describe_after_new = false;
+            let textarea = TextArea::default();
+            self.describe_textarea = Some(textarea);
+        }
+        Ok(Some(ComponentAction::ChangeHead(self.head.clone())))
+    }
+
     fn handle_abandon(&mut self) -> Result<ComponentInputResult> {
         // Cannot abandon immutable changes
         if self.head.immutable {
@@ -272,21 +316,7 @@ impl<'a> LogTab<'a> {
             }
 
             LogTabEvent::CreateNew { describe } => {
-                self.popup = ConfirmDialogState::new(
-                    NEW_POPUP_ID,
-                    Span::styled(" New ", Style::new().bold().cyan()),
-                    Text::from(vec![
-                        Line::from("Are you sure you want to create a new change?"),
-                        Line::from(format!("New parent: {}", self.head.change_id.as_str())),
-                    ])
-                    .fg(Color::default()),
-                );
-                self.popup
-                    .with_yes_button(ButtonLabel::YES.clone())
-                    .with_no_button(ButtonLabel::NO.clone())
-                    .with_listener(Some(self.popup_tx.clone()))
-                    .open();
-                self.describe_after_new = describe;
+                return self.handle_new(describe);
             }
             LogTabEvent::Rebase => {
                 let source_change = commander.get_current_head()?;
@@ -495,14 +525,7 @@ impl Component for LogTab<'_> {
         {
             match res.0 {
                 NEW_POPUP_ID => {
-                    commander.run_new(self.head.commit_id.as_str())?;
-                    self.set_head(commander, commander.get_current_head()?);
-                    if self.describe_after_new {
-                        self.describe_after_new = false;
-                        let textarea = TextArea::default();
-                        self.describe_textarea = Some(textarea);
-                    }
-                    return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
+                    return self.execute_new(commander);
                 }
                 EDIT_POPUP_ID => {
                     commander.run_edit(self.head.commit_id.as_str(), self.edit_ignore_immutable)?;

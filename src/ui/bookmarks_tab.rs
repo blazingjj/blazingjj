@@ -279,7 +279,7 @@ impl Component for BookmarksTab<'_> {
                 }
                 NEW_POPUP_ID => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
-                        commander.run_new(&bookmark.to_string())?;
+                        commander.run_new([bookmark.to_string().as_str()])?;
                         let head = commander.get_current_head()?;
                         if self.describe_after_new {
                             self.describe_after_new_change = Some(head.change_id);
