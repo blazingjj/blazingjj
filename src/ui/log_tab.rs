@@ -16,7 +16,6 @@ use tui_confirm_dialog::ConfirmDialogState;
 use tui_confirm_dialog::Listener;
 
 use crate::ComponentInputResult;
-use crate::commander::CommandError;
 use crate::commander::Commander;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
@@ -27,10 +26,14 @@ use crate::keybinds::LogTabKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
 use crate::ui::bookmark_set_popup::BookmarkSetPopup;
+use crate::ui::commit_show_cache::CommitShowCache;
+use crate::ui::commit_show_cache::CommitShowKey;
+use crate::ui::commit_show_cache::CommitShowValue;
 use crate::ui::help_popup::HelpPopup;
 use crate::ui::loader_popup::LoaderPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
+use crate::ui::panel::LargeStringContent;
 use crate::ui::panel::LogPanel;
 use crate::ui::rebase_popup::RebasePopup;
 use crate::ui::utils::centered_rect;
@@ -50,14 +53,17 @@ pub struct LogTab<'a> {
     /// The list of changes shown to the left
     log_panel: LogPanel<'a>,
 
-    /// The change content shown to the right
+    /// The panel showing change content to the right
     head_panel: DetailsPanel,
-    head_output: Result<String, CommandError>,
 
-    /// The currently selected change. Indicates what to render
-    /// in head_output. It is a copy of self.log_panel.head,
-    /// so if these differ, we need to update self.head and
-    /// self.head_output
+    /// The selected change content key in the cache
+    head_key: CommitShowKey,
+
+    /// Cached change content
+    commit_show_cache: CommitShowCache,
+
+    /// The currently selected change. It is a copy of `self.log_panel.head`,
+    /// so if these differ, we need to update `self.head`
     head: Head,
 
     // Location of panels on screen. [0] = log, [1] = details
@@ -115,9 +121,14 @@ impl<'a> LogTab<'a> {
 
         let head = commander.get_current_head()?;
 
-        let head_output = commander
-            .get_commit_show(&head.commit_id, &diff_format, true)
-            .map(|text| tabs_to_spaces(&text));
+        const NO_WIDTH: usize = 0;
+        let head_key = CommitShowKey::new(head.clone(), diff_format.clone(), NO_WIDTH);
+
+        let mut commit_show_cache = CommitShowCache::new();
+
+        let _new_content = commit_show_cache.get_or_insert(&head_key, || {
+            Self::compute_head_content(commander, NO_WIDTH, &head, &diff_format)
+        });
 
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (bookmark_set_popup_tx, bookmark_set_popup_rx) = std::sync::mpsc::channel();
@@ -139,7 +150,9 @@ impl<'a> LogTab<'a> {
 
             head,
             head_panel: DetailsPanel::new(),
-            head_output,
+            head_key,
+
+            commit_show_cache,
 
             panel_rect: [Rect::ZERO, Rect::ZERO],
 
@@ -172,22 +185,55 @@ impl<'a> LogTab<'a> {
         self.refresh_head_output(commander);
     }
 
-    fn refresh_head_output(&mut self, commander: &mut Commander) {
-        let inner_width = self.head_panel.columns() as usize;
-        commander.limit_width(inner_width);
-        let new_output = commander
-            .get_commit_show(&self.head.commit_id, &self.diff_format, true)
-            .map(|text| tabs_to_spaces(&text));
+    // TODO Add a function clear_commit_show_cache that is used
+    // if the user asks for an application refresh.
+    //fn clear_commit_show_cache(&mut self) {
+    //    self.commit_show_cache.clear();
+    //}
 
-        let content_changed = match (&self.head_output, &new_output) {
-            (Ok(old), Ok(new)) => old != new,
-            (Err(old), Err(new)) => old.to_string() != new.to_string(),
-            _ => true,
+    /// Extract head content from commander.get_commit_show
+    /// Wraps it in a cache value before returning it.
+    fn compute_head_content(
+        commander: &mut Commander,
+        inner_width: usize,
+        head: &Head,
+        diff_format: &DiffFormat,
+    ) -> CommitShowValue {
+        // Call jj show
+        let commit_id = &head.commit_id;
+        commander.limit_width(inner_width);
+        let head_output = commander
+            .get_commit_show(commit_id, diff_format, true)
+            .map(|text| tabs_to_spaces(&text));
+        // Format output as string
+        let output = match head_output {
+            Ok(head_output) => head_output,
+            Err(err) => err.to_string(),
         };
+        // Build value used by cache and return it
+        let key = CommitShowKey::new(head.clone(), diff_format.clone(), inner_width);
+        CommitShowValue::new(key, output)
+    }
+
+    /// Refesh the diff of the currently selected change
+    fn refresh_head_output(&mut self, commander: &mut Commander) {
+        // If the key matches, then we can use the cached value.
+        // This is not entierly true. A reconfiguration of jj could
+        // generate different output for some keys. We probably need
+        // a forced cache clear function.
+
+        // TODO use shared function to build key, so width can be cleared if not needed
+        let inner_width = self.head_panel.columns() as usize;
+        let key = CommitShowKey::new(self.head.clone(), self.diff_format.clone(), inner_width);
+        let _new_content = self.commit_show_cache.get_or_insert(&key, || {
+            Self::compute_head_content(commander, inner_width, &self.head, &self.diff_format)
+        });
+
+        let content_changed = self.head_key != key;
 
         // Only update if content actually changed to prevent scroll jumping
         if content_changed {
-            self.head_output = new_output;
+            self.head_key = key;
             self.head_panel.scroll_to(0);
         }
     }
@@ -618,15 +664,10 @@ impl Component for LogTab<'_> {
         self.log_panel.draw(f, chunks[0])?;
 
         // Draw change details
-        {
-            let head_content = match self.head_output.as_ref() {
-                Ok(head_output) => head_output.into_text()?.lines,
-                Err(err) => err.into_text("Error getting head details")?.lines,
-            };
+        if let Some(content) = self.commit_show_cache.get(&self.head_key) {
             self.head_panel
-                .render_context()
+                .render_context::<LargeStringContent>(content.value())
                 .title(format!(" Details for {} ", self.head.change_id))
-                .content(head_content)
                 .draw(f, chunks[1])
         }
 
