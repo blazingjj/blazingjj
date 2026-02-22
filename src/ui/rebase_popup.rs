@@ -31,7 +31,6 @@ use ratatui::prelude::Direction;
 use ratatui::prelude::Layout;
 use ratatui::style::Color;
 use ratatui::style::Style;
-use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::text::Text;

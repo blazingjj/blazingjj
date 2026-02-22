@@ -7,13 +7,13 @@ use ratatui::crossterm::event::KeyEventKind;
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
+use ratatui_textarea::CursorMove;
+use ratatui_textarea::TextArea;
 use tracing::instrument;
 use tui_confirm_dialog::ButtonLabel;
 use tui_confirm_dialog::ConfirmDialog;
 use tui_confirm_dialog::ConfirmDialogState;
 use tui_confirm_dialog::Listener;
-use tui_textarea::CursorMove;
-use tui_textarea::TextArea;
 
 use crate::ComponentInputResult;
 use crate::commander::CommandError;
