@@ -434,12 +434,12 @@ impl<'a> LogTab<'a> {
                 return self.handle_new(describe);
             }
             LogTabEvent::Rebase => {
-                let source_change = new_commander().get_current_head()?;
+                let mut source_changes = self.log_panel.extract_and_clear_head_marks();
+                if source_changes.is_empty() {
+                    source_changes.push(new_commander().get_current_head()?.commit_id)
+                }
                 let target_change = &self.head;
-                self.rebase_popup = Some(RebasePopup::new(
-                    source_change.clone(),
-                    target_change.clone(),
-                ));
+                self.rebase_popup = Some(RebasePopup::new(source_changes, target_change.clone()));
             }
             LogTabEvent::Squash { ignore_immutable } => {
                 let current_head = new_commander().get_current_head()?;

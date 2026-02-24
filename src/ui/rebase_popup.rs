@@ -41,6 +41,8 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidget;
 
 use crate::ComponentInputResult;
+use crate::commander::ids::CommitId;
+use crate::commander::ids::commit_revset_union;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::keybinds::rebase_popup::CutOption;
@@ -55,7 +57,7 @@ type Keybinds = crate::keybinds::rebase_popup::Keybinds;
 pub struct RebasePopup {
     pub keybinds: Keybinds,
 
-    pub source_rev: Head,
+    pub source_revs: Vec<CommitId>,
     pub target_rev: Head,
 
     pub source_mode: CutOption,
@@ -63,10 +65,10 @@ pub struct RebasePopup {
 }
 
 impl RebasePopup {
-    pub fn new(source_rev: Head, target_rev: Head) -> Self {
+    pub fn new(source_revs: Vec<CommitId>, target_rev: Head) -> Self {
         Self {
             keybinds: Keybinds::default(),
-            source_rev,
+            source_revs,
             target_rev,
             source_mode: CutOption::SingleRevision,
             target_mode: PasteOption::NewBranch,
@@ -92,7 +94,6 @@ impl RebasePopup {
 
     /// Run the command that the popup is currently configured to do
     fn run_command(&self) -> Result<()> {
-        let src_rev = self.source_rev.commit_id.as_str();
         let tgt_rev = self.target_rev.commit_id.as_str();
         let src_mode = match self.source_mode {
             CutOption::IncludeDescendants => "-s",
@@ -104,7 +105,8 @@ impl RebasePopup {
             PasteOption::InsertAfter => "-A",
             PasteOption::InsertBefore => "-B",
         };
-        new_commander().run_rebase(src_mode, src_rev, tgt_mode, tgt_rev)?;
+        let src_rev = commit_revset_union(&self.source_revs);
+        new_commander().run_rebase(src_mode, &src_rev, tgt_mode, tgt_rev)?;
         Ok(())
     }
 
@@ -160,8 +162,8 @@ impl Component for RebasePopup {
             .split(area);
 
         // Radio buttons for source
-        let src_change_id: String = self.source_rev.change_id.as_str().chars().take(8).collect();
-        let src_commit_id: String = self.source_rev.commit_id.as_str().chars().take(8).collect();
+        //let src_change_id: String = self.source_revs.change_id.as_str().chars().take(8).collect();
+        //let src_commit_id: String = self.source_revs.commit_id.as_str().chars().take(8).collect();
         let src_options = vec![
             "-s this and descendants",
             "-b whole branch",
@@ -174,7 +176,8 @@ impl Component for RebasePopup {
         };
         frame.render_widget(
             Paragraph::new(Span::raw(format!(
-                "Source @ {src_change_id} {src_commit_id}"
+                //"Source @ {src_change_id} {src_commit_id}"
+                "Source"
             ))),
             chunks[0],
         );
