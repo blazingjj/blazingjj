@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Rebasing moves all of the marked changes at once, rather than the working
+  copy alone
 - `delta` is a diff format of its own, offered as soon as delta is installed
   and run in the colors a diff is drawn in rather than the ones you configured
   it with under git, rather than something to spell out as a diff pager. Where

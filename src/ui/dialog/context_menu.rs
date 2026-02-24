@@ -33,6 +33,9 @@ pub fn log_context_menu(
 ) -> Result<ChoicePopup> {
     let at = new_commander().get_current_head()?;
     let selected_is_at = selected.change_id == at.change_id;
+    // A change marked as the one being acted on is left out of what acts
+    // on it, so marking it alone leaves an operation nothing to do.
+    let marked_elsewhere = marked.iter().any(|mark| *mark != selected.commit_id);
 
     let mut items = vec![
         (
@@ -73,8 +76,18 @@ pub fn log_context_menu(
             command::ask_squash(selected, false)?,
         ),
     ];
-    if !selected_is_at {
-        items.push((Line::raw("Rebase @ to this"), command::rebase(selected)?));
+    // The working copy change has nowhere to go, and with marks in play
+    // it is those that move, so marking the destination alone leaves
+    // nothing to offer.
+    if (marked.is_empty() && !selected_is_at) || marked_elsewhere {
+        items.push((
+            Line::raw(if marked_elsewhere {
+                "Rebase the marked changes to this"
+            } else {
+                "Rebase @ to this"
+            }),
+            command::rebase(marked, selected)?,
+        ));
     }
     items.extend([
         (

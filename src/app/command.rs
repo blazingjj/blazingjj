@@ -50,6 +50,7 @@ use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
+use crate::ui::dialog::RebaseSources;
 use crate::ui::dialog::describe_action;
 use crate::ui::dialog::new_insert;
 use crate::ui::styles::AnsiText;
@@ -155,7 +156,7 @@ pub enum Command {
         description: String,
     },
     Rebase {
-        source: Head,
+        source: ActsOn,
         source_mode: RebaseSource,
         target: Head,
         target_mode: RebaseTarget,
@@ -327,15 +328,18 @@ impl Command {
                 source_mode,
                 target,
                 target_mode,
-            } => match new_commander().run_rebase(
-                source_mode,
-                &source.commit_id,
-                target_mode,
-                &target.commit_id,
-            ) {
-                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
-                Err(err) => Ok(Some(refused("Rebase", err))),
-            },
+            } => {
+                let (changes, taken) = source.into_parts();
+                match new_commander().run_rebase(
+                    source_mode,
+                    changes,
+                    target_mode,
+                    &target.commit_id,
+                ) {
+                    Ok(()) => Ok(Some(rewritten(taken))),
+                    Err(err) => Ok(Some(refused("Rebase", err))),
+                }
+            }
             Command::Push(target) => Ok(Some(with_loader(
                 background_tasks,
                 "Pushing",
@@ -652,10 +656,30 @@ pub fn describe(head: &Head) -> Result<AppAction> {
     })
 }
 
-/// Asking to rebase the working copy commit onto `destination`.
-pub fn rebase(destination: &Head) -> Result<AppAction> {
+/// Asking to rebase `sources`, or the working copy commit when none are
+/// marked, onto `destination`.
+pub fn rebase(marked: &[CommitId], destination: &Head) -> Result<AppAction> {
+    // Marking the change being moved onto says to move the others onto
+    // it, there being nowhere else it could go.
+    let sources: Vec<_> = marked
+        .iter()
+        .filter(|source| **source != destination.commit_id)
+        .cloned()
+        .collect();
+    if sources.is_empty() && !marked.is_empty() {
+        return Ok(message("Rebase", "Cannot rebase a change onto itself"));
+    }
+
+    let sources = match Revset::union(&sources) {
+        Some(changes) => RebaseSources::Marked {
+            changes,
+            count: sources.len(),
+        },
+        None => RebaseSources::WorkingCopy(new_commander().get_current_head()?),
+    };
+
     Ok(AppAction::SetPopup(Box::new(RebasePopup::new(
-        new_commander().get_current_head()?,
+        sources,
         destination.clone(),
     ))))
 }
@@ -978,6 +1002,16 @@ fn confirm(title: &'static str, question: Text<'static>, command: Command) -> Ap
     )))
 }
 
+/// What to show once an operation has rewritten changes without moving
+/// the working copy: every tab is out of date, and the log may be done
+/// marking what it handed over.
+fn rewritten(taken: Option<AppAction>) -> AppAction {
+    let mut actions = vec![AppAction::MarkTabsStale];
+    actions.extend(taken);
+
+    AppAction::Multiple(actions)
+}
+
 /// Put `change` up wherever a change shows, the repo having moved under
 /// whatever else is on screen.
 fn show_change(change: Head) -> AppAction {
@@ -1121,6 +1155,27 @@ mod tests {
 
     /// What jj answers when asked what a push would do
     const PREVIEW: &str = "Changes to push to origin:\n  Add bookmark here to 0123abcd\nDry-run requested, not pushing.\n";
+
+    #[test]
+    fn a_change_marked_as_its_own_rebase_destination_is_turned_down() {
+        set_test_env();
+
+        let onto = head("abc", false);
+        let action = rebase(std::slice::from_ref(&onto.commit_id), &onto).expect("the question");
+
+        assert!(says(action, "Cannot rebase a change onto itself"));
+    }
+
+    #[test]
+    fn a_rebase_leaves_its_destination_out_of_the_changes_it_moves() {
+        set_test_env();
+
+        let onto = head("abc", false);
+        let marked = [CommitId("def".to_owned()), onto.commit_id.clone()];
+        let rows = rows(rebase(&marked, &onto).expect("the popup"));
+
+        assert!(says_where(&rows, "Source: 1 marked change"), "{rows:?}");
+    }
 
     #[test]
     fn the_push_question_holds_what_jj_said_the_push_would_do() {
