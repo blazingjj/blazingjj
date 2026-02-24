@@ -56,7 +56,9 @@ impl Commander {
             .context("Failed executing jj describe")
     }
 
-    /// Rebase changes. Maps to `jj rebase -s <rev> -d <rev>` or similar
+    /// Rebase changes. Maps to `jj rebase -s <rev> -d <rev>` or similar.
+    /// `src_rev` may be a union expression (`commit_revset_union`) to
+    /// rebase multiple sources at once.
     #[instrument(level = "trace", skip(self))]
     pub fn run_rebase(
         &mut self,
@@ -65,7 +67,8 @@ impl Commander {
         tgt_mode: &str,
         tgt_rev: &str,
     ) -> Result<()> {
-        Ok(self.execute_void_jj_command(vec!["rebase", src_mode, src_rev, tgt_mode, tgt_rev])?)
+        self.execute_void_jj_command(["rebase", src_mode, src_rev, tgt_mode, tgt_rev])?;
+        Ok(())
     }
 
     /// Squash changes. Maps to `jj squash -u --into <revision>`
