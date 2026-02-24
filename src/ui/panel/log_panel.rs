@@ -18,7 +18,7 @@ use crate::commander::Commander;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::log::LogOutput;
-use crate::env::Config;
+use crate::env::JjConfig;
 use crate::keybinds::LogTabEvent;
 use crate::keybinds::LogTabKeybinds;
 use crate::ui::Component;
@@ -66,7 +66,7 @@ pub struct LogPanel<'a> {
     panel_rect: Rect,
 
     /// Configuration of colours
-    config: Config,
+    config: JjConfig,
 }
 
 const LEFT_MARGIN_BLANK: char = ' ';
@@ -115,7 +115,7 @@ impl<'a> LogPanel<'a> {
         let mut keybinds = LogTabKeybinds::default();
         if let Some(new_keybinds) = commander
             .env
-            .config
+            .jj_config
             .keybinds()
             .and_then(|k| k.log_tab.clone())
         {
@@ -143,7 +143,7 @@ impl<'a> LogPanel<'a> {
 
             panel_rect: Rect::ZERO,
 
-            config: commander.env.config.clone(),
+            config: commander.env.jj_config.clone(),
         })
     }
 

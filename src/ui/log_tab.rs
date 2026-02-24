@@ -20,8 +20,8 @@ use crate::commander::CommandError;
 use crate::commander::Commander;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
-use crate::env::Config;
 use crate::env::DiffFormat;
+use crate::env::JjConfig;
 use crate::keybinds::LogTabEvent;
 use crate::keybinds::LogTabKeybinds;
 use crate::ui::Component;
@@ -81,14 +81,14 @@ pub struct LogTab<'a> {
 
     edit_ignore_immutable: bool,
 
-    config: Config,
+    config: JjConfig,
     keybinds: LogTabKeybinds,
 }
 
 impl<'a> LogTab<'a> {
     #[instrument(level = "info", name = "Initializing log tab", parent = None, skip(commander))]
     pub fn new(commander: &mut Commander) -> Result<Self> {
-        let diff_format = commander.env.config.diff_format();
+        let diff_format = commander.env.jj_config.diff_format();
 
         let head = commander.get_current_head()?;
 
@@ -102,7 +102,7 @@ impl<'a> LogTab<'a> {
         let mut keybinds = LogTabKeybinds::default();
         if let Some(new_keybinds) = commander
             .env
-            .config
+            .jj_config
             .keybinds()
             .and_then(|k| k.log_tab.clone())
         {
@@ -138,7 +138,7 @@ impl<'a> LogTab<'a> {
 
             edit_ignore_immutable: false,
 
-            config: commander.env.config.clone(),
+            config: commander.env.jj_config.clone(),
             keybinds,
         })
     }

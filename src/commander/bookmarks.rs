@@ -198,7 +198,7 @@ impl Commander {
                 "show",
                 "--no-patch",
                 "--template",
-                self.env.config.bookmark_template().as_str(),
+                self.env.jj_config.bookmark_template().as_str(),
                 "-r",
                 change_id.as_str(),
             ],

@@ -28,7 +28,7 @@ use crate::commander::Commander;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
-use crate::env::Config;
+use crate::env::JjConfig;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
 use crate::ui::styles::create_popup_block;
@@ -49,7 +49,7 @@ pub struct BookmarkSetPopup<'a> {
     options: Vec<BookmarkSetOption>,
     list_state: ListState,
     list_height: u16,
-    config: Config,
+    config: JjConfig,
     creating: Option<TextArea<'a>>,
     tx: std::sync::mpsc::Sender<bool>,
 }
@@ -99,7 +99,7 @@ fn generate_name(commander: &Commander, change_id: &ChangeId) -> String {
 
 impl BookmarkSetPopup<'_> {
     pub fn new(
-        config: Config,
+        config: JjConfig,
         commander: &mut Commander,
         change_id: Option<ChangeId>,
         commit_id: CommitId,

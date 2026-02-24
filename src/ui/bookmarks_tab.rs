@@ -21,8 +21,8 @@ use crate::commander::CommandError;
 use crate::commander::Commander;
 use crate::commander::bookmarks::BookmarkLine;
 use crate::commander::ids::ChangeId;
-use crate::env::Config;
 use crate::env::DiffFormat;
+use crate::env::JjConfig;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
 use crate::ui::help_popup::HelpPopup;
@@ -86,7 +86,7 @@ pub struct BookmarksTab<'a> {
 
     diff_format: DiffFormat,
 
-    config: Config,
+    config: JjConfig,
 }
 
 fn get_current_bookmark_index(
@@ -122,7 +122,7 @@ fn get_current_bookmark_index(
 impl BookmarksTab<'_> {
     #[instrument(level = "info", name = "Initializing bookmarks tab", parent = None, skip(commander))]
     pub fn new(commander: &mut Commander) -> Result<Self> {
-        let diff_format = commander.env.config.diff_format();
+        let diff_format = commander.env.jj_config.diff_format();
 
         let show_all = false;
 
@@ -177,7 +177,7 @@ impl BookmarksTab<'_> {
 
             diff_format,
 
-            config: commander.env.config.clone(),
+            config: commander.env.jj_config.clone(),
         })
     }
 
