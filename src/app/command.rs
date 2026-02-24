@@ -120,7 +120,7 @@ pub enum Command {
         description: String,
     },
     Rebase {
-        source: Head,
+        source: Revset,
         source_mode: RebaseSource,
         target: Head,
         target_mode: RebaseTarget,
@@ -287,11 +287,14 @@ impl Command {
                 target_mode,
             } => match new_commander().run_rebase(
                 source_mode,
-                &source.commit_id,
+                source,
                 target_mode,
                 &target.commit_id,
             ) {
-                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                Ok(()) => Ok(Some(AppAction::Multiple(vec![
+                    AppAction::ClearLogMarks,
+                    AppAction::MarkTabsStale,
+                ]))),
                 Err(err) => Ok(Some(refused("Rebase", err))),
             },
             Command::Push(target) => Ok(Some(with_loader(
@@ -622,10 +625,17 @@ pub fn describe(head: &Head) -> Result<AppAction> {
     })
 }
 
-/// Asking to rebase the working copy commit onto `destination`.
-pub fn rebase(destination: &Head) -> Result<AppAction> {
+/// Asking to rebase `sources`, or the working copy commit when none are
+/// marked, onto `destination`.
+pub fn rebase(sources: &[CommitId], destination: &Head) -> Result<AppAction> {
+    let sources = if sources.is_empty() {
+        vec![new_commander().get_current_head()?.commit_id]
+    } else {
+        sources.to_vec()
+    };
+
     Ok(AppAction::SetPopup(Box::new(RebasePopup::new(
-        new_commander().get_current_head()?,
+        sources,
         destination.clone(),
     ))))
 }

@@ -41,9 +41,11 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidget;
 
 use crate::app::command::Command;
+use crate::commander::ids::CommitId;
 use crate::commander::jj::RebaseSource;
 use crate::commander::jj::RebaseTarget;
 use crate::commander::log::Head;
+use crate::commander::revset::Revset;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::keybinds::rebase_popup::CutOption;
@@ -61,7 +63,7 @@ pub struct RebasePopup {
     pub keybinds: Keybinds,
     popup_keybinds: PopupKeybinds,
 
-    pub source_rev: Head,
+    pub source_revs: Vec<CommitId>,
     pub target_rev: Head,
 
     pub source_mode: CutOption,
@@ -69,21 +71,22 @@ pub struct RebasePopup {
 }
 
 impl RebasePopup {
-    pub fn new(source_rev: Head, target_rev: Head) -> Self {
+    pub fn new(source_revs: Vec<CommitId>, target_rev: Head) -> Self {
         Self {
             keybinds: Keybinds::new(),
             popup_keybinds: PopupKeybinds::dialog(),
-            source_rev,
+            source_revs,
             target_rev,
             source_mode: CutOption::SingleRevision,
             target_mode: PasteOption::NewBranch,
         }
     }
 
-    /// The rebase the popup is currently configured to ask for.
-    fn command(&self) -> Command {
-        Command::Rebase {
-            source: self.source_rev.clone(),
+    /// The rebase the popup is currently configured to ask for, or [None]
+    /// when it has no source to move.
+    fn command(&self) -> Option<Command> {
+        Some(Command::Rebase {
+            source: Revset::union(&self.source_revs)?,
             source_mode: match self.source_mode {
                 CutOption::IncludeDescendants => RebaseSource::Descendants,
                 CutOption::IncludeBranch => RebaseSource::Branch,
@@ -95,7 +98,7 @@ impl RebasePopup {
                 PasteOption::InsertAfter => RebaseTarget::After,
                 PasteOption::InsertBefore => RebaseTarget::Before,
             },
-        }
+        })
     }
 }
 
@@ -131,8 +134,6 @@ impl Component for RebasePopup {
             .split(area);
 
         // Radio buttons for source
-        let src_change_id: String = self.source_rev.change_id.as_str().chars().take(8).collect();
-        let src_commit_id: String = self.source_rev.commit_id.as_str().chars().take(8).collect();
         let src_options = vec![
             "-s this and descendants",
             "-b whole branch",
@@ -143,12 +144,14 @@ impl Component for RebasePopup {
             CutOption::IncludeBranch => 1,
             CutOption::SingleRevision => 2,
         };
-        frame.render_widget(
-            Paragraph::new(Span::raw(format!(
-                "Source @ {src_change_id} {src_commit_id}"
-            ))),
-            chunks[0],
-        );
+        let src_label = match self.source_revs.as_slice() {
+            [only] => {
+                let prefix: String = only.as_str().chars().take(8).collect();
+                format!("Source {prefix}")
+            }
+            many => format!("Source: {} tagged changes", many.len()),
+        };
+        frame.render_widget(Paragraph::new(Span::raw(src_label)), chunks[0]);
         frame.render_stateful_widget(RadioButton::new(src_options), chunks[1], &mut src_select);
 
         // Radio buttons for target
@@ -189,8 +192,10 @@ impl Component for RebasePopup {
 
         match self.popup_keybinds.match_event(key) {
             PopupEvent::Accept => {
+                let mut actions = vec![AppAction::ClosePopup];
+                actions.extend(self.command().map(AppAction::Run));
                 return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                    vec![AppAction::ClosePopup, AppAction::Run(self.command())],
+                    actions,
                 )));
             }
             PopupEvent::Cancel => {

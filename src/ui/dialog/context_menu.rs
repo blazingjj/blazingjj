@@ -75,7 +75,14 @@ pub fn log_context_menu(
         ),
     ];
     if !selected_is_at {
-        items.push((Line::raw("Rebase @ to this"), command::rebase(selected)?));
+        items.push((
+            Line::raw(if marked.is_empty() {
+                "Rebase @ to this"
+            } else {
+                "Rebase the marked changes to this"
+            }),
+            command::rebase(marked, selected)?,
+        ));
     }
     items.extend([
         (
