@@ -102,15 +102,19 @@ The main functions are:
 * [set_head](LogTab::set_head) - Move the selection to a particular
   commit. Update panels.
 
+* [refresh_log_output](LogTab::refresh_log_output) - Update the log panel
+  by running `jj log`, and update the details panel.
+  (called by set_head)
+
 * [sync_head_output](LogTab::sync_head_output) - Make right panel show
   what left panel selected.
-  (called by set_head)
+  (called by refresh_log_output)
 
 * [refresh_head_output](LogTab::refresh_head_output) - Update content of
   right panel
   (called by sync_head_output)
 
-* [compute_head_content](LogTab::compute_head_content) - Call jj show and
+* [compute_head_content](LogTab::compute_head_content) - Call `jj show` and
   wrap the output as a ShowCacheValue
   (called by refresh_head_output)
 */
@@ -182,7 +186,14 @@ impl<'a> LogTab<'a> {
     /// Set cursor and update log panel and diff panel
     pub fn set_head(&mut self, commander: &mut Commander, head: Head) {
         self.log_panel.set_head(head);
+        self.refresh_log_output(commander);
+    }
+
+    /// Update the log panel and diff panel. This will also refresh
+    /// the diff cache.
+    fn refresh_log_output(&mut self, commander: &mut Commander) {
         self.log_panel.refresh_log_output(commander);
+        self.update_cache_active_commits();
         self.sync_head_output(commander);
     }
 
@@ -224,6 +235,19 @@ impl<'a> LogTab<'a> {
     //fn clear_commit_show_cache(&mut self) {
     //    self.commit_show_cache.clear();
     //}
+
+    /// Get the list of active commits from the log panel, and mark
+    /// the changes there as active. For non-active changes, keep at most
+    /// one commit.
+    fn update_cache_active_commits(&mut self) {
+        let key = CommitShowKey::new(
+            self.head.clone(),
+            self.diff_format.clone(),
+            self.head_panel.columns() as usize,
+        );
+        let active_heads = self.log_panel.log_heads();
+        self.commit_show_cache.set_active(active_heads, &key);
+    }
 
     /// Extract head content from commander.get_commit_show
     /// Wraps it in a cache value before returning it.
@@ -401,14 +425,12 @@ impl<'a> LogTab<'a> {
                 self.refresh_head_output(commander);
             }
             LogTabEvent::Refresh => {
-                self.log_panel.refresh_log_output(commander);
-                self.refresh_head_output(commander);
+                self.refresh_log_output(commander);
             }
 
             LogTabEvent::Duplicate => {
                 let _ = commander.run_duplicate(&self.head.change_id.to_string());
-                self.log_panel.refresh_log_output(commander);
-                self.refresh_head_output(commander);
+                self.refresh_log_output(commander);
             }
 
             LogTabEvent::CreateNew { describe } => {
@@ -625,8 +647,7 @@ impl Component for LogTab<'_> {
                 }
                 EDIT_POPUP_ID => {
                     commander.run_edit(self.head.commit_id.as_str(), self.edit_ignore_immutable)?;
-                    self.log_panel.refresh_log_output(commander);
-                    self.refresh_head_output(commander);
+                    self.refresh_log_output(commander);
                     return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
                 }
                 ABANDON_POPUP_ID => {
@@ -643,8 +664,7 @@ impl Component for LogTab<'_> {
         }
 
         if let Ok(true) = self.bookmark_set_popup_rx.try_recv() {
-            self.log_panel.refresh_log_output(commander);
-            self.refresh_head_output(commander)
+            self.refresh_log_output(commander);
         }
 
         Ok(None)
@@ -800,7 +820,7 @@ impl Component for LogTab<'_> {
                         } else {
                             Some(log_revset)
                         };
-                        self.log_panel.refresh_log_output(commander);
+                        self.refresh_log_output(commander);
                         self.log_revset_textarea = None;
                         return Ok(ComponentInputResult::Handled);
                     }
