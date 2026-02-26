@@ -85,6 +85,29 @@ pub struct LogTab<'a> {
     keybinds: LogTabKeybinds,
 }
 
+/**
+# Supporting functions
+Normally the event handling code would call
+member functions on log_panel and head_panel, but some operations
+are a little more complex. They get a supporting function.
+
+The main functions are:
+
+* [set_head](LogTab::set_head) - Move the selection to a particular
+  commit. Update panels.
+
+* [sync_head_output](LogTab::sync_head_output) - Make right panel show
+  what left panel selected.
+  (called by set_head)
+
+* [refresh_head_output](LogTab::refresh_head_output) - Update content of
+  right panel
+  (called by sync_head_output)
+
+* [compute_head_content](LogTab::compute_head_content) - Call jj show and
+  wrap the output as a ShowCacheValue
+  (called by refresh_head_output)
+*/
 impl<'a> LogTab<'a> {
     #[instrument(level = "info", name = "Initializing log tab", parent = None, skip(commander))]
     pub fn new(commander: &mut Commander) -> Result<Self> {
@@ -143,7 +166,7 @@ impl<'a> LogTab<'a> {
         })
     }
 
-    /// Update change details panel
+    /// Extract selection from log panel and update change details panel
     fn sync_head_output(&mut self, commander: &mut Commander) {
         self.head = self.log_panel.head.clone();
         self.refresh_head_output(commander);
@@ -175,7 +198,22 @@ impl<'a> LogTab<'a> {
         self.log_panel.refresh_log_output(commander);
         self.sync_head_output(commander);
     }
+}
 
+/**
+# Event handling
+Event handling happens in [`LogTab::handle_event`]. Over time, this has
+caused it to grow to a very long match with many arms. The size makes it hard
+to see what is going on, and the indentation is very deep.
+
+To fix this, we have begun a new code pattern, were the match arm simply
+calls a function. Most actions are two step operations, first create a dialog
+, then execcute some command. This is reflected in two functions located near
+each other in code:
+* `handle_<action>` - Set up the dialog and show it.
+* `execute_<action>` - Perform some action after the dialog closed.
+*/
+impl<'a> LogTab<'a> {
     fn handle_new(&mut self, describe: bool) -> Result<ComponentInputResult> {
         let mark_count = self.log_panel.marked_heads.len();
         let text = if mark_count > 0 {
