@@ -230,11 +230,11 @@ impl<'a> LogTab<'a> {
     // Cache related
     //
 
-    // TODO Add a function clear_commit_show_cache that is used
-    // if the user asks for an application refresh.
-    //fn clear_commit_show_cache(&mut self) {
-    //    self.commit_show_cache.clear();
-    //}
+    /// Mark all active elements as dirty, which will trigger a cache
+    /// update next time they are requested.
+    fn mark_cache_as_dirty(&mut self) {
+        self.commit_show_cache.mark_dirty();
+    }
 
     /// Get the list of active commits from the log panel, and mark
     /// the changes there as active. For non-active changes, keep at most
@@ -425,6 +425,7 @@ impl<'a> LogTab<'a> {
                 self.refresh_head_output(commander);
             }
             LogTabEvent::Refresh => {
+                self.mark_cache_as_dirty();
                 self.refresh_log_output(commander);
             }
 

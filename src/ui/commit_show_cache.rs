@@ -122,6 +122,23 @@ impl CommitShowCache {
         }
     }
 
+    /// Mark all active heads as dirty by changing their width to 1.
+    /// This way they will all be seen as old next time [set_active] is called.
+    pub fn mark_dirty(&mut self) {
+        // Collect all keys for active commits
+        // std::mem::take moves the map out of self and leaves an empty one in its place
+        let active_commits = std::mem::take(&mut self.active_commits);
+        let active_keys: Vec<CommitShowKey> = active_commits.values().flatten().cloned().collect();
+        // Mark document as dirty
+        for ac_key in active_keys {
+            let Some(mut value) = self.commit_document.remove(&ac_key) else {
+                continue;
+            };
+            value.key.width = 1;
+            self.insert_document(value);
+        }
+    }
+
     /// Return true if the key is present as active
     pub fn has_exact_match(&self, key: &CommitShowKey) -> bool {
         self.commit_document.contains_key(key)
