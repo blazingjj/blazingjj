@@ -12,7 +12,7 @@ use crate::commander::get_output_args;
 use crate::keybinds::KeybindsConfig;
 
 #[derive(Deserialize, Debug, Clone, Default)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", default)]
 pub struct JjConfig {
     pub blazingjj: JjConfigBlazingjj,
     pub ui: JjConfigUi,
