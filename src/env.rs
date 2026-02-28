@@ -23,6 +23,7 @@ pub struct JjConfig {
 #[serde(rename_all = "kebab-case")]
 pub struct JjConfigBlazingjj {
     highlight_color: Color,
+    describe_mode: Option<DescribeMode>,
     diff_format: Option<DiffFormat>,
     diff_tool: Option<String>,
     bookmark_template: Option<String>,
@@ -93,6 +94,9 @@ impl JjConfig {
             .or(self.templates.git_push_bookmark.clone())
             .unwrap_or("'push-' ++ change_id.short()".to_string())
     }
+    pub fn describe_mode(&self) -> DescribeMode {
+        self.blazingjj.describe_mode.unwrap_or(DescribeMode::Popup)
+    }
 
     pub fn layout(&self) -> JJLayout {
         self.blazingjj.layout
@@ -146,6 +150,14 @@ impl Env {
             jj_bin,
         })
     }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum DescribeMode {
+    #[default]
+    Popup,
+    Jj,
 }
 
 #[derive(Clone, Debug, Deserialize, Default, PartialEq)]
