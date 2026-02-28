@@ -28,6 +28,7 @@ use crate::ui::ComponentAction;
 use crate::ui::help_popup::HelpPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
+use crate::ui::panel::TextContent;
 use crate::ui::utils::centered_rect;
 use crate::ui::utils::centered_rect_line_height;
 use crate::ui::utils::tabs_to_spaces;
@@ -437,9 +438,8 @@ impl Component for BookmarksTab<'_> {
                 None => vec![],
             };
             self.bookmark_panel
-                .render_context()
+                .render_context::<TextContent>(bookmark_content)
                 .title(title)
-                .content(bookmark_content)
                 .draw(f, chunks[1]);
         }
 

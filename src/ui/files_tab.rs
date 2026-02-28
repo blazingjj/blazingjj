@@ -22,6 +22,7 @@ use crate::ui::ComponentAction;
 use crate::ui::help_popup::HelpPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
+use crate::ui::panel::TextContent;
 use crate::ui::utils::tabs_to_spaces;
 
 /// Files tab. Shows files in selected change in main panel and selected file diff in details panel
@@ -317,9 +318,8 @@ impl Component for FilesTab {
                 Err(err) => err.into_text("Error getting diff")?,
             };
             self.diff_panel
-                .render_context()
+                .render_context::<TextContent>(diff_content)
                 .title(" Diff ")
-                .content(diff_content)
                 .draw(f, chunks[1]);
         }
 

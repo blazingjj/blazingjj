@@ -1,3 +1,5 @@
+mod large_string;
+pub use large_string::LargeString;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;

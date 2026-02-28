@@ -218,6 +218,14 @@ impl<'a> LogPanel<'a> {
         }
     }
 
+    /// Get a list of all heads in log list
+    pub fn log_heads(&self) -> Vec<Head> {
+        match self.log_output.as_ref() {
+            Ok(log_output) => log_output.heads.clone(),
+            Err(_) => vec![],
+        }
+    }
+
     //
     //  Selected head and the special head index
     //

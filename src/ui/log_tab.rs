@@ -16,7 +16,6 @@ use tui_confirm_dialog::ConfirmDialogState;
 use tui_confirm_dialog::Listener;
 
 use crate::ComponentInputResult;
-use crate::commander::CommandError;
 use crate::commander::Commander;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
@@ -27,10 +26,14 @@ use crate::keybinds::LogTabKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
 use crate::ui::bookmark_set_popup::BookmarkSetPopup;
+use crate::ui::commit_show_cache::CommitShowCache;
+use crate::ui::commit_show_cache::CommitShowKey;
+use crate::ui::commit_show_cache::CommitShowValue;
 use crate::ui::help_popup::HelpPopup;
 use crate::ui::loader_popup::LoaderPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
+use crate::ui::panel::LargeStringContent;
 use crate::ui::panel::LogPanel;
 use crate::ui::rebase_popup::RebasePopup;
 use crate::ui::utils::centered_rect;
@@ -50,14 +53,17 @@ pub struct LogTab<'a> {
     /// The list of changes shown to the left
     log_panel: LogPanel<'a>,
 
-    /// The change content shown to the right
+    /// The panel showing change content to the right
     head_panel: DetailsPanel,
-    head_output: Result<String, CommandError>,
 
-    /// The currently selected change. Indicates what to render
-    /// in head_output. It is a copy of self.log_panel.head,
-    /// so if these differ, we need to update self.head and
-    /// self.head_output
+    /// The selected change content key in the cache
+    head_key: CommitShowKey,
+
+    /// Cached change content
+    commit_show_cache: CommitShowCache,
+
+    /// The currently selected change. It is a copy of `self.log_panel.head`,
+    /// so if these differ, we need to update `self.head`
     head: Head,
 
     // Location of panels on screen. [0] = log, [1] = details
@@ -85,6 +91,33 @@ pub struct LogTab<'a> {
     keybinds: LogTabKeybinds,
 }
 
+/**
+# Supporting functions
+Normally the event handling code would call
+member functions on log_panel and head_panel, but some operations
+are a little more complex. They get a supporting function.
+
+The main functions are:
+
+* [set_head](LogTab::set_head) - Move the selection to a particular
+  commit. Update panels.
+
+* [refresh_log_output](LogTab::refresh_log_output) - Update the log panel
+  by running `jj log`, and update the details panel.
+  (called by set_head)
+
+* [sync_head_output](LogTab::sync_head_output) - Make right panel show
+  what left panel selected.
+  (called by refresh_log_output)
+
+* [refresh_head_output](LogTab::refresh_head_output) - Update content of
+  right panel
+  (called by sync_head_output)
+
+* [compute_head_content](LogTab::compute_head_content) - Call `jj show` and
+  wrap the output as a ShowCacheValue
+  (called by refresh_head_output)
+*/
 impl<'a> LogTab<'a> {
     #[instrument(level = "info", name = "Initializing log tab", parent = None, skip(commander))]
     pub fn new(commander: &mut Commander) -> Result<Self> {
@@ -92,9 +125,14 @@ impl<'a> LogTab<'a> {
 
         let head = commander.get_current_head()?;
 
-        let head_output = commander
-            .get_commit_show(&head.commit_id, &diff_format, true)
-            .map(|text| tabs_to_spaces(&text));
+        const NO_WIDTH: usize = 0;
+        let head_key = CommitShowKey::new(head.clone(), diff_format.clone(), NO_WIDTH);
+
+        let mut commit_show_cache = CommitShowCache::new();
+
+        let _new_content = commit_show_cache.get_or_insert(&head_key, || {
+            Self::compute_head_content(commander, NO_WIDTH, &head, &diff_format)
+        });
 
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (bookmark_set_popup_tx, bookmark_set_popup_rx) = std::sync::mpsc::channel();
@@ -116,7 +154,9 @@ impl<'a> LogTab<'a> {
 
             head,
             head_panel: DetailsPanel::new(),
-            head_output,
+            head_key,
+
+            commit_show_cache,
 
             panel_rect: [Rect::ZERO, Rect::ZERO],
 
@@ -143,39 +183,111 @@ impl<'a> LogTab<'a> {
         })
     }
 
-    /// Update change details panel
+    /// Set cursor and update log panel and diff panel
+    pub fn set_head(&mut self, commander: &mut Commander, head: Head) {
+        self.log_panel.set_head(head);
+        self.refresh_log_output(commander);
+    }
+
+    /// Update the log panel and diff panel. This will also refresh
+    /// the diff cache.
+    fn refresh_log_output(&mut self, commander: &mut Commander) {
+        self.log_panel.refresh_log_output(commander);
+        self.update_cache_active_commits();
+        self.sync_head_output(commander);
+    }
+
+    /// Extract selection from log panel and update change details panel
     fn sync_head_output(&mut self, commander: &mut Commander) {
         self.head = self.log_panel.head.clone();
         self.refresh_head_output(commander);
     }
 
+    /// Refesh the diff of the currently selected change
     fn refresh_head_output(&mut self, commander: &mut Commander) {
-        let inner_width = self.head_panel.columns() as usize;
-        commander.limit_width(inner_width);
-        let new_output = commander
-            .get_commit_show(&self.head.commit_id, &self.diff_format, true)
-            .map(|text| tabs_to_spaces(&text));
+        // If the key matches, then we can use the cached value.
+        // This is not entierly true. A reconfiguration of jj could
+        // generate different output for some keys. We probably need
+        // a forced cache clear function.
 
-        let content_changed = match (&self.head_output, &new_output) {
-            (Ok(old), Ok(new)) => old != new,
-            (Err(old), Err(new)) => old.to_string() != new.to_string(),
-            _ => true,
-        };
+        // TODO use shared function to build key, so width can be cleared if not needed
+        let inner_width = self.head_panel.columns() as usize;
+        let key = CommitShowKey::new(self.head.clone(), self.diff_format.clone(), inner_width);
+        let _new_content = self.commit_show_cache.get_or_insert(&key, || {
+            Self::compute_head_content(commander, inner_width, &self.head, &self.diff_format)
+        });
+
+        let content_changed = self.head_key != key;
 
         // Only update if content actually changed to prevent scroll jumping
         if content_changed {
-            self.head_output = new_output;
+            self.head_key = key;
             self.head_panel.scroll_to(0);
         }
     }
 
-    /// Set cursor and update log panel and diff panel
-    pub fn set_head(&mut self, commander: &mut Commander, head: Head) {
-        self.log_panel.set_head(head);
-        self.log_panel.refresh_log_output(commander);
-        self.sync_head_output(commander);
+    //
+    // Cache related
+    //
+
+    /// Mark all active elements as dirty, which will trigger a cache
+    /// update next time they are requested.
+    fn mark_cache_as_dirty(&mut self) {
+        self.commit_show_cache.mark_dirty();
     }
 
+    /// Get the list of active commits from the log panel, and mark
+    /// the changes there as active. For non-active changes, keep at most
+    /// one commit.
+    fn update_cache_active_commits(&mut self) {
+        let key = CommitShowKey::new(
+            self.head.clone(),
+            self.diff_format.clone(),
+            self.head_panel.columns() as usize,
+        );
+        let active_heads = self.log_panel.log_heads();
+        self.commit_show_cache.set_active(active_heads, &key);
+    }
+
+    /// Extract head content from commander.get_commit_show
+    /// Wraps it in a cache value before returning it.
+    fn compute_head_content(
+        commander: &mut Commander,
+        inner_width: usize,
+        head: &Head,
+        diff_format: &DiffFormat,
+    ) -> CommitShowValue {
+        // Call jj show
+        let commit_id = &head.commit_id;
+        commander.limit_width(inner_width);
+        let head_output = commander
+            .get_commit_show(commit_id, diff_format, true)
+            .map(|text| tabs_to_spaces(&text));
+        // Format output as string
+        let output = match head_output {
+            Ok(head_output) => head_output,
+            Err(err) => err.to_string(),
+        };
+        // Build value used by cache and return it
+        let key = CommitShowKey::new(head.clone(), diff_format.clone(), inner_width);
+        CommitShowValue::new(key, output)
+    }
+}
+
+/**
+# Event handling
+Event handling happens in [`LogTab::handle_event`]. Over time, this has
+caused it to grow to a very long match with many arms. The size makes it hard
+to see what is going on, and the indentation is very deep.
+
+To fix this, we have begun a new code pattern, were the match arm simply
+calls a function. Most actions are two step operations, first create a dialog
+, then execcute some command. This is reflected in two functions located near
+each other in code:
+* `handle_<action>` - Set up the dialog and show it.
+* `execute_<action>` - Perform some action after the dialog closed.
+*/
+impl<'a> LogTab<'a> {
     fn handle_new(&mut self, describe: bool) -> Result<ComponentInputResult> {
         let mark_count = self.log_panel.marked_heads.len();
         let text = if mark_count > 0 {
@@ -313,14 +425,13 @@ impl<'a> LogTab<'a> {
                 self.refresh_head_output(commander);
             }
             LogTabEvent::Refresh => {
-                self.log_panel.refresh_log_output(commander);
-                self.refresh_head_output(commander);
+                self.mark_cache_as_dirty();
+                self.refresh_log_output(commander);
             }
 
             LogTabEvent::Duplicate => {
                 let _ = commander.run_duplicate(&self.head.change_id.to_string());
-                self.log_panel.refresh_log_output(commander);
-                self.refresh_head_output(commander);
+                self.refresh_log_output(commander);
             }
 
             LogTabEvent::CreateNew { describe } => {
@@ -537,8 +648,7 @@ impl Component for LogTab<'_> {
                 }
                 EDIT_POPUP_ID => {
                     commander.run_edit(self.head.commit_id.as_str(), self.edit_ignore_immutable)?;
-                    self.log_panel.refresh_log_output(commander);
-                    self.refresh_head_output(commander);
+                    self.refresh_log_output(commander);
                     return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
                 }
                 ABANDON_POPUP_ID => {
@@ -555,8 +665,7 @@ impl Component for LogTab<'_> {
         }
 
         if let Ok(true) = self.bookmark_set_popup_rx.try_recv() {
-            self.log_panel.refresh_log_output(commander);
-            self.refresh_head_output(commander)
+            self.refresh_log_output(commander);
         }
 
         Ok(None)
@@ -580,15 +689,10 @@ impl Component for LogTab<'_> {
         self.log_panel.draw(f, chunks[0])?;
 
         // Draw change details
-        {
-            let head_content = match self.head_output.as_ref() {
-                Ok(head_output) => head_output.into_text()?.lines,
-                Err(err) => err.into_text("Error getting head details")?.lines,
-            };
+        if let Some(content) = self.commit_show_cache.get(&self.head_key) {
             self.head_panel
-                .render_context()
+                .render_context::<LargeStringContent>(content.value())
                 .title(format!(" Details for {} ", self.head.change_id))
-                .content(head_content)
                 .draw(f, chunks[1])
         }
 
@@ -717,7 +821,7 @@ impl Component for LogTab<'_> {
                         } else {
                             Some(log_revset)
                         };
-                        self.log_panel.refresh_log_output(commander);
+                        self.refresh_log_output(commander);
                         self.log_revset_textarea = None;
                         return Ok(ComponentInputResult::Handled);
                     }
