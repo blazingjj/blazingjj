@@ -19,26 +19,31 @@ pub struct JjConfig {
     pub templates: JjConfigTemplates,
 }
 
-#[derive(Deserialize, Debug, Clone, Default)]
-#[serde(rename_all = "kebab-case", default)]
+#[derive(Deserialize, Debug, Clone)]
+#[serde(rename_all = "kebab-case")]
 pub struct JjConfigBlazingjj {
-    #[serde(default = "default_highlight_color")]
     highlight_color: Color,
     diff_format: Option<DiffFormat>,
     diff_tool: Option<String>,
     bookmark_template: Option<String>,
     layout: JJLayout,
-    #[serde(default = "default_layout_percent")]
     layout_percent: u16,
     keybinds: Option<KeybindsConfig>,
 }
 
-fn default_highlight_color() -> Color {
-    Color::Rgb(50, 50, 150)
-}
-
-fn default_layout_percent() -> u16 {
-    50
+impl Default for JjConfigBlazingjj {
+    fn default() -> Self {
+        Self {
+            highlight_color: Color::Rgb(50, 50, 150),
+            layout_percent: 50,
+            // Standard defaults for the rest
+            diff_format: None,
+            diff_tool: None,
+            bookmark_template: None,
+            layout: JJLayout::default(),
+            keybinds: None,
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
