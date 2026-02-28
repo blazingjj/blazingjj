@@ -20,7 +20,7 @@ pub struct JjConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", default)]
 pub struct JjConfigBlazingjj {
     highlight_color: Color,
     diff_format: Option<DiffFormat>,
