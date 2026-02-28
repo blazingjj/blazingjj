@@ -179,11 +179,45 @@ impl<'a> LogTab<'a> {
         })
     }
 
+    /// Set cursor and update log panel and diff panel
+    pub fn set_head(&mut self, commander: &mut Commander, head: Head) {
+        self.log_panel.set_head(head);
+        self.log_panel.refresh_log_output(commander);
+        self.sync_head_output(commander);
+    }
+
     /// Extract selection from log panel and update change details panel
     fn sync_head_output(&mut self, commander: &mut Commander) {
         self.head = self.log_panel.head.clone();
         self.refresh_head_output(commander);
     }
+
+    /// Refesh the diff of the currently selected change
+    fn refresh_head_output(&mut self, commander: &mut Commander) {
+        // If the key matches, then we can use the cached value.
+        // This is not entierly true. A reconfiguration of jj could
+        // generate different output for some keys. We probably need
+        // a forced cache clear function.
+
+        // TODO use shared function to build key, so width can be cleared if not needed
+        let inner_width = self.head_panel.columns() as usize;
+        let key = CommitShowKey::new(self.head.clone(), self.diff_format.clone(), inner_width);
+        let _new_content = self.commit_show_cache.get_or_insert(&key, || {
+            Self::compute_head_content(commander, inner_width, &self.head, &self.diff_format)
+        });
+
+        let content_changed = self.head_key != key;
+
+        // Only update if content actually changed to prevent scroll jumping
+        if content_changed {
+            self.head_key = key;
+            self.head_panel.scroll_to(0);
+        }
+    }
+
+    //
+    // Cache related
+    //
 
     // TODO Add a function clear_commit_show_cache that is used
     // if the user asks for an application refresh.
@@ -213,36 +247,6 @@ impl<'a> LogTab<'a> {
         // Build value used by cache and return it
         let key = CommitShowKey::new(head.clone(), diff_format.clone(), inner_width);
         CommitShowValue::new(key, output)
-    }
-
-    /// Refesh the diff of the currently selected change
-    fn refresh_head_output(&mut self, commander: &mut Commander) {
-        // If the key matches, then we can use the cached value.
-        // This is not entierly true. A reconfiguration of jj could
-        // generate different output for some keys. We probably need
-        // a forced cache clear function.
-
-        // TODO use shared function to build key, so width can be cleared if not needed
-        let inner_width = self.head_panel.columns() as usize;
-        let key = CommitShowKey::new(self.head.clone(), self.diff_format.clone(), inner_width);
-        let _new_content = self.commit_show_cache.get_or_insert(&key, || {
-            Self::compute_head_content(commander, inner_width, &self.head, &self.diff_format)
-        });
-
-        let content_changed = self.head_key != key;
-
-        // Only update if content actually changed to prevent scroll jumping
-        if content_changed {
-            self.head_key = key;
-            self.head_panel.scroll_to(0);
-        }
-    }
-
-    /// Set cursor and update log panel and diff panel
-    pub fn set_head(&mut self, commander: &mut Commander, head: Head) {
-        self.log_panel.set_head(head);
-        self.log_panel.refresh_log_output(commander);
-        self.sync_head_output(commander);
     }
 }
 
