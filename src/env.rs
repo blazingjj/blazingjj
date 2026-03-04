@@ -148,7 +148,7 @@ impl Env {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Default, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Default, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiffFormat {
     #[default]

@@ -1,3 +1,16 @@
+/*!
+The details_panel module contains the main class [DetailsPanel] which
+can show various content with an automatic scroll bar.
+
+There is no content in the DetailsPanel, that is provided every frame
+and rendered using the DetailsPanelRenderContext.
+
+To make this effcicient there are two ways to provide content.
+* TextContent - for small texts rendered as a Ratatui Paragraph.
+* LargeStringContent - to render only the visible subset.
+
+*/
+
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyModifiers;
@@ -18,6 +31,8 @@ use ratatui::widgets::ScrollbarState;
 use ratatui::widgets::Wrap;
 use tracing::trace;
 
+use crate::ui::utils::LargeString;
+
 /// Details panel used for the right side of each tab.
 /// This handles scrolling and wrapping.
 pub struct DetailsPanel {
@@ -33,11 +48,30 @@ pub struct DetailsPanel {
     wrap: bool,
 }
 
+/// Content of the detail panel must be able to render as a paragraph
+pub trait DetailContent<'a> {
+    /// Render content as a paragraph, and update panel total lines
+    fn render_as_paragraph(&self, panel: &mut DetailsPanel, area: Rect) -> Paragraph<'_>;
+}
+
+/// Content is preformatted ratatui Text
+pub struct TextContent<'a> {
+    text: Text<'a>,
+}
+
+/// Content is a large string that can quickly fetch a range of lines
+pub struct LargeStringContent<'a> {
+    large_string: &'a LargeString,
+}
+
 /// Transient object holding render data
-pub struct DetailsPanelRenderContext<'a> {
+pub struct DetailsPanelRenderContext<'a, Content>
+where
+    Content: DetailContent<'a>,
+{
     panel: &'a mut DetailsPanel,
     title: Option<Line<'a>>,
-    content: Option<Text<'a>>,
+    content: Content,
 }
 
 /// Commands that can be handled by the details panel
@@ -51,12 +85,63 @@ pub enum DetailsPanelEvent {
     ToggleWrap,
 }
 
-impl<'a> DetailsPanelRenderContext<'a> {
-    pub fn new(panel: &'a mut DetailsPanel) -> Self {
+//
+//  implementation
+//
+
+impl<'a> From<&'a LargeString> for LargeStringContent<'a> {
+    fn from(large_string: &'a LargeString) -> Self {
+        Self { large_string }
+    }
+}
+
+//impl<'a> From<Text<'a>> for TextContent<'a> {
+impl<'a, T: Into<Text<'a>>> From<T> for TextContent<'a> {
+    fn from(content: T) -> Self {
+        let text = content.into();
+        Self { text }
+    }
+}
+
+impl<'a> DetailContent<'a> for LargeStringContent<'a> {
+    fn render_as_paragraph(&self, panel: &mut DetailsPanel, area: Rect) -> Paragraph<'_> {
+        // Update total length. This is used by the scroll bar
+        panel.lines = self.large_string.lines() as u16;
+        // Extract visible part of content
+        let top_line = panel.scroll as usize;
+        let line_count = area.height as usize;
+        let content_text = self.large_string.render(top_line, line_count);
+        Paragraph::new(content_text)
+    }
+}
+
+impl<'a> DetailContent<'a> for TextContent<'a> {
+    fn render_as_paragraph(&self, panel: &mut DetailsPanel, area: Rect) -> Paragraph<'_> {
+        let content_text = &self.text;
+        let mut paragraph = Paragraph::new(content_text.clone());
+
+        if panel.wrap {
+            paragraph = paragraph.wrap(Wrap { trim: false });
+        }
+
+        panel.content_rect = area;
+        panel.lines = paragraph.line_count(area.width) as u16;
+
+        paragraph = paragraph.scroll((panel.scroll.min(panel.lines.saturating_sub(1)), 0));
+
+        paragraph
+    }
+}
+
+impl<'a, Content> DetailsPanelRenderContext<'a, Content>
+where
+    Content: DetailContent<'a>,
+{
+    pub fn new(panel: &'a mut DetailsPanel, content: Content) -> Self {
         Self {
             panel,
             title: None,
-            content: None,
+            content,
         }
     }
     /// Set the title on the frame that surrounds the content
@@ -65,14 +150,6 @@ impl<'a> DetailsPanelRenderContext<'a> {
         T: Into<Line<'a>>,
     {
         self.title = Some(title.into());
-        self
-    }
-    /// Set the text inside the panel
-    pub fn content<T>(&mut self, content: T) -> &mut Self
-    where
-        T: Into<Text<'a>>,
-    {
-        self.content = Some(content.into());
         self
     }
 
@@ -89,16 +166,11 @@ impl<'a> DetailsPanelRenderContext<'a> {
             border = border.title_top(title.clone());
         }
 
-        // Find text inside border
-        let content_text = match &self.content {
-            Some(text) => text,
-            None => &Text::raw(""),
-        };
         // Create content widget that uses border
         let paragraph_area = border.inner(area);
-        let paragraph = self
-            .panel
-            .render(content_text.clone(), paragraph_area)
+        let content = &self.content;
+        let paragraph = content
+            .render_as_paragraph(self.panel, paragraph_area)
             .block(border);
 
         // render content and border
@@ -134,27 +206,23 @@ impl DetailsPanel {
         }
     }
 
-    pub fn render_context(&mut self) -> DetailsPanelRenderContext<'_> {
-        DetailsPanelRenderContext::new(self)
-    }
-
-    /// Render the content into the area.
-    pub fn render<'a, T>(&mut self, content: T, area: Rect) -> Paragraph<'a>
+    /// Create a RenderContext that can render the provided content
+    /// as a Paragraph into an area.
+    /*
+    pub fn render_context<'a, Content, T>(&'a mut self, content: T)
+     -> DetailsPanelRenderContext<'a, Content>
     where
-        T: Into<Text<'a>>,
+        Content: DetailContent<'a>,
+        T: Into<Content>,
+    */
+    pub fn render_context<'a, Content>(
+        &'a mut self,
+        content: impl Into<Content>,
+    ) -> DetailsPanelRenderContext<'a, Content>
+    where
+        Content: DetailContent<'a>,
     {
-        let mut paragraph = Paragraph::new(content);
-
-        if self.wrap {
-            paragraph = paragraph.wrap(Wrap { trim: false });
-        }
-
-        self.content_rect = area;
-        self.lines = paragraph.line_count(area.width) as u16;
-
-        paragraph = paragraph.scroll((self.scroll.min(self.lines.saturating_sub(1)), 0));
-
-        paragraph
+        DetailsPanelRenderContext::new(self, content.into())
     }
 
     /// Return number of columns available for content at last call to render.
