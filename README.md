@@ -21,6 +21,7 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Set a bookmark to selected change with `b`
   - Fetch/push with `f`/`p`
   - Squash current changes to selected change with `s`/`S`
+  - Yank change ID/revision to the system clipboard with `y`/`Y`
 - Files
   - View files in current change and diff in side panel
   - See a change's files from the log tab with `Enter`
