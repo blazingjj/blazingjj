@@ -1,5 +1,7 @@
 #![expect(clippy::borrow_interior_mutable_const)]
 
+use std::cmp::max;
+
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
@@ -35,7 +37,7 @@ use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::LogPanel;
 use crate::ui::rebase_popup::RebasePopup;
-use crate::ui::utils::centered_rect;
+use crate::ui::utils::centered_rect_fixed;
 use crate::ui::utils::centered_rect_line_height;
 use crate::ui::utils::tabs_to_spaces;
 
@@ -632,7 +634,15 @@ impl Component for LogTab<'_> {
                     .title_alignment(Alignment::Center)
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(Color::Green));
-                let area = centered_rect(area, 50, 50);
+                // Text target size
+                const MAX_COMMIT_WIDTH: u16 = 72; // git recommended max width
+                const MIN_COMMIT_HEIGHT: u16 = 5; // heading + blank + 3 lines
+                // Include margin and help text to get size
+                let area = centered_rect_fixed(
+                    area,
+                    /* width */ MAX_COMMIT_WIDTH + 2,
+                    /* height */ max(MIN_COMMIT_HEIGHT + 4, area.height / 2),
+                );
                 f.render_widget(Clear, area);
                 f.render_widget(&block, area);
 

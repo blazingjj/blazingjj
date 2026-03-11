@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Log panel can mark and abandon multiple commits
 - Log panel create new revision with marked commits as parents
 - Add support for copying the Change ID/revision of the current log tab entry using y/Y
+- Fix Describe dialog width at git recommendation for commit message
 
 
 ## [0.7.1] - 2026-01-16
