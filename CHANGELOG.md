@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix Describe dialog width at git recommendation for commit message
 - Log tab diff is cached
 
+### Fixed
+
+- prevent (macos) os error 22 crash by capping event poll timeout
 
 ## [0.7.1] - 2026-01-16
 

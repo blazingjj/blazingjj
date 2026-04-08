@@ -152,7 +152,10 @@ fn main() -> Result<()> {
 }
 
 fn run_app(terminal: &mut DefaultTerminal, app: &mut App, commander: &mut Commander) -> Result<()> {
-    let mut wait_duration = Duration::from_millis(0);
+    // Duration::MAX overflows the timespec struct used by kevent/kqueue on macOS,
+    // causing EINVAL (os error 22). Use a safe large value instead.
+    const FOREVER: Duration = Duration::from_secs(24 * 3600);
+    let mut wait_duration = Duration::ZERO;
     loop {
         if event::poll(wait_duration)? {
             match event::read()? {
@@ -178,7 +181,7 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App, commander: &mut Comman
         // Allow popups like the fetch animation to update every 100ms, if there is no popup, just
         // wait for an incoming event
         wait_duration = if app.popup.is_none() {
-            Duration::MAX
+            FOREVER
         } else {
             Duration::from_millis(100)
         };
