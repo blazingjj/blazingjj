@@ -19,10 +19,7 @@ use ratatui::crossterm::event::DisableFocusChange;
 use ratatui::crossterm::event::DisableMouseCapture;
 use ratatui::crossterm::event::EnableFocusChange;
 use ratatui::crossterm::event::EnableMouseCapture;
-use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyboardEnhancementFlags;
-use ratatui::crossterm::event::MouseEvent;
-use ratatui::crossterm::event::MouseEventKind;
 use ratatui::crossterm::event::PopKeyboardEnhancementFlags;
 use ratatui::crossterm::event::PushKeyboardEnhancementFlags;
 use ratatui::crossterm::event::{self};
@@ -152,40 +149,49 @@ fn main() -> Result<()> {
 }
 
 fn run_app(terminal: &mut DefaultTerminal, app: &mut App, commander: &mut Commander) -> Result<()> {
-    // Duration::MAX overflows the timespec struct used by kevent/kqueue on macOS,
-    // causing EINVAL (os error 22). Use a safe large value instead.
-    const FOREVER: Duration = Duration::from_secs(24 * 3600);
-    let mut wait_duration = Duration::ZERO;
     loop {
-        if event::poll(wait_duration)? {
-            match event::read()? {
-                event::Event::FocusLost => continue,
-                Event::Mouse(MouseEvent {
-                    kind: MouseEventKind::Moved,
-                    ..
-                }) => continue,
-                event => {
-                    app.stats.start_time = Instant::now();
-                    if app.input(event, commander)? {
-                        return Ok(());
-                    }
-                }
-            }
-        }
-
         app.update(commander)?;
         terminal.draw(|f| {
             let _ = ui(f, app);
         })?;
 
-        // Allow popups like the fetch animation to update every 100ms, if there is no popup, just
-        // wait for an incoming event
-        wait_duration = if app.popup.is_none() {
-            FOREVER
-        } else {
-            Duration::from_millis(100)
-        };
+        let should_stop = input_to_app(app, commander)?;
+
+        if should_stop {
+            return Ok(());
+        }
     }
+}
+
+/// Let app process all input events in queue before returning
+/// to draw the next frame.
+/// Return true if application should stop
+fn input_to_app(app: &mut App, commander: &mut Commander) -> Result<bool> {
+    // Duration::MAX overflows the timespec struct used by kevent/kqueue on macOS,
+    // causing EINVAL (os error 22). Use a safe large value instead.
+    const FOREVER: Duration = Duration::from_secs(24 * 3600);
+
+    // Allow popups like the fetch animation to update every 100ms.
+    let wait_duration = if app.popup.is_some() {
+        Duration::from_millis(100)
+    } else {
+        FOREVER
+    };
+    // If no event arrives, return and draw next frame.
+    let event_arrived = event::poll(wait_duration)?;
+    app.stats.start_time = Instant::now();
+    if !event_arrived {
+        return Ok(false);
+    }
+
+    // Handle all pending events in the queue.
+    // Stop if an event requested the app to stop.
+    let mut should_stop: bool = false;
+    while event::poll(Duration::ZERO)? && !should_stop {
+        let event = event::read()?;
+        should_stop = app.input(event, commander)?;
+    }
+    Ok(should_stop)
 }
 
 fn setup_terminal() -> Result<DefaultTerminal> {

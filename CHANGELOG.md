@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add support for copying the Change ID/revision of the current log tab entry using y/Y
 - Fix Describe dialog width at git recommendation for commit message
 - Log tab diff is cached
+- Process multiple events per frame
 
 ### Fixed
 
