@@ -1,5 +1,13 @@
+/** The environment configures the application.
+
+It is a combination of
+- configuration files
+- environment variables
+- command line arguments
+*/
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::OnceLock;
 
 use anyhow::Context;
 use anyhow::Result;
@@ -10,6 +18,19 @@ use serde::Deserialize;
 use crate::commander::RemoveEndLine;
 use crate::commander::get_output_args;
 use crate::keybinds::KeybindsConfig;
+
+/// Singleton holding application environment
+static ENV: OnceLock<Env> = OnceLock::new();
+
+/// Set application environment. Panics if called twice
+pub fn set_env(env: Env) {
+    ENV.set(env).expect("set_env must only be called once");
+}
+
+/// Get application environment. Panics if not set first
+pub fn get_env() -> &'static Env {
+    ENV.get().unwrap()
+}
 
 #[derive(Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "kebab-case", default)]

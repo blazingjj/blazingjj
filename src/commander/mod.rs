@@ -49,6 +49,7 @@ use version_compare::compare;
 
 use crate::env::DiffFormat;
 use crate::env::Env;
+use crate::env::get_env;
 
 /// The oldest version of jj that is known to work with blazingjj.
 /// 0.33.0 changed the template language for evolog/obslog
@@ -104,6 +105,12 @@ pub struct Commander {
     // Used for testing
     pub jj_config_toml: Option<Vec<String>>,
     pub force_no_color: bool,
+}
+
+/// Initialize a new [Commander] using [ENV]
+/// Panics if ENV is not yet initialized
+pub fn new_commander() -> Commander {
+    Commander::new(get_env())
 }
 
 impl Commander {

@@ -42,6 +42,7 @@ mod ui;
 use crate::app::App;
 use crate::commander::Commander;
 use crate::env::Env;
+use crate::env::set_env;
 use crate::ui::ComponentAction;
 use crate::ui::ui;
 
@@ -67,6 +68,27 @@ struct Args {
 }
 
 fn main() -> Result<()> {
+    // Setup environment
+    set_env(init_env()?);
+
+    // Setup app
+    let mut app = App::new()?;
+
+    install_panic_hook();
+    let mut terminal = setup_terminal()?;
+
+    // Run app
+    let res = run_app(&mut terminal, &mut app);
+    restore_terminal()?;
+    res?;
+
+    Ok(())
+}
+
+/// Examine environment variables and command line arguments
+/// and perform basic initialisation
+fn init_env() -> Result<Env> {
+    // Configure tracing to log file
     let should_log = std::env::var("BLAZINGJJ_LOG")
         .map(|log| log == "1" || log.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
@@ -89,6 +111,7 @@ fn main() -> Result<()> {
         None
     };
 
+    // Configure tracing to Chrome
     let should_trace = std::env::var("BLAZINGJJ_TRACE")
         .map(|log| log == "1" || log.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
@@ -99,6 +122,7 @@ fn main() -> Result<()> {
         (None, None)
     };
 
+    // Set up tracing
     let subscriber = tracing_subscriber::Registry::default()
         .with(log_layer)
         .with(trace_layer);
@@ -126,36 +150,26 @@ fn main() -> Result<()> {
         );
     }
 
-    // Setup environment
+    // Check that jj is recent enough
     let env = Env::new(path, args.revisions, jj_bin)?;
-    let mut commander = Commander::new(&env);
 
     if !args.ignore_jj_version {
+        let commander = Commander::new(&env);
         commander.check_jj_version()?;
     }
 
-    // Setup app
-    let mut app = App::new(env.clone())?;
-
-    install_panic_hook();
-    let mut terminal = setup_terminal()?;
-
-    // Run app
-    let res = run_app(&mut terminal, &mut app, &mut commander);
-    restore_terminal()?;
-    res?;
-
-    Ok(())
+    // Return initialized environment
+    Ok(env)
 }
 
-fn run_app(terminal: &mut DefaultTerminal, app: &mut App, commander: &mut Commander) -> Result<()> {
+fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
     loop {
-        app.update(commander)?;
+        app.update()?;
         terminal.draw(|f| {
             let _ = ui(f, app);
         })?;
 
-        let should_stop = input_to_app(app, commander)?;
+        let should_stop = input_to_app(app)?;
 
         if should_stop {
             return Ok(());
@@ -166,7 +180,7 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App, commander: &mut Comman
 /// Let app process all input events in queue before returning
 /// to draw the next frame.
 /// Return true if application should stop
-fn input_to_app(app: &mut App, commander: &mut Commander) -> Result<bool> {
+fn input_to_app(app: &mut App) -> Result<bool> {
     // Duration::MAX overflows the timespec struct used by kevent/kqueue on macOS,
     // causing EINVAL (os error 22). Use a safe large value instead.
     const FOREVER: Duration = Duration::from_secs(24 * 3600);
@@ -189,7 +203,7 @@ fn input_to_app(app: &mut App, commander: &mut Commander) -> Result<bool> {
     let mut should_stop: bool = false;
     while event::poll(Duration::ZERO)? && !should_stop {
         let event = event::read()?;
-        should_stop = app.input(event, commander)?;
+        should_stop = app.input(event)?;
     }
     Ok(should_stop)
 }

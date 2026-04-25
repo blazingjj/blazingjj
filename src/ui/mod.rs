@@ -29,8 +29,8 @@ use tracing::instrument;
 use crate::ComponentInputResult;
 use crate::app::App;
 use crate::app::Tab;
-use crate::commander::Commander;
 use crate::commander::log::Head;
+use crate::env::get_env;
 
 pub enum ComponentAction {
     ViewFiles(Head),
@@ -43,17 +43,17 @@ pub enum ComponentAction {
 
 pub trait Component {
     // Called when switching to tab
-    fn focus(&mut self, _commander: &mut Commander) -> Result<()> {
+    fn focus(&mut self) -> Result<()> {
         Ok(())
     }
 
-    fn update(&mut self, _commander: &mut Commander) -> Result<Option<ComponentAction>> {
+    fn update(&mut self) -> Result<Option<ComponentAction>> {
         Ok(None)
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()>;
 
-    fn input(&mut self, commander: &mut Commander, event: Event) -> Result<ComponentInputResult>;
+    fn input(&mut self, event: Event) -> Result<ComponentInputResult>;
 }
 
 #[instrument(level = "trace", name = "draw", skip(f, app))]
@@ -80,7 +80,7 @@ pub fn ui(f: &mut Frame, app: &mut App) -> Result<()> {
                 .title(" Tabs ")
                 .border_type(BorderType::Rounded),
         )
-        .highlight_style(Style::default().bg(app.env.jj_config.highlight_color()))
+        .highlight_style(Style::default().bg(get_env().jj_config.highlight_color()))
         .select(
             Tab::VALUES
                 .iter()

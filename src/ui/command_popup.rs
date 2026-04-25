@@ -19,7 +19,7 @@ use ratatui_textarea::TextArea;
 use shell_words::split;
 
 use crate::ComponentInputResult;
-use crate::commander::Commander;
+use crate::commander::new_commander;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
 use crate::ui::message_popup::MessagePopup;
@@ -73,11 +73,7 @@ impl Component for CommandPopup<'_> {
         Ok(())
     }
 
-    fn input(
-        &mut self,
-        commander: &mut Commander,
-        event: Event,
-    ) -> anyhow::Result<ComponentInputResult> {
+    fn input(&mut self, event: Event) -> anyhow::Result<ComponentInputResult> {
         if let Event::Key(key) = event {
             match key.code {
                 KeyCode::Enter => {
@@ -99,7 +95,7 @@ impl Component for CommandPopup<'_> {
                         .context("Failed to split command input")
                         .and_then(|command| {
                             // TODO: Support color. PopupMessage (used by MessagePopup) breaks when colored
-                            Ok(commander.execute_jj_command(command, false, false)?)
+                            Ok(new_commander().execute_jj_command(command, false, false)?)
                         });
                     let message = match res {
                         Ok(str) => str,

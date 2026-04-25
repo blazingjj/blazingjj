@@ -14,7 +14,6 @@ use ratatui::widgets::Borders;
 use tui_confirm_dialog::PopupMessage;
 
 use crate::ComponentInputResult;
-use crate::commander::Commander;
 use crate::ui::Component;
 
 pub struct MessagePopup<'a> {
@@ -49,7 +48,7 @@ impl Component for MessagePopup<'_> {
         Ok(())
     }
 
-    fn input(&mut self, _commander: &mut Commander, _event: Event) -> Result<ComponentInputResult> {
+    fn input(&mut self, _event: Event) -> Result<ComponentInputResult> {
         Ok(ComponentInputResult::NotHandled)
     }
 }

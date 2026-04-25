@@ -86,11 +86,7 @@ impl Component for HelpPopup {
         Ok(())
     }
 
-    fn input(
-        &mut self,
-        _commander: &mut crate::commander::Commander,
-        event: Event,
-    ) -> anyhow::Result<crate::ComponentInputResult> {
+    fn input(&mut self, event: Event) -> anyhow::Result<crate::ComponentInputResult> {
         if let Event::Key(key) = event
             && key.kind == event::KeyEventKind::Press
         {

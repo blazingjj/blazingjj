@@ -23,7 +23,6 @@ use throbber_widgets_tui::ThrobberState;
 
 use crate::ComponentInputResult;
 use crate::commander::CommandError;
-use crate::commander::Commander;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
 use crate::ui::message_popup::MessagePopup;
@@ -69,7 +68,7 @@ impl Component for LoaderPopup {
     ///
     /// This updates the animation and also polls the running operation to see if the popup may be
     /// closed. In case of an error, that will be displayed in a new popup.
-    fn update(&mut self, _commander: &mut Commander) -> Result<Option<ComponentAction>> {
+    fn update(&mut self) -> Result<Option<ComponentAction>> {
         if self.last_animation_update.elapsed() >= Duration::from_millis(100) {
             self.throbber_state.calc_next();
             self.last_animation_update = Instant::now();
@@ -130,7 +129,7 @@ impl Component for LoaderPopup {
     /// Process input
     ///
     /// As of now, all input is ignored as we don't supporting cancelling operations yet.
-    fn input(&mut self, _commander: &mut Commander, _event: Event) -> Result<ComponentInputResult> {
+    fn input(&mut self, _event: Event) -> Result<ComponentInputResult> {
         // Block all input while loading
         Ok(ComponentInputResult::Handled)
     }

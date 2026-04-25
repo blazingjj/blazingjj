@@ -24,10 +24,10 @@ use ratatui::widgets::Paragraph;
 use ratatui_textarea::TextArea;
 
 use crate::ComponentInputResult;
-use crate::commander::Commander;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
+use crate::commander::new_commander;
 use crate::env::JjConfig;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
@@ -54,11 +54,8 @@ pub struct BookmarkSetPopup<'a> {
     tx: std::sync::mpsc::Sender<bool>,
 }
 
-fn generate_options(
-    commander: &mut Commander,
-    change_id: Option<&ChangeId>,
-) -> Vec<BookmarkSetOption> {
-    let bookmarks = commander.get_bookmarks_list(false).map(|bookmarks| {
+fn generate_options(change_id: Option<&ChangeId>) -> Vec<BookmarkSetOption> {
+    let bookmarks = new_commander().get_bookmarks_list(false).map(|bookmarks| {
         bookmarks
             .into_iter()
             .filter(|bookmark| bookmark.remote.is_none())
@@ -67,7 +64,7 @@ fn generate_options(
     let mut options = vec![BookmarkSetOption::CreateBookmark];
 
     if let Some(change_id) = change_id {
-        let generated_name = generate_name(commander, change_id);
+        let generated_name = generate_name(change_id);
         let exists = bookmarks.as_ref().is_ok_and(|bookmarks| {
             bookmarks
                 .iter()
@@ -91,8 +88,8 @@ fn generate_options(
     options
 }
 
-fn generate_name(commander: &Commander, change_id: &ChangeId) -> String {
-    commander
+fn generate_name(change_id: &ChangeId) -> String {
+    new_commander()
         .generate_bookmark_name(change_id)
         .unwrap_or_else(|_| format!("error-{change_id}"))
 }
@@ -100,13 +97,12 @@ fn generate_name(commander: &Commander, change_id: &ChangeId) -> String {
 impl BookmarkSetPopup<'_> {
     pub fn new(
         config: JjConfig,
-        commander: &mut Commander,
         change_id: Option<ChangeId>,
         commit_id: CommitId,
         tx: std::sync::mpsc::Sender<bool>,
     ) -> Self {
         Self {
-            options: generate_options(commander, change_id.as_ref()),
+            options: generate_options(change_id.as_ref()),
             change_id,
             list_state: ListState::default().with_selected(Some(0)),
             list_height: 0,
@@ -131,29 +127,29 @@ impl BookmarkSetPopup<'_> {
         self.creating = Some(TextArea::default());
     }
 
-    fn create_bookmark(&self, commander: &mut Commander, name: &str) -> Result<()> {
-        if commander
+    fn create_bookmark(&self, name: &str) -> Result<()> {
+        if new_commander()
             .get_bookmarks_list(false)?
             .iter()
             .any(|bookmark| bookmark.name == name)
         {
-            commander.set_bookmark_commit(name, &self.commit_id)?;
+            new_commander().set_bookmark_commit(name, &self.commit_id)?;
         } else {
-            commander.create_bookmark_commit(name, &self.commit_id)?;
+            new_commander().create_bookmark_commit(name, &self.commit_id)?;
         }
         Ok(())
     }
-    fn generate_bookmark(&self, commander: &mut Commander) -> Result<()> {
+    fn generate_bookmark(&self) -> Result<()> {
         if let Some(change_id) = self.change_id.as_ref() {
-            let generated_name = generate_name(commander, change_id);
-            if commander
+            let generated_name = generate_name(change_id);
+            if new_commander()
                 .get_bookmarks_list(false)?
                 .iter()
                 .any(|bookmark| bookmark.name == generated_name)
             {
-                commander.set_bookmark_commit(&generated_name, &self.commit_id)?;
+                new_commander().set_bookmark_commit(&generated_name, &self.commit_id)?;
             } else {
-                commander.create_bookmark_commit(&generated_name, &self.commit_id)?;
+                new_commander().create_bookmark_commit(&generated_name, &self.commit_id)?;
             }
             Ok(())
         } else {
@@ -247,11 +243,7 @@ impl Component for BookmarkSetPopup<'_> {
     }
 
     /// Handle input. Returns bool of if to close
-    fn input(
-        &mut self,
-        commander: &mut Commander,
-        event: Event,
-    ) -> anyhow::Result<crate::ComponentInputResult> {
+    fn input(&mut self, event: Event) -> anyhow::Result<crate::ComponentInputResult> {
         if let Some(creating) = self.creating.as_mut() {
             if let Event::Key(key) = event {
                 match key.code {
@@ -264,7 +256,7 @@ impl Component for BookmarkSetPopup<'_> {
                             return Ok(ComponentInputResult::Handled);
                         }
 
-                        self.create_bookmark(commander, name)?;
+                        self.create_bookmark(name)?;
                         self.tx.send(true)?;
                         return Ok(ComponentInputResult::HandledAction(
                             ComponentAction::SetPopup(None),
@@ -298,7 +290,7 @@ impl Component for BookmarkSetPopup<'_> {
                     self.scroll((self.list_height as isize / 2).saturating_neg());
                 }
                 KeyCode::Char('g') => {
-                    self.generate_bookmark(commander)?;
+                    self.generate_bookmark()?;
                     self.tx.send(true)?;
                     return Ok(ComponentInputResult::HandledAction(
                         ComponentAction::SetPopup(None),
@@ -318,21 +310,22 @@ impl Component for BookmarkSetPopup<'_> {
                                 self.on_creating();
                             }
                             BookmarkSetOption::GeneratedName(_, _) => {
-                                self.generate_bookmark(commander)?;
+                                self.generate_bookmark()?;
                                 self.tx.send(true)?;
                                 return Ok(ComponentInputResult::HandledAction(
                                     ComponentAction::SetPopup(None),
                                 ));
                             }
                             BookmarkSetOption::Bookmark(bookmark) => {
-                                commander.set_bookmark_commit(&bookmark.name, &self.commit_id)?;
+                                new_commander()
+                                    .set_bookmark_commit(&bookmark.name, &self.commit_id)?;
                                 self.tx.send(true)?;
                                 return Ok(ComponentInputResult::HandledAction(
                                     ComponentAction::SetPopup(None),
                                 ));
                             }
                             BookmarkSetOption::Error(_) => {
-                                self.options = generate_options(commander, self.change_id.as_ref());
+                                self.options = generate_options(self.change_id.as_ref());
                             }
                         }
                     }

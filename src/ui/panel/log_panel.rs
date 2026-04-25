@@ -14,11 +14,12 @@ use ratatui::text::ToText;
 use ratatui::widgets::*;
 
 use crate::commander::CommandError;
-use crate::commander::Commander;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::log::LogOutput;
+use crate::commander::new_commander;
 use crate::env::JjConfig;
+use crate::env::get_env;
 use crate::keybinds::LogTabEvent;
 use crate::keybinds::LogTabKeybinds;
 use crate::ui::Component;
@@ -105,15 +106,15 @@ fn get_head_index(head: &Head, log_output: &Result<LogOutput, CommandError>) -> 
 }
 
 impl<'a> LogPanel<'a> {
-    pub fn new(commander: &mut Commander) -> Result<Self> {
-        let log_revset = commander.env.default_revset.clone();
-        let log_output = commander.get_log(&log_revset);
-        let head = commander.get_current_head()?;
+    pub fn new() -> Result<Self> {
+        let log_revset = new_commander().env.default_revset.clone();
+        let log_output = new_commander().get_log(&log_revset);
+        let head = new_commander().get_current_head()?;
 
         let log_list_state = ListState::default().with_selected(get_head_index(&head, &log_output));
 
         let mut keybinds = LogTabKeybinds::default();
-        if let Some(new_keybinds) = commander
+        if let Some(new_keybinds) = new_commander()
             .env
             .jj_config
             .keybinds()
@@ -143,7 +144,7 @@ impl<'a> LogPanel<'a> {
 
             panel_rect: Rect::ZERO,
 
-            config: commander.env.jj_config.clone(),
+            config: get_env().jj_config.clone(),
         })
     }
 
@@ -152,8 +153,8 @@ impl<'a> LogPanel<'a> {
     //
 
     /// Run jj log and store output for display
-    pub fn refresh_log_output(&mut self, commander: &mut Commander) {
-        self.log_output = commander.get_log(&self.log_revset);
+    pub fn refresh_log_output(&mut self) {
+        self.log_output = new_commander().get_log(&self.log_revset);
         self.log_output_text = match self.log_output.as_ref() {
             Ok(log_output) => log_output
                 .graph
@@ -268,7 +269,7 @@ impl<'a> LogPanel<'a> {
     /// Move selection relative to the current position.
     /// The scroll is relative to head-index, not line-index.
     /// This will update self.head
-    fn scroll_relative(&mut self, _commander: &mut Commander, scroll: isize) {
+    fn scroll_relative(&mut self, scroll: isize) {
         let log_output = match self.log_output.as_ref() {
             Ok(log_output) => log_output,
             Err(_) => return,
@@ -324,32 +325,25 @@ impl<'a> LogPanel<'a> {
     //  Event handling
     //
 
-    pub fn handle_event(
-        &mut self,
-        commander: &mut Commander,
-        log_tab_event: LogTabEvent,
-    ) -> Result<ComponentInputResult> {
+    pub fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<ComponentInputResult> {
         match log_tab_event {
             LogTabEvent::ScrollDown => {
-                self.scroll_relative(commander, 1);
+                self.scroll_relative(1);
             }
             LogTabEvent::ScrollUp => {
-                self.scroll_relative(commander, -1);
+                self.scroll_relative(-1);
             }
             LogTabEvent::ScrollDownHalf => {
-                self.scroll_relative(commander, self.visible_heads() as isize / 2);
+                self.scroll_relative(self.visible_heads() as isize / 2);
             }
             LogTabEvent::ScrollUpHalf => {
-                self.scroll_relative(
-                    commander,
-                    (self.visible_heads() as isize / 2).saturating_neg(),
-                );
+                self.scroll_relative((self.visible_heads() as isize / 2).saturating_neg());
             }
             LogTabEvent::ScrollToBottom => {
-                self.scroll_relative(commander, isize::MAX);
+                self.scroll_relative(isize::MAX);
             }
             LogTabEvent::ScrollToTop => {
-                self.scroll_relative(commander, -isize::MAX);
+                self.scroll_relative(-isize::MAX);
             }
             LogTabEvent::ToggleHeadMark => {
                 self.toggle_head_mark();
@@ -364,11 +358,11 @@ impl<'a> LogPanel<'a> {
 
 impl Component for LogPanel<'_> {
     // Called when switching to tab
-    fn focus(&mut self, _commander: &mut Commander) -> Result<()> {
+    fn focus(&mut self) -> Result<()> {
         Ok(())
     }
 
-    fn update(&mut self, _commander: &mut Commander) -> Result<Option<ComponentAction>> {
+    fn update(&mut self) -> Result<Option<ComponentAction>> {
         Ok(None)
     }
 
@@ -411,7 +405,7 @@ impl Component for LogPanel<'_> {
         Ok(())
     }
 
-    fn input(&mut self, commander: &mut Commander, event: Event) -> Result<ComponentInputResult> {
+    fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
         if let Event::Mouse(mouse_event) = event {
             // Determine if mouse event is inside log-view
             let mouse_pos = Position::new(mouse_event.column, mouse_event.row);
@@ -422,11 +416,11 @@ impl Component for LogPanel<'_> {
             // Execute command dependent on panel and event kind
             match mouse_event.kind {
                 MouseEventKind::ScrollUp => {
-                    self.handle_event(commander, LogTabEvent::ScrollUp)?;
+                    self.handle_event(LogTabEvent::ScrollUp)?;
                     return Ok(ComponentInputResult::Handled);
                 }
                 MouseEventKind::ScrollDown => {
-                    self.handle_event(commander, LogTabEvent::ScrollDown)?;
+                    self.handle_event(LogTabEvent::ScrollDown)?;
                     return Ok(ComponentInputResult::Handled);
                 }
                 MouseEventKind::Up(_) => {

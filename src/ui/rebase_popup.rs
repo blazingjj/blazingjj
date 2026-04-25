@@ -41,8 +41,8 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidget;
 
 use crate::ComponentInputResult;
-use crate::commander::Commander;
 use crate::commander::log::Head;
+use crate::commander::new_commander;
 use crate::keybinds::rebase_popup::CutOption;
 use crate::keybinds::rebase_popup::PasteOption;
 use crate::keybinds::rebase_popup::PopupAction;
@@ -91,7 +91,7 @@ impl RebasePopup {
     }
 
     /// Run the command that the popup is currently configured to do
-    fn run_command(&self, commander: &mut Commander) -> Result<()> {
+    fn run_command(&self) -> Result<()> {
         let src_rev = self.source_rev.commit_id.as_str();
         let tgt_rev = self.target_rev.commit_id.as_str();
         let src_mode = match self.source_mode {
@@ -104,7 +104,7 @@ impl RebasePopup {
             PasteOption::InsertAfter => "-A",
             PasteOption::InsertBefore => "-B",
         };
-        commander.run_rebase(src_mode, src_rev, tgt_mode, tgt_rev)?;
+        new_commander().run_rebase(src_mode, src_rev, tgt_mode, tgt_rev)?;
         Ok(())
     }
 
@@ -114,10 +114,10 @@ impl RebasePopup {
     /// If the result is Ok(false) the function did handle
     /// the input, but the popup should not be closed yet.
     /// Err(_) will be returned if the jj command failed.
-    pub fn handle_input(&mut self, commander: &mut Commander, event: Event) -> Result<bool> {
+    pub fn handle_input(&mut self, event: Event) -> Result<bool> {
         match self.match_event(event) {
             PopupAction::Ok => {
-                self.run_command(commander)?;
+                self.run_command()?;
                 return Ok(true);
             }
             PopupAction::Cancel => return Ok(true),
@@ -211,7 +211,7 @@ impl Component for RebasePopup {
         Ok(())
     }
 
-    fn input(&mut self, _commander: &mut Commander, _event: Event) -> Result<ComponentInputResult> {
+    fn input(&mut self, _event: Event) -> Result<ComponentInputResult> {
         unreachable!();
         //return Ok(ComponentInputResult::Handled);
     }

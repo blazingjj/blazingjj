@@ -18,11 +18,12 @@ use tui_confirm_dialog::Listener;
 
 use crate::ComponentInputResult;
 use crate::commander::CommandError;
-use crate::commander::Commander;
 use crate::commander::bookmarks::BookmarkLine;
 use crate::commander::ids::ChangeId;
+use crate::commander::new_commander;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
+use crate::env::get_env;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
 use crate::ui::help_popup::HelpPopup;
@@ -121,13 +122,13 @@ fn get_current_bookmark_index(
 }
 
 impl BookmarksTab<'_> {
-    #[instrument(level = "info", name = "Initializing bookmarks tab", parent = None, skip(commander))]
-    pub fn new(commander: &mut Commander) -> Result<Self> {
-        let diff_format = commander.env.jj_config.diff_format();
+    #[instrument(level = "info", name = "Initializing bookmarks tab", parent = None, skip())]
+    pub fn new() -> Result<Self> {
+        let diff_format = get_env().jj_config.diff_format();
 
         let show_all = false;
 
-        let bookmarks_output = commander.get_bookmarks(show_all);
+        let bookmarks_output = new_commander().get_bookmarks(show_all);
         let bookmark = bookmarks_output
             .as_ref()
             .ok()
@@ -141,7 +142,7 @@ impl BookmarksTab<'_> {
 
         let bookmark_output = bookmark.as_ref().and_then(|bookmark| match bookmark {
             BookmarkLine::Parsed { bookmark, .. } => Some(
-                commander
+                new_commander()
                     .get_bookmark_show(bookmark, &diff_format, true)
                     .map(|diff| tabs_to_spaces(&diff)),
             ),
@@ -178,7 +179,7 @@ impl BookmarksTab<'_> {
 
             diff_format,
 
-            config: commander.env.jj_config.clone(),
+            config: get_env().jj_config.clone(),
         })
     }
 
@@ -186,11 +187,12 @@ impl BookmarksTab<'_> {
         get_current_bookmark_index(self.bookmark.as_ref(), &self.bookmarks_output)
     }
 
-    pub fn refresh_bookmarks(&mut self, commander: &mut Commander) {
-        self.bookmarks_output = commander.get_bookmarks(self.show_all);
+    pub fn refresh_bookmarks(&mut self) {
+        self.bookmarks_output = new_commander().get_bookmarks(self.show_all);
     }
 
-    pub fn refresh_bookmark(&mut self, commander: &mut Commander) {
+    pub fn refresh_bookmark(&mut self) {
+        let mut commander = new_commander();
         let inner_width = self.bookmark_panel.columns() as usize;
         commander.limit_width(inner_width);
         self.bookmark_output = self.bookmark.as_ref().and_then(|bookmark| match bookmark {
@@ -205,7 +207,7 @@ impl BookmarksTab<'_> {
         self.bookmark_panel.scroll_to(0);
     }
 
-    fn scroll_bookmarks(&mut self, commander: &mut Commander, scroll: isize) {
+    fn scroll_bookmarks(&mut self, scroll: isize) {
         let bookmarks = Vec::new();
         let bookmarks = self.bookmarks_output.as_ref().unwrap_or(&bookmarks);
         let current_bookmark_index = self.get_current_bookmark_index();
@@ -221,19 +223,19 @@ impl BookmarksTab<'_> {
 
         if let Some(next_bookmark) = next_bookmark {
             self.bookmark = Some(next_bookmark);
-            self.refresh_bookmark(commander);
+            self.refresh_bookmark();
         }
     }
 }
 
 impl Component for BookmarksTab<'_> {
-    fn focus(&mut self, commander: &mut Commander) -> Result<()> {
-        self.refresh_bookmarks(commander);
-        self.refresh_bookmark(commander);
+    fn focus(&mut self) -> Result<()> {
+        self.refresh_bookmarks();
+        self.refresh_bookmark();
         Ok(())
     }
 
-    fn update(&mut self, commander: &mut Commander) -> Result<Option<ComponentAction>> {
+    fn update(&mut self) -> Result<Option<ComponentAction>> {
         // Check for popup action
         if let Ok(res) = self.popup_rx.try_recv()
             && res.1.unwrap_or(false)
@@ -241,15 +243,15 @@ impl Component for BookmarksTab<'_> {
             match res.0 {
                 DELETE_BRANCH_POPUP_ID => {
                     if let Some(delete) = self.delete.as_ref() {
-                        match commander.delete_bookmark(&delete.name) {
+                        match new_commander().delete_bookmark(&delete.name) {
                             Ok(_) => {
-                                self.refresh_bookmarks(commander);
+                                self.refresh_bookmarks();
                                 let bookmarks = Vec::new();
                                 let bookmarks =
                                     self.bookmarks_output.as_ref().unwrap_or(&bookmarks);
                                 self.bookmark =
                                     bookmarks.first().map(|bookmark| bookmark.to_owned());
-                                self.refresh_bookmark(commander);
+                                self.refresh_bookmark();
                             }
                             Err(err) => {
                                 return Ok(Some(ComponentAction::SetPopup(Some(Box::new(
@@ -265,15 +267,15 @@ impl Component for BookmarksTab<'_> {
                 }
                 FORGET_BRANCH_POPUP_ID => {
                     if let Some(forget) = self.forget.as_ref() {
-                        match commander.forget_bookmark(&forget.name) {
+                        match new_commander().forget_bookmark(&forget.name) {
                             Ok(_) => {
-                                self.refresh_bookmarks(commander);
+                                self.refresh_bookmarks();
                                 let bookmarks = Vec::new();
                                 let bookmarks =
                                     self.bookmarks_output.as_ref().unwrap_or(&bookmarks);
                                 self.bookmark =
                                     bookmarks.first().map(|bookmark| bookmark.to_owned());
-                                self.refresh_bookmark(commander);
+                                self.refresh_bookmark();
                             }
                             Err(err) => {
                                 return Ok(Some(ComponentAction::SetPopup(Some(Box::new(
@@ -289,8 +291,8 @@ impl Component for BookmarksTab<'_> {
                 }
                 NEW_POPUP_ID => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
-                        commander.run_new([bookmark.to_string().as_str()])?;
-                        let head = commander.get_current_head()?;
+                        new_commander().run_new([bookmark.to_string().as_str()])?;
+                        let head = new_commander().get_current_head()?;
                         if self.describe_after_new {
                             self.describe_after_new_change = Some(head.change_id);
                             self.describe_after_new = false;
@@ -304,8 +306,9 @@ impl Component for BookmarksTab<'_> {
                 }
                 EDIT_POPUP_ID => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
-                        commander.run_edit(&bookmark.to_string(), self.edit_ignore_immutable)?;
-                        let head = commander.get_current_head()?;
+                        new_commander()
+                            .run_edit(&bookmark.to_string(), self.edit_ignore_immutable)?;
+                        let head = new_commander().get_current_head()?;
                         return Ok(Some(ComponentAction::ViewLog(head)));
                     }
                 }
@@ -613,7 +616,7 @@ impl Component for BookmarksTab<'_> {
         Ok(())
     }
 
-    fn input(&mut self, commander: &mut Commander, event: Event) -> Result<ComponentInputResult> {
+    fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
         if let Some(create) = self.create.as_mut() {
             if let Event::Key(key) = event {
                 match key.code {
@@ -629,13 +632,13 @@ impl Component for BookmarksTab<'_> {
                             return Ok(ComponentInputResult::Handled);
                         }
 
-                        if let Err(err) = commander.create_bookmark(&name) {
+                        if let Err(err) = new_commander().create_bookmark(&name) {
                             create.error = Some(anyhow::Error::new(err));
                             return Ok(ComponentInputResult::Handled);
                         }
 
                         self.create = None;
-                        self.refresh_bookmarks(commander);
+                        self.refresh_bookmarks();
 
                         // Select new bookmark
                         if let Some(bookmark) =
@@ -654,7 +657,7 @@ impl Component for BookmarksTab<'_> {
                             self.bookmark = Some(bookmark.clone());
                         }
 
-                        self.refresh_bookmark(commander);
+                        self.refresh_bookmark();
 
                         return Ok(ComponentInputResult::Handled);
                     }
@@ -686,12 +689,12 @@ impl Component for BookmarksTab<'_> {
 
                         let old = rename.name.clone();
 
-                        if let Err(err) = commander.rename_bookmark(&old, &new) {
+                        if let Err(err) = new_commander().rename_bookmark(&old, &new) {
                             rename.error = Some(anyhow::Error::new(err));
                             return Ok(ComponentInputResult::Handled);
                         }
                         self.rename = None;
-                        self.refresh_bookmarks(commander);
+                        self.refresh_bookmarks();
 
                         // Select new bookmark
                         if let Some(bookmark) =
@@ -710,7 +713,7 @@ impl Component for BookmarksTab<'_> {
                             self.bookmark = Some(bookmark.clone());
                         }
 
-                        self.refresh_bookmark(commander);
+                        self.refresh_bookmark();
 
                         return Ok(ComponentInputResult::Handled);
                     }
@@ -733,14 +736,14 @@ impl Component for BookmarksTab<'_> {
                 match key.code {
                     KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         // TODO: Handle error
-                        commander.run_describe(
+                        new_commander().run_describe(
                             describe_after_new_change.as_str(),
                             &describe_textarea.lines().join("\n"),
                         )?;
                         self.describe_textarea = None;
                         self.describe_after_new_change = None;
                         return Ok(ComponentInputResult::HandledAction(
-                            ComponentAction::ViewLog(commander.get_current_head()?),
+                            ComponentAction::ViewLog(new_commander().get_current_head()?),
                         ));
                     }
                     KeyCode::Esc => {
@@ -774,28 +777,25 @@ impl Component for BookmarksTab<'_> {
             }
 
             match key.code {
-                KeyCode::Char('j') | KeyCode::Down => self.scroll_bookmarks(commander, 1),
-                KeyCode::Char('k') | KeyCode::Up => self.scroll_bookmarks(commander, -1),
+                KeyCode::Char('j') | KeyCode::Down => self.scroll_bookmarks(1),
+                KeyCode::Char('k') | KeyCode::Up => self.scroll_bookmarks(-1),
                 KeyCode::Char('J') => {
-                    self.scroll_bookmarks(commander, self.bookmarks_height as isize / 2);
+                    self.scroll_bookmarks(self.bookmarks_height as isize / 2);
                 }
                 KeyCode::Char('K') => {
-                    self.scroll_bookmarks(
-                        commander,
-                        (self.bookmarks_height as isize / 2).saturating_neg(),
-                    );
+                    self.scroll_bookmarks((self.bookmarks_height as isize / 2).saturating_neg());
                 }
                 KeyCode::Char('w') => {
                     self.diff_format = self.diff_format.get_next(self.config.diff_tool());
-                    self.refresh_bookmark(commander);
+                    self.refresh_bookmark();
                 }
                 KeyCode::Char('R') | KeyCode::F(5) => {
-                    self.refresh_bookmarks(commander);
-                    self.refresh_bookmark(commander);
+                    self.refresh_bookmarks();
+                    self.refresh_bookmark();
                 }
                 KeyCode::Char('a') => {
                     self.show_all = !self.show_all;
-                    self.refresh_bookmarks(commander);
+                    self.refresh_bookmarks();
                 }
                 KeyCode::Char('c') => {
                     let textarea = TextArea::default();
@@ -863,9 +863,9 @@ impl Component for BookmarksTab<'_> {
                         && bookmark.remote.is_some()
                         && bookmark.present
                     {
-                        commander.track_bookmark(bookmark)?;
-                        self.refresh_bookmarks(commander);
-                        self.refresh_bookmark(commander);
+                        new_commander().track_bookmark(bookmark)?;
+                        self.refresh_bookmarks();
+                        self.refresh_bookmark();
                     }
                 }
                 KeyCode::Char('T') => {
@@ -873,9 +873,9 @@ impl Component for BookmarksTab<'_> {
                         && bookmark.remote.is_some()
                         && bookmark.present
                     {
-                        commander.untrack_bookmark(bookmark)?;
-                        self.refresh_bookmarks(commander);
-                        self.refresh_bookmark(commander);
+                        new_commander().untrack_bookmark(bookmark)?;
+                        self.refresh_bookmarks();
+                        self.refresh_bookmark();
                     }
                 }
                 KeyCode::Char('n') | KeyCode::Char('N') => {
@@ -903,7 +903,7 @@ impl Component for BookmarksTab<'_> {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
                         let ignore_immutable = key.code == KeyCode::Char('E');
                         if bookmark.present {
-                            if commander.check_revision_immutable(&bookmark.to_string())?
+                            if new_commander().check_revision_immutable(&bookmark.to_string())?
                                 && !ignore_immutable
                             {
                                 return Ok(ComponentInputResult::HandledAction(
@@ -941,7 +941,7 @@ impl Component for BookmarksTab<'_> {
                         && bookmark.present
                     {
                         return Ok(ComponentInputResult::HandledAction(
-                            ComponentAction::ViewLog(commander.get_bookmark_head(bookmark)?),
+                            ComponentAction::ViewLog(new_commander().get_bookmark_head(bookmark)?),
                         ));
                     }
                 }

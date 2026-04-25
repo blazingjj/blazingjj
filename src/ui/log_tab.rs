@@ -20,11 +20,12 @@ use tui_confirm_dialog::ConfirmDialogState;
 use tui_confirm_dialog::Listener;
 
 use crate::ComponentInputResult;
-use crate::commander::Commander;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
+use crate::commander::new_commander;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
+use crate::env::get_env;
 use crate::keybinds::LogTabEvent;
 use crate::keybinds::LogTabKeybinds;
 use crate::ui::Component;
@@ -123,11 +124,11 @@ The main functions are:
   (called by refresh_head_output)
 */
 impl<'a> LogTab<'a> {
-    #[instrument(level = "info", name = "Initializing log tab", parent = None, skip(commander))]
-    pub fn new(commander: &mut Commander) -> Result<Self> {
-        let diff_format = commander.env.jj_config.diff_format();
+    #[instrument(level = "info", name = "Initializing log tab", parent = None, skip())]
+    pub fn new() -> Result<Self> {
+        let diff_format = get_env().jj_config.diff_format();
 
-        let head = commander.get_current_head()?;
+        let head = new_commander().get_current_head()?;
 
         const NO_WIDTH: usize = 0;
         let head_key = CommitShowKey::new(head.clone(), diff_format.clone(), NO_WIDTH);
@@ -135,15 +136,14 @@ impl<'a> LogTab<'a> {
         let mut commit_show_cache = CommitShowCache::new();
 
         let _new_content = commit_show_cache.get_or_insert(&head_key, || {
-            Self::compute_head_content(commander, NO_WIDTH, &head, &diff_format)
+            Self::compute_head_content(NO_WIDTH, &head, &diff_format)
         });
 
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (bookmark_set_popup_tx, bookmark_set_popup_rx) = std::sync::mpsc::channel();
 
         let mut keybinds = LogTabKeybinds::default();
-        if let Some(new_keybinds) = commander
-            .env
+        if let Some(new_keybinds) = get_env()
             .jj_config
             .keybinds()
             .and_then(|k| k.log_tab.clone())
@@ -154,7 +154,7 @@ impl<'a> LogTab<'a> {
         Ok(Self {
             log_revset_textarea: None,
 
-            log_panel: LogPanel::new(commander)?,
+            log_panel: LogPanel::new()?,
 
             head,
             head_panel: DetailsPanel::new(),
@@ -182,33 +182,33 @@ impl<'a> LogTab<'a> {
 
             edit_ignore_immutable: false,
 
-            config: commander.env.jj_config.clone(),
+            config: get_env().jj_config.clone(),
             keybinds,
         })
     }
 
     /// Set cursor and update log panel and diff panel
-    pub fn set_head(&mut self, commander: &mut Commander, head: Head) {
+    pub fn set_head(&mut self, head: Head) {
         self.log_panel.set_head(head);
-        self.refresh_log_output(commander);
+        self.refresh_log_output();
     }
 
     /// Update the log panel and diff panel. This will also refresh
     /// the diff cache.
-    fn refresh_log_output(&mut self, commander: &mut Commander) {
-        self.log_panel.refresh_log_output(commander);
+    fn refresh_log_output(&mut self) {
+        self.log_panel.refresh_log_output();
         self.update_cache_active_commits();
-        self.sync_head_output(commander);
+        self.sync_head_output();
     }
 
     /// Extract selection from log panel and update change details panel
-    fn sync_head_output(&mut self, commander: &mut Commander) {
+    fn sync_head_output(&mut self) {
         self.head = self.log_panel.head.clone();
-        self.refresh_head_output(commander);
+        self.refresh_head_output();
     }
 
     /// Refesh the diff of the currently selected change
-    fn refresh_head_output(&mut self, commander: &mut Commander) {
+    fn refresh_head_output(&mut self) {
         // If the key matches, then we can use the cached value.
         // This is not entierly true. A reconfiguration of jj could
         // generate different output for some keys. We probably need
@@ -218,7 +218,7 @@ impl<'a> LogTab<'a> {
         let inner_width = self.head_panel.columns() as usize;
         let key = CommitShowKey::new(self.head.clone(), self.diff_format.clone(), inner_width);
         let _new_content = self.commit_show_cache.get_or_insert(&key, || {
-            Self::compute_head_content(commander, inner_width, &self.head, &self.diff_format)
+            Self::compute_head_content(inner_width, &self.head, &self.diff_format)
         });
 
         let content_changed = self.head_key != key;
@@ -256,13 +256,13 @@ impl<'a> LogTab<'a> {
     /// Extract head content from commander.get_commit_show
     /// Wraps it in a cache value before returning it.
     fn compute_head_content(
-        commander: &mut Commander,
         inner_width: usize,
         head: &Head,
         diff_format: &DiffFormat,
     ) -> CommitShowValue {
         // Call jj show
         let commit_id = &head.commit_id;
+        let mut commander = new_commander();
         commander.limit_width(inner_width);
         let head_output = commander
             .get_commit_show(commit_id, diff_format, true)
@@ -321,14 +321,14 @@ impl<'a> LogTab<'a> {
     }
 
     // Execute new command, after self.popup returned
-    fn execute_new(&mut self, commander: &mut Commander) -> Result<Option<ComponentAction>> {
+    fn execute_new(&mut self) -> Result<Option<ComponentAction>> {
         let commit_ids = self.log_panel.extract_and_clear_head_marks();
         if commit_ids.is_empty() {
-            commander.run_new([self.head.commit_id.as_str()])?;
+            new_commander().run_new([self.head.commit_id.as_str()])?;
         } else {
-            commander.run_new(commit_ids.iter().map(CommitId::as_str))?;
+            new_commander().run_new(commit_ids.iter().map(CommitId::as_str))?;
         }
-        self.set_head(commander, commander.get_current_head()?);
+        self.set_head(new_commander().get_current_head()?);
         if self.describe_after_new {
             self.describe_after_new = false;
             let textarea = TextArea::default();
@@ -381,7 +381,7 @@ impl<'a> LogTab<'a> {
     }
 
     // Execute abandon command, after self.popup returned
-    fn execute_abandon(&mut self, commander: &mut Commander) -> Result<Option<ComponentAction>> {
+    fn execute_abandon(&mut self) -> Result<Option<ComponentAction>> {
         // If none marked, mark current head
         if self.log_panel.marked_heads.is_empty() {
             self.log_panel.toggle_head_mark();
@@ -390,15 +390,15 @@ impl<'a> LogTab<'a> {
         let old_selection = self.head.clone();
         let mut selection = self.head.clone();
         while self.log_panel.is_head_marked(&selection) {
-            selection = commander.get_commit_parent(&selection.commit_id)?;
+            selection = new_commander().get_commit_parent(&selection.commit_id)?;
         }
         // Abandon marked commmits
         let commit_id_list = self.log_panel.extract_and_clear_head_marks();
-        commander.run_abandon(&commit_id_list)?;
+        new_commander().run_abandon(&commit_id_list)?;
         // Update selection to latest version, in case abandon triggered a rebase.
-        let new_selection = commander.get_head_latest(&selection)?;
+        let new_selection = new_commander().get_head_latest(&selection)?;
         // Update log panel and diff panel
-        self.set_head(commander, new_selection.clone());
+        self.set_head(new_selection.clone());
         // If selection was moved, tell the application
         if new_selection != old_selection {
             Ok(Some(ComponentAction::ChangeHead(self.head.clone())))
@@ -407,11 +407,7 @@ impl<'a> LogTab<'a> {
         }
     }
 
-    fn handle_event(
-        &mut self,
-        commander: &mut Commander,
-        log_tab_event: LogTabEvent,
-    ) -> Result<ComponentInputResult> {
+    fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<ComponentInputResult> {
         match log_tab_event {
             LogTabEvent::ScrollDown
             | LogTabEvent::ScrollUp
@@ -420,31 +416,31 @@ impl<'a> LogTab<'a> {
             | LogTabEvent::ScrollToBottom
             | LogTabEvent::ScrollToTop
             | LogTabEvent::ToggleHeadMark => {
-                self.log_panel.handle_event(commander, log_tab_event)?;
-                self.sync_head_output(commander);
+                self.log_panel.handle_event(log_tab_event)?;
+                self.sync_head_output();
             }
             LogTabEvent::FocusCurrent => {
-                self.set_head(commander, commander.get_current_head()?);
+                self.set_head(new_commander().get_current_head()?);
             }
             LogTabEvent::ToggleDiffFormat => {
                 self.diff_format = self.diff_format.get_next(self.config.diff_tool());
-                self.refresh_head_output(commander);
+                self.refresh_head_output();
             }
             LogTabEvent::Refresh => {
                 self.mark_cache_as_dirty();
-                self.refresh_log_output(commander);
+                self.refresh_log_output();
             }
 
             LogTabEvent::Duplicate => {
-                let _ = commander.run_duplicate(&self.head.change_id.to_string());
-                self.refresh_log_output(commander);
+                let _ = new_commander().run_duplicate(&self.head.change_id.to_string());
+                self.refresh_log_output();
             }
 
             LogTabEvent::CreateNew { describe } => {
                 return self.handle_new(describe);
             }
             LogTabEvent::Rebase => {
-                let source_change = commander.get_current_head()?;
+                let source_change = new_commander().get_current_head()?;
                 let target_change = &self.head;
                 self.rebase_popup = Some(RebasePopup::new(
                     source_change.clone(),
@@ -452,7 +448,7 @@ impl<'a> LogTab<'a> {
                 ));
             }
             LogTabEvent::Squash { ignore_immutable } => {
-                if self.head.change_id == commander.get_current_head()?.change_id {
+                if self.head.change_id == new_commander().get_current_head()?.change_id {
                     return Ok(ComponentInputResult::HandledAction(
                         ComponentAction::SetPopup(Some(Box::new(MessagePopup {
                             title: "Squash".into(),
@@ -540,7 +536,7 @@ impl<'a> LogTab<'a> {
                     ));
                 } else {
                     let mut textarea = TextArea::new(
-                        commander
+                        new_commander()
                             .get_commit_description(&self.head.commit_id)?
                             .split("\n")
                             .map(|line| line.to_string())
@@ -569,7 +565,6 @@ impl<'a> LogTab<'a> {
                 return Ok(ComponentInputResult::HandledAction(
                     ComponentAction::SetPopup(Some(Box::new(BookmarkSetPopup::new(
                         self.config.clone(),
-                        commander,
                         Some(self.head.change_id.clone()),
                         self.head.commit_id.clone(),
                         self.bookmark_set_popup_tx.clone(),
@@ -602,10 +597,9 @@ impl<'a> LogTab<'a> {
                 allow_new,
             } => {
                 let commit_id = self.head.commit_id.clone();
-                let commander_clone = Commander::new(&commander.env);
 
                 let loader = LoaderPopup::new("Pushing".to_string(), move || {
-                    commander_clone.git_push(all_bookmarks, allow_new, &commit_id)
+                    new_commander().git_push(all_bookmarks, allow_new, &commit_id)
                 });
 
                 return Ok(ComponentInputResult::HandledAction(
@@ -613,10 +607,8 @@ impl<'a> LogTab<'a> {
                 ));
             }
             LogTabEvent::Fetch { all_remotes } => {
-                let commander_clone = Commander::new(&commander.env);
-
                 let loader = LoaderPopup::new("Fetching".to_string(), move || {
-                    commander_clone.git_fetch(all_remotes)
+                    new_commander().git_fetch(all_remotes)
                 });
 
                 return Ok(ComponentInputResult::HandledAction(
@@ -653,33 +645,34 @@ impl<'a> LogTab<'a> {
 }
 
 impl Component for LogTab<'_> {
-    fn focus(&mut self, commander: &mut Commander) -> Result<()> {
-        let latest_head = commander.get_head_latest(&self.head)?;
-        self.set_head(commander, latest_head);
+    fn focus(&mut self) -> Result<()> {
+        let latest_head = new_commander().get_head_latest(&self.head)?;
+        self.set_head(latest_head);
         Ok(())
     }
 
-    fn update(&mut self, commander: &mut Commander) -> Result<Option<ComponentAction>> {
+    fn update(&mut self) -> Result<Option<ComponentAction>> {
         // Check for popup action
         if let Ok(res) = self.popup_rx.try_recv()
             && res.1.unwrap_or(false)
         {
             match res.0 {
                 NEW_POPUP_ID => {
-                    return self.execute_new(commander);
+                    return self.execute_new();
                 }
                 EDIT_POPUP_ID => {
-                    commander.run_edit(self.head.commit_id.as_str(), self.edit_ignore_immutable)?;
-                    self.refresh_log_output(commander);
+                    new_commander()
+                        .run_edit(self.head.commit_id.as_str(), self.edit_ignore_immutable)?;
+                    self.refresh_log_output();
                     return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
                 }
                 ABANDON_POPUP_ID => {
-                    return self.execute_abandon(commander);
+                    return self.execute_abandon();
                 }
                 SQUASH_POPUP_ID => {
-                    commander
+                    new_commander()
                         .run_squash(self.head.commit_id.as_str(), self.squash_ignore_immutable)?;
-                    self.set_head(commander, commander.get_current_head()?);
+                    self.set_head(new_commander().get_current_head()?);
                     return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
                 }
                 _ => {}
@@ -687,7 +680,7 @@ impl Component for LogTab<'_> {
         }
 
         if let Ok(true) = self.bookmark_set_popup_rx.try_recv() {
-            self.refresh_log_output(commander);
+            self.refresh_log_output();
         }
 
         Ok(None)
@@ -816,17 +809,17 @@ impl Component for LogTab<'_> {
         Ok(())
     }
 
-    fn input(&mut self, commander: &mut Commander, event: Event) -> Result<ComponentInputResult> {
+    fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
         if let Some(describe_textarea) = self.describe_textarea.as_mut() {
             if let Event::Key(key) = event {
                 match self.keybinds.match_event(key) {
                     LogTabEvent::Save => {
                         // TODO: Handle error
-                        commander.run_describe(
+                        new_commander().run_describe(
                             self.head.commit_id.as_str(),
                             &describe_textarea.lines().join("\n"),
                         )?;
-                        self.set_head(commander, commander.get_head_latest(&self.head)?);
+                        self.set_head(new_commander().get_head_latest(&self.head)?);
                         self.describe_textarea = None;
                         return Ok(ComponentInputResult::Handled);
                     }
@@ -851,7 +844,7 @@ impl Component for LogTab<'_> {
                         } else {
                             Some(log_revset)
                         };
-                        self.refresh_log_output(commander);
+                        self.refresh_log_output();
                         self.log_revset_textarea = None;
                         return Ok(ComponentInputResult::Handled);
                     }
@@ -867,7 +860,7 @@ impl Component for LogTab<'_> {
         }
 
         if let Some(rebase_popup) = &mut self.rebase_popup {
-            let handled = rebase_popup.handle_input(commander, event.clone());
+            let handled = rebase_popup.handle_input(event.clone());
             if handled.is_err() {
                 // Close popup and show error message
                 self.rebase_popup = None;
@@ -915,20 +908,20 @@ impl Component for LogTab<'_> {
                 return Ok(ComponentInputResult::Handled);
             }
 
-            let input_result = self.log_panel.input(commander, event)?;
+            let input_result = self.log_panel.input(event)?;
             if input_result.is_handled() {
-                self.sync_head_output(commander);
+                self.sync_head_output();
                 return Ok(input_result);
             }
 
             let log_tab_event = self.keybinds.match_event(key);
-            return self.handle_event(commander, log_tab_event);
+            return self.handle_event(log_tab_event);
         }
 
         if let Event::Mouse(mouse_event) = event {
-            let input_result = self.log_panel.input(commander, event.clone())?;
+            let input_result = self.log_panel.input(event.clone())?;
             if input_result.is_handled() {
-                self.sync_head_output(commander);
+                self.sync_head_output();
                 return Ok(input_result);
             }
             if self.head_panel.input_mouse(mouse_event) {
