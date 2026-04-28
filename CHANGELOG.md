@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Keybinding for jj absorb (`A`)
+- Drag to resize pane divider in all tabs
 
 ## [0.8.0] - 2026-04-19
 

@@ -8,7 +8,6 @@ use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyEventKind;
 use ratatui::crossterm::execute;
-use ratatui::layout::Rect;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use ratatui_textarea::CursorMove;
@@ -41,6 +40,7 @@ use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::LargeStringContent;
 use crate::ui::panel::LogPanel;
 use crate::ui::rebase_popup::RebasePopup;
+use crate::ui::utils::PaneDivider;
 use crate::ui::utils::centered_rect_fixed;
 use crate::ui::utils::centered_rect_line_height;
 use crate::ui::utils::tabs_to_spaces;
@@ -71,9 +71,6 @@ pub struct LogTab<'a> {
     /// so if these differ, we need to update `self.head`
     head: Head,
 
-    // Location of panels on screen. [0] = log, [1] = details
-    panel_rect: [Rect; 2],
-
     diff_format: DiffFormat,
 
     popup: ConfirmDialogState,
@@ -93,6 +90,7 @@ pub struct LogTab<'a> {
     edit_ignore_immutable: bool,
 
     config: JjConfig,
+    pane_divider: PaneDivider,
     keybinds: LogTabKeybinds,
 }
 
@@ -151,6 +149,9 @@ impl<'a> LogTab<'a> {
             keybinds.extend_from_config(&new_keybinds);
         }
 
+        let config = get_env().jj_config.clone();
+        let pane_divider = PaneDivider::new(config.layout_percent());
+
         Ok(Self {
             log_revset_textarea: None,
 
@@ -161,8 +162,6 @@ impl<'a> LogTab<'a> {
             head_key,
 
             commit_show_cache,
-
-            panel_rect: [Rect::ZERO, Rect::ZERO],
 
             diff_format,
 
@@ -182,7 +181,8 @@ impl<'a> LogTab<'a> {
 
             edit_ignore_immutable: false,
 
-            config: get_env().jj_config.clone(),
+            config,
+            pane_divider,
             keybinds,
         })
     }
@@ -698,14 +698,7 @@ impl Component for LogTab<'_> {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = Layout::default()
-            .direction(self.config.layout().into())
-            .constraints([
-                Constraint::Percentage(self.config.layout_percent()),
-                Constraint::Percentage(100 - self.config.layout_percent()),
-            ])
-            .split(area);
-        self.panel_rect = [chunks[0], chunks[1]];
+        let chunks = self.pane_divider.split(area, self.config.layout());
 
         // Draw log
         self.log_panel.draw(f, chunks[0])?;
@@ -926,6 +919,12 @@ impl Component for LogTab<'_> {
         }
 
         if let Event::Mouse(mouse_event) = event {
+            if self
+                .pane_divider
+                .handle_mouse(mouse_event, self.config.layout())
+            {
+                return Ok(ComponentInputResult::Handled);
+            }
             let input_result = self.log_panel.input(event.clone())?;
             if input_result.is_handled() {
                 self.sync_head_output();
