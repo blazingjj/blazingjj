@@ -23,7 +23,10 @@ use crate::ui::ComponentAction;
 use crate::ui::help_popup::HelpPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
+use crate::ui::panel::ListPane;
+use crate::ui::panel::MouseInput;
 use crate::ui::panel::TextContent;
+use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::tabs_to_spaces;
 
@@ -34,8 +37,8 @@ pub struct FilesTab {
 
     files_output: Result<Vec<File>, CommandError>,
     conflicts_output: Vec<Conflict>,
+    files_pane: ListPane,
     files_list_state: ListState,
-    files_height: u16,
 
     pub file: Option<File>,
     diff_panel: DetailsPanel,
@@ -89,6 +92,7 @@ impl FilesTab {
             current_file.as_ref(),
             files_output.as_ref(),
         ));
+        let files_pane = ListPane::default();
 
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
@@ -99,8 +103,8 @@ impl FilesTab {
 
             files_output,
             file: current_file,
+            files_pane,
             files_list_state,
-            files_height: 0,
 
             conflicts_output,
 
@@ -290,26 +294,8 @@ impl Component for FilesTab {
                 )
                 .scroll_padding(3);
             *self.files_list_state.selected_mut() = current_file_index;
-            f.render_stateful_widget(&files, chunks[0], &mut self.files_list_state);
-            self.files_height = chunks[0].height - 2;
-
-            if let Some(index) = current_file_index
-                && files.len() > self.files_height as usize
-            {
-                let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-                let mut scrollbar_state = ScrollbarState::default()
-                    .content_length(files.len())
-                    .position(index);
-
-                f.render_stateful_widget(
-                    scrollbar,
-                    chunks[0].inner(Margin {
-                        vertical: 1,
-                        horizontal: 0,
-                    }),
-                    &mut scrollbar_state,
-                );
-            }
+            self.files_pane
+                .render(f, chunks[0], files, &mut self.files_list_state);
         }
 
         // Draw diff
@@ -342,10 +328,10 @@ impl Component for FilesTab {
                 KeyCode::Char('j') | KeyCode::Down => self.scroll_files(1)?,
                 KeyCode::Char('k') | KeyCode::Up => self.scroll_files(-1)?,
                 KeyCode::Char('J') => {
-                    self.scroll_files(self.files_height as isize / 2)?;
+                    self.scroll_files(self.files_pane.half_page_delta())?;
                 }
                 KeyCode::Char('K') => {
-                    self.scroll_files((self.files_height as isize / 2).saturating_neg())?;
+                    self.scroll_files(self.files_pane.half_page_delta().saturating_neg())?;
                 }
                 KeyCode::Char('w') => {
                     self.diff_format = self.diff_format.get_next(self.config.diff_tool());
@@ -417,10 +403,12 @@ impl Component for FilesTab {
             if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
                 return Ok(ComponentInputResult::Handled);
             }
-            if self.diff_panel.input_mouse(mouse) {
-                return Ok(ComponentInputResult::Handled);
+            match route_mouse(mouse, &mut [&mut self.files_pane, &mut self.diff_panel]) {
+                MouseInput::Scroll(delta) => self.scroll_files(delta)?,
+                MouseInput::Handled => {}
+                MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }
-            return Ok(ComponentInputResult::NotHandled);
+            return Ok(ComponentInputResult::Handled);
         }
 
         Ok(ComponentInputResult::Handled)
