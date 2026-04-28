@@ -24,6 +24,21 @@ scroll-down-half = "shift+j"
 scroll-up-half = "shift+k"
 ```
 
+### Message popup
+
+Overrides top-level scroll bindings. `scroll-down-page` and `scroll-up-page`
+are only configurable here.
+
+```toml
+[blazingjj.keybinds.message-popup]
+scroll-down = ["j", "down"]
+scroll-up = ["k", "up"]
+scroll-down-half = "ctrl+d"
+scroll-up-half = "ctrl+u"
+scroll-down-page = ["ctrl+f", "space", "pagedown"]
+scroll-up-page = ["ctrl+b", "pageup"]
+```
+
 ### Log tab
 
 ```toml

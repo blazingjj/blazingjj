@@ -2,7 +2,6 @@
 
 use std::cmp::max;
 
-use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::event::Event;
@@ -337,14 +336,10 @@ impl<'a> LogTab<'a> {
         // Cannot abandon immutable changes
         if self.head.immutable {
             return Ok(ComponentInputResult::HandledAction(
-                ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                    title: "Abandon".into(),
-                    messages: vec![
-                        "The change cannot be abandoned because it is immutable.".into(),
-                    ]
-                    .into(),
-                    text_align: None,
-                }))),
+                ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                    "Abandon",
+                    "The change cannot be abandoned because it is immutable.",
+                )))),
             ));
         }
 
@@ -446,20 +441,18 @@ impl<'a> LogTab<'a> {
             LogTabEvent::Squash { ignore_immutable } => {
                 if self.head.change_id == new_commander().get_current_head()?.change_id {
                     return Ok(ComponentInputResult::HandledAction(
-                        ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                            title: "Squash".into(),
-                            messages: "Cannot squash onto current change".into_text()?,
-                            text_align: None,
-                        }))),
+                        ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                            "Squash",
+                            "Cannot squash onto current change",
+                        )))),
                     ));
                 }
                 if self.head.immutable && !ignore_immutable {
                     return Ok(ComponentInputResult::HandledAction(
-                        ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                            title: "Squash".into(),
-                            messages: "Cannot squash onto immutable change".into_text()?,
-                            text_align: None,
-                        }))),
+                        ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                            "Squash",
+                            "Cannot squash onto immutable change",
+                        )))),
                     ));
                 }
 
@@ -485,14 +478,10 @@ impl<'a> LogTab<'a> {
             LogTabEvent::EditChange { ignore_immutable } => {
                 if self.head.immutable && !ignore_immutable {
                     return Ok(ComponentInputResult::HandledAction(
-                        ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                            title: " Edit ".into(),
-                            messages: vec![
-                                "The change cannot be edited because it is immutable.".into(),
-                            ]
-                            .into(),
-                            text_align: None,
-                        }))),
+                        ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                            " Edit ",
+                            "The change cannot be edited because it is immutable.",
+                        )))),
                     ));
                 }
 
@@ -528,14 +517,10 @@ impl<'a> LogTab<'a> {
             LogTabEvent::Describe => {
                 if self.head.immutable {
                     return Ok(ComponentInputResult::HandledAction(
-                        ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                            title: "Describe".into(),
-                            messages: vec![
-                                "The change cannot be described because it is immutable.".into(),
-                            ]
-                            .into(),
-                            text_align: None,
-                        }))),
+                        ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                            "Describe",
+                            "The change cannot be described because it is immutable.",
+                        )))),
                     ));
                 } else {
                     let mut textarea = TextArea::new(
@@ -868,13 +853,11 @@ impl Component for LogTab<'_> {
                 // Close popup and show error message
                 self.rebase_popup = None;
                 let msg = handled.err().unwrap();
-                let error_message = msg.to_string().into_text()?;
                 return Ok(ComponentInputResult::HandledAction(
-                    ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                        title: "Error".into(),
-                        messages: error_message,
-                        text_align: None,
-                    }))),
+                    ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                        "Error",
+                        msg.to_string(),
+                    )))),
                 ));
             }
             if handled.ok() == Some(true) {

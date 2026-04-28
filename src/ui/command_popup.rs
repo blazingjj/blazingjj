@@ -118,11 +118,10 @@ impl Component for CommandPopup<'_> {
 
                     return Ok(ComponentInputResult::HandledAction(
                         ComponentAction::Multiple(vec![
-                            ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                                title: format!("jj {command_input}").into(),
-                                messages: message.into(),
-                                text_align: Alignment::Left.into(),
-                            }))),
+                            ComponentAction::SetPopup(Some(Box::new(
+                                MessagePopup::new(format!("jj {command_input}"), message)
+                                    .text_align(Alignment::Left),
+                            ))),
                             ComponentAction::RefreshTab(),
                         ]),
                     ));

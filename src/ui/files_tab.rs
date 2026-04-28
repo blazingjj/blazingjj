@@ -355,11 +355,10 @@ impl Component for FilesTab {
                     // this works even for deleted files because jj doesn't return error in that case
                     if self.untrack_file().is_err() {
                         return Ok(ComponentInputResult::HandledAction(
-                            ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                                title: "Can't untrack file".into(),
-                                messages: "Make sure that file is ignored".into(),
-                                text_align: None,
-                            }))),
+                            ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                                "Can't untrack file",
+                                "Make sure that file is ignored",
+                            )))),
                         ));
                     }
                     self.set_head(&new_commander().get_current_head()?)?;
@@ -367,11 +366,10 @@ impl Component for FilesTab {
                 KeyCode::Char('r') => {
                     if let Err(err) = self.restore_file() {
                         return Ok(ComponentInputResult::HandledAction(
-                            ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                                title: "Can't restore file".into(),
-                                messages: err.to_string().into(),
-                                text_align: None,
-                            }))),
+                            ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                                "Can't restore file",
+                                err.to_string(),
+                            )))),
                         ));
                     }
                     self.set_head(&new_commander().get_current_head()?)?;
