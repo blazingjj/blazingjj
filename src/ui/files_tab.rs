@@ -401,7 +401,7 @@ impl Component for FilesTab {
             if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
                 return Ok(ComponentInputResult::Handled);
             }
-            match route_mouse(mouse, &mut [&mut self.diff_panel]) {
+            match route_mouse(mouse, &mut [&mut self.files_pane, &mut self.diff_panel]) {
                 MouseInput::Scroll(delta) => self.scroll_files(delta)?,
                 MouseInput::Handled => {}
                 MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),

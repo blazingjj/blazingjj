@@ -642,7 +642,10 @@ impl Component for BookmarksTab {
             if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
                 return Ok(ComponentInputResult::Handled);
             }
-            match route_mouse(mouse, &mut [&mut self.bookmark_panel]) {
+            match route_mouse(
+                mouse,
+                &mut [&mut self.bookmarks_pane, &mut self.bookmark_panel],
+            ) {
                 MouseInput::Scroll(delta) => self.scroll_bookmarks(delta),
                 MouseInput::Handled => {}
                 MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
