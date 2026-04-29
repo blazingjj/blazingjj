@@ -114,13 +114,8 @@ impl<'a> LogPanel<'a> {
         let log_list_state = ListState::default().with_selected(get_head_index(&head, &log_output));
 
         let mut keybinds = LogTabKeybinds::default();
-        if let Some(new_keybinds) = new_commander()
-            .env
-            .jj_config
-            .keybinds()
-            .and_then(|k| k.log_tab.clone())
-        {
-            keybinds.extend_from_config(&new_keybinds);
+        if let Some(keybinds_config) = new_commander().env.jj_config.keybinds() {
+            keybinds.extend_from_config(keybinds_config);
         }
 
         let log_output_text = match log_output.as_ref() {

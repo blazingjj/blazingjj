@@ -143,12 +143,8 @@ impl<'a> LogTab<'a> {
         let (bookmark_set_popup_tx, bookmark_set_popup_rx) = std::sync::mpsc::channel();
 
         let mut keybinds = LogTabKeybinds::default();
-        if let Some(new_keybinds) = get_env()
-            .jj_config
-            .keybinds()
-            .and_then(|k| k.log_tab.clone())
-        {
-            keybinds.extend_from_config(&new_keybinds);
+        if let Some(keybinds_config) = get_env().jj_config.keybinds() {
+            keybinds.extend_from_config(keybinds_config);
         }
 
         Ok(Self {

@@ -11,10 +11,23 @@ save = false
 
 In below examples default values are used.
 
+### Top-level scroll bindings
+
+These apply as defaults to all scroll-capable components and can be overridden
+in each component's own section.
+
+```toml
+[blazingjj.keybinds]
+scroll-down = ["j", "down"]
+scroll-up = ["k", "up"]
+scroll-down-half = "shift+j"
+scroll-up-half = "shift+k"
+```
+
 ### Log tab
 
 ```toml
-[blazingjj.keybinds.log_tab]
+[blazingjj.keybinds.log-tab]
 save = "ctrl+s"
 cancel = "esc"
 
