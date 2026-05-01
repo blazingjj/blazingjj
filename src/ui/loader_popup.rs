@@ -63,6 +63,10 @@ impl LoaderPopup {
 }
 
 impl Component for LoaderPopup {
+    fn wants_tick(&self) -> bool {
+        true
+    }
+
     /// Update the state of the popup
     ///
     /// This updates the animation and also polls the running operation to see if the popup may be

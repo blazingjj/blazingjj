@@ -78,6 +78,16 @@ impl<'a> MessagePopup<'a> {
     }
 }
 
+impl<'a> MessagePopup<'a> {
+    pub fn new(title: impl Into<Line<'a>>, body: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            messages: Text::raw(body.into()),
+            text_align: None,
+        }
+    }
+}
+
 impl Component for MessagePopup<'_> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let popup_rect = centered_rect(area, 80, 80);

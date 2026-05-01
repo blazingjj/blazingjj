@@ -54,6 +54,13 @@ pub trait Component {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()>;
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult>;
+
+    /// True if the component needs `update()` calls on a steady tick
+    /// (e.g. an in-flight drag auto-scroll). Drives the input poll
+    /// timeout in the main loop.
+    fn wants_tick(&self) -> bool {
+        false
+    }
 }
 
 #[instrument(level = "trace", name = "draw", skip(f, app))]

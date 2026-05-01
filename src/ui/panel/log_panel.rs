@@ -2,10 +2,17 @@
 log tab. */
 
 use std::collections::HashSet;
+use std::time::Duration;
+use std::time::Instant;
 
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::KeyEventKind;
+use ratatui::crossterm::event::KeyModifiers;
+use ratatui::crossterm::event::ModifierKeyCode;
+use ratatui::crossterm::event::MouseButton;
 use ratatui::crossterm::event::MouseEvent;
 use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Rect;
@@ -63,11 +70,121 @@ pub struct LogPanel<'a> {
     /// Currently marked commits
     pub marked_heads: HashSet<CommitId>,
 
+    /// In-flight drag, if any
+    drag: Option<DragState>,
+
+    /// Drop result, ready for the LogTab to consume
+    pending_action: Option<DragAction>,
+
     /// Area where panel was drawn. This includes the border.
     panel_rect: Rect,
 
     /// Configuration of colours
     config: JjConfig,
+}
+
+/// Tracks an in-flight mouse drag started inside the log panel.
+struct DragState {
+    /// Source commits resolved at MouseDown.
+    source_revs: Vec<CommitId>,
+    /// Head where the drag started — kept around so the post-drop
+    /// dispatcher can re-select the dragged commit by change_id after a
+    /// rebase has rewritten its commit_id.
+    source_head: Head,
+    /// Display line of the head where the drag started.
+    source_line: usize,
+    /// Display line currently under the mouse cursor.
+    cursor_line: Option<usize>,
+    /// Head currently under the cursor (resolved on Drag).
+    target_head: Option<Head>,
+    /// True once the cursor has crossed onto a different row, so we can
+    /// distinguish a click from a real drag on Up.
+    has_moved: bool,
+    /// Selection at the moment the drag began. Auto-scroll-at-edge moves
+    /// `self.head` so the view follows; this snapshot is restored if the
+    /// drag is cancelled or drops onto its own source.
+    selection_at_start: Head,
+    /// Screen row of the most recent Drag event. Drives the tick-based
+    /// auto-scroll that keeps the view moving while the cursor is held
+    /// at the edge without wiggling.
+    last_row: u16,
+    /// Last tick at which the auto-scroll fired, so we can rate-limit
+    /// the tick path independently from event-driven scrolls.
+    last_tick_scroll_at: Option<Instant>,
+    /// Modifier keys reported on the latest mouse event of this drag.
+    /// Updates on every Drag event so the UI can preview the action.
+    modifiers: KeyModifiers,
+}
+
+/// Operation a drop should perform, derived from the modifiers held at
+/// release. Shift wins over Ctrl, which wins over Alt; bare drop is a
+/// plain rebase onto. Some terminals report Alt as META, so we accept
+/// either.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DragMode {
+    /// `jj rebase ... -d <target>` (default)
+    Onto,
+    /// `jj rebase ... -A <target>`
+    After,
+    /// `jj rebase ... -B <target>`
+    Before,
+    /// `jj squash --from ... --into <target>`
+    Squash,
+}
+
+fn modifier_code_to_flag(code: ModifierKeyCode) -> KeyModifiers {
+    match code {
+        ModifierKeyCode::LeftShift | ModifierKeyCode::RightShift => KeyModifiers::SHIFT,
+        ModifierKeyCode::LeftControl | ModifierKeyCode::RightControl => KeyModifiers::CONTROL,
+        ModifierKeyCode::LeftAlt | ModifierKeyCode::RightAlt => KeyModifiers::ALT,
+        ModifierKeyCode::LeftMeta
+        | ModifierKeyCode::RightMeta
+        | ModifierKeyCode::LeftSuper
+        | ModifierKeyCode::RightSuper => KeyModifiers::META,
+        _ => KeyModifiers::empty(),
+    }
+}
+
+pub fn decode_drag_modifiers(modifiers: KeyModifiers) -> DragMode {
+    if modifiers.contains(KeyModifiers::SHIFT) {
+        DragMode::Squash
+    } else if modifiers.contains(KeyModifiers::CONTROL) {
+        DragMode::Before
+    } else if modifiers.intersects(KeyModifiers::ALT | KeyModifiers::META) {
+        DragMode::After
+    } else {
+        DragMode::Onto
+    }
+}
+
+/// A drop produced one of these actions for the surrounding LogTab to
+/// dispatch. Cleared by `take_pending_drag_action`.
+///
+/// Rebase rewrites the dragged commit's commit_id, so the rebase variants
+/// also carry `source_head`: the dispatcher looks the change up by
+/// change_id afterwards to re-select it. Squash doesn't need this — the
+/// source is left intact (just emptied) and we keep the existing
+/// selection behaviour.
+pub enum DragAction {
+    RebaseOnto {
+        source_revs: Vec<CommitId>,
+        source_head: Head,
+        target: Head,
+    },
+    Squash {
+        source_revs: Vec<CommitId>,
+        target: Head,
+    },
+    RebaseAfter {
+        source_revs: Vec<CommitId>,
+        source_head: Head,
+        target: Head,
+    },
+    RebaseBefore {
+        source_revs: Vec<CommitId>,
+        source_head: Head,
+        target: Head,
+    },
 }
 
 const LEFT_MARGIN_BLANK: char = ' ';
@@ -137,6 +254,9 @@ impl<'a> LogPanel<'a> {
             head,
             marked_heads: HashSet::new(),
 
+            drag: None,
+            pending_action: None,
+
             panel_rect: Rect::ZERO,
 
             config: get_env().jj_config.clone(),
@@ -187,19 +307,32 @@ impl<'a> LogPanel<'a> {
             }
         }
 
+        let drag_target_head = self.drag.as_ref().and_then(|d| d.target_head.as_ref());
+        let drag_source_head =
+            log_output.head_at(self.drag.as_ref().map_or(usize::MAX, |d| d.source_line));
+
         self.log_output_text
             .iter()
             .enumerate()
             .map(|(i, line)| {
                 let mut line = line.to_owned();
+                let head_here = log_output.head_at(i);
 
                 // Add padding at start
                 add_mark(&mut line, i);
 
-                // Highlight lines that correspond to self.head
-                if log_output.head_at(i) == Some(&self.head) {
+                // While a drag is in flight, only paint the source/target
+                // pair — the regular selection highlight would add a third,
+                // unrelated color and only distracts from the drop decision.
+                // Target wins over source if a drag is dropped onto its own
+                // source row (no-op case).
+                if drag_target_head.is_some() && head_here == drag_target_head {
+                    set_bg(&mut line, self.config.drag_target_color());
+                } else if drag_source_head.is_some() && head_here == drag_source_head {
+                    set_bg(&mut line, self.config.drag_source_color());
+                } else if self.drag.is_none() && head_here == Some(&self.head) {
                     set_bg(&mut line, self.config.highlight_color());
-                };
+                }
 
                 line
             })
@@ -272,6 +405,16 @@ impl<'a> LogPanel<'a> {
 
         let heads: &Vec<Head> = log_output.heads.as_ref();
 
+        // Remember the head's current screen row so we can re-anchor the
+        // offset after the move. Without this, the List widget's
+        // selection-driven offset only shifts once the new selection
+        // enters the scroll_padding zone — meaning the first several
+        // scroll events appear to do nothing.
+        let old_offset = self.log_list_state.offset();
+        let old_screen_row = self
+            .selected_log_line()
+            .map(|l| l.saturating_sub(old_offset));
+
         let current_head_index = self.get_current_head_index();
         let next_head = match current_head_index {
             Some(current_head_index) => heads.get(
@@ -283,6 +426,19 @@ impl<'a> LogPanel<'a> {
         };
         if let Some(next_head) = next_head {
             self.set_head(next_head.clone());
+        }
+
+        // Re-anchor the offset so the new head sits at the same screen
+        // row as the old one. Each scroll event therefore moves the view
+        // by exactly the line-height of one head, instead of waiting
+        // for the selection to drift into the padding zone. The List
+        // widget still clamps the offset at the actual bounds.
+        if let (Some(row), Some(new_line)) = (old_screen_row, self.selected_log_line()) {
+            let total_lines = self.log_output_text.lines.len();
+            let visible = self.log_rect.height as usize;
+            let max_offset = total_lines.saturating_sub(visible);
+            let new_offset = new_line.saturating_sub(row).min(max_offset);
+            *self.log_list_state.offset_mut() = new_offset;
         }
         // TODO Notify about change of head
     }
@@ -405,6 +561,13 @@ impl Component for LogPanel<'_> {
             // Determine if mouse event is inside log-view
             let mouse_pos = Position::new(mouse_event.column, mouse_event.row);
             if !self.panel_rect.contains(mouse_pos) {
+                // A drag that wandered out of the panel before release is
+                // also out-of-bounds for our purposes; abandon it.
+                if matches!(mouse_event.kind, MouseEventKind::Up(_))
+                    && let Some(drag) = self.drag.take()
+                {
+                    self.head = drag.selection_at_start;
+                }
                 return Ok(ComponentInputResult::NotHandled);
             }
 
@@ -418,33 +581,295 @@ impl Component for LogPanel<'_> {
                     self.handle_event(LogTabEvent::ScrollDown)?;
                     return Ok(ComponentInputResult::Handled);
                 }
-                MouseEventKind::Up(_) => {
-                    // Check all items in list
+                MouseEventKind::Down(MouseButton::Left) => {
+                    if let Some(inx) = self.line_under_mouse(&mouse_event)
+                        && let Some(head) = self.head_at_log_line(inx)
+                    {
+                        let source_revs = if self.is_head_marked(&head) {
+                            self.marked_heads.iter().cloned().collect()
+                        } else {
+                            vec![head.commit_id.clone()]
+                        };
+                        self.drag = Some(DragState {
+                            source_revs,
+                            source_head: head.clone(),
+                            source_line: inx,
+                            cursor_line: Some(inx),
+                            target_head: Some(head),
+                            has_moved: false,
+                            selection_at_start: self.head.clone(),
+                            last_row: mouse_event.row,
+                            last_tick_scroll_at: None,
+                            modifiers: mouse_event.modifiers,
+                        });
+                        return Ok(ComponentInputResult::Handled);
+                    }
+                }
+                MouseEventKind::Drag(MouseButton::Left) => {
+                    if let Some(drag) = self.drag.as_ref() {
+                        // Auto-scroll when the cursor reaches the top or
+                        // bottom of the log pane. Gated on the cursor
+                        // having actually moved off the source row, so
+                        // the synthetic Drag some terminals emit at the
+                        // click coordinates can't trigger a scroll.
+                        // scroll_relative re-anchors the offset so the
+                        // selection follows along instead of fighting
+                        // the List widget's scroll_padding.
+                        let cursor_moved = drag.has_moved
+                            || drag.cursor_line.is_some_and(|c| c != drag.source_line);
+                        if cursor_moved {
+                            let row = mouse_event.row;
+                            let log_top = self.log_rect.y;
+                            let log_bottom = self.log_rect.bottom();
+                            if row <= log_top {
+                                self.scroll_relative(-1);
+                            } else if row + 1 >= log_bottom {
+                                self.scroll_relative(1);
+                            }
+                        }
 
-                    // TODO make a function that constructs the log list
-                    let log_lines = self.log_lines();
-                    let log_items: Vec<ListItem> = log_lines
-                        .iter()
-                        .map(|line| ListItem::from(line.to_text()))
-                        .collect();
+                        let inx = self.line_under_mouse(&mouse_event);
+                        let new_target = inx.and_then(|i| {
+                            self.log_output
+                                .as_ref()
+                                .ok()
+                                .and_then(|out| out.head_at(i).cloned())
+                        });
+                        let source_head = self.drag.as_ref().and_then(|d| {
+                            self.log_output
+                                .as_ref()
+                                .ok()
+                                .and_then(|out| out.head_at(d.source_line).cloned())
+                        });
+                        let drag = self.drag.as_mut().expect("checked above");
+                        // Track modifiers on every drag tick so the footer
+                        // can preview the action that release would trigger.
+                        drag.modifiers = mouse_event.modifiers;
+                        drag.last_row = mouse_event.row;
+                        drag.last_tick_scroll_at = None;
+                        if inx != drag.cursor_line {
+                            drag.cursor_line = inx;
+                            drag.target_head = new_target;
+                            // The drag only counts as "moved" once the cursor
+                            // has crossed onto a different head, not just a
+                            // different line within the same head.
+                            if drag.target_head != source_head {
+                                drag.has_moved = true;
+                            }
+                        }
+                        return Ok(ComponentInputResult::Handled);
+                    }
+                }
+                MouseEventKind::Up(MouseButton::Left) => {
+                    if let Some(drag) = self.drag.take() {
+                        // Auto-scroll-at-edge moved self.head while the
+                        // drag was in flight; reset to the pre-drag
+                        // selection. Click-to-select and successful drop
+                        // dispatchers will overwrite this if needed.
+                        self.head = drag.selection_at_start.clone();
 
-                    // Select the clicked change
-                    if let Some(inx) = list_item_from_mouse_event(
-                        &log_items,
-                        self.log_rect,
-                        &self.log_list_state,
-                        &mouse_event,
-                    ) && let Some(head) = self.head_at_log_line(inx)
+                        // No real movement: behave as a click-to-select on the
+                        // up position.
+                        if !drag.has_moved {
+                            if let Some(inx) = self.line_under_mouse(&mouse_event)
+                                && let Some(head) = self.head_at_log_line(inx)
+                            {
+                                self.set_head(head);
+                                return Ok(ComponentInputResult::Handled);
+                            }
+                            return Ok(ComponentInputResult::Handled);
+                        }
+
+                        // Genuine drop: build the action and let LogTab pick it up.
+                        if let Some(target) = drag.target_head.clone() {
+                            // Dropping a commit on itself (or on a member of
+                            // a multi-source set) is a no-op.
+                            if drag.source_revs.iter().any(|c| c == &target.commit_id) {
+                                return Ok(ComponentInputResult::Handled);
+                            }
+                            // Some terminals strip modifiers from the Up event
+                            // even when they pass them through on Drag events,
+                            // so fall back to whatever the drag last saw.
+                            let raw = if mouse_event.modifiers.is_empty() {
+                                drag.modifiers
+                            } else {
+                                mouse_event.modifiers
+                            };
+                            let action = match decode_drag_modifiers(raw) {
+                                DragMode::Onto => DragAction::RebaseOnto {
+                                    source_revs: drag.source_revs,
+                                    source_head: drag.source_head,
+                                    target,
+                                },
+                                DragMode::After => DragAction::RebaseAfter {
+                                    source_revs: drag.source_revs,
+                                    source_head: drag.source_head,
+                                    target,
+                                },
+                                DragMode::Before => DragAction::RebaseBefore {
+                                    source_revs: drag.source_revs,
+                                    source_head: drag.source_head,
+                                    target,
+                                },
+                                DragMode::Squash => DragAction::Squash {
+                                    source_revs: drag.source_revs,
+                                    target,
+                                },
+                            };
+                            self.pending_action = Some(action);
+                        }
+                        return Ok(ComponentInputResult::Handled);
+                    }
+
+                    // Fallback: legacy click-to-select behaviour.
+                    if let Some(inx) = self.line_under_mouse(&mouse_event)
+                        && let Some(head) = self.head_at_log_line(inx)
                     {
                         self.set_head(head);
                         return Ok(ComponentInputResult::Handled);
                     }
                 }
+                MouseEventKind::Up(MouseButton::Right) => {
+                    // A right-button release shouldn't end an in-flight
+                    // left-drag. Otherwise, select the head under the cursor
+                    // and report the event handled so callers (e.g. the log
+                    // tab opening a context menu) can react against the
+                    // updated selection.
+                    if self.drag.is_none()
+                        && let Some(inx) = self.line_under_mouse(&mouse_event)
+                        && let Some(head) = self.head_at_log_line(inx)
+                    {
+                        self.set_head(head);
+                        return Ok(ComponentInputResult::Handled);
+                    }
+                }
+                MouseEventKind::Up(_) => {
+                    // Non-left, non-right button release while a left-drag is
+                    // in flight shouldn't end the drag. Otherwise nothing to
+                    // do.
+                }
                 _ => {} // Handle other mouse events if necessary
             }
         }
 
+        if let Event::Key(key_event) = event {
+            if let Some(drag) = self.drag.as_mut() {
+                if let KeyCode::Modifier(mod_code) = key_event.code {
+                    let flag = modifier_code_to_flag(mod_code);
+                    match key_event.kind {
+                        KeyEventKind::Press => drag.modifiers |= flag,
+                        KeyEventKind::Release => drag.modifiers &= !flag,
+                        KeyEventKind::Repeat => {}
+                    }
+                    return Ok(ComponentInputResult::Handled);
+                }
+            }
+        }
+
         Ok(ComponentInputResult::NotHandled)
+    }
+}
+
+impl LogPanel<'_> {
+    /// Map a mouse event to a log line index, if it points inside the list.
+    fn line_under_mouse(&self, mouse_event: &MouseEvent) -> Option<usize> {
+        let log_lines = self.log_lines();
+        let log_items: Vec<ListItem> = log_lines
+            .iter()
+            .map(|line| ListItem::from(line.to_text()))
+            .collect();
+        list_item_from_mouse_event(&log_items, self.log_rect, &self.log_list_state, mouse_event)
+    }
+
+    /// True when a drag started inside this panel is still in progress.
+    pub fn drag_active(&self) -> bool {
+        self.drag.is_some()
+    }
+
+    /// Source commits for the in-flight drag, if any.
+    pub fn drag_source_revs(&self) -> Option<&[CommitId]> {
+        self.drag.as_ref().map(|d| d.source_revs.as_slice())
+    }
+
+    /// Head currently under the cursor for the in-flight drag, if any.
+    pub fn drag_target_head(&self) -> Option<&Head> {
+        self.drag.as_ref().and_then(|d| d.target_head.as_ref())
+    }
+
+    /// Modifier keys reported on the most recent mouse event of the
+    /// in-flight drag, if any. Used to preview the action that release
+    /// would trigger.
+    pub fn drag_modifiers(&self) -> Option<KeyModifiers> {
+        self.drag.as_ref().map(|d| d.modifiers)
+    }
+
+    /// Head where the current drag started, if any.
+    pub fn drag_source_head(&self) -> Option<Head> {
+        let drag = self.drag.as_ref()?;
+        self.log_output
+            .as_ref()
+            .ok()?
+            .head_at(drag.source_line)
+            .cloned()
+    }
+
+    /// True once the cursor has crossed onto a different head during the
+    /// drag (used by callers to decide whether to render drag UI).
+    pub fn drag_has_moved(&self) -> bool {
+        self.drag.as_ref().is_some_and(|d| d.has_moved)
+    }
+
+    /// Drive auto-scroll while the cursor is held at the top/bottom edge
+    /// of the log pane without moving. Called on a steady tick from the
+    /// main loop so the view keeps advancing when no Drag events arrive.
+    pub fn tick_drag_auto_scroll(&mut self) {
+        let Some(drag) = self.drag.as_ref() else {
+            return;
+        };
+        // Same gating as the event-driven path: don't auto-scroll until
+        // the cursor has actually moved off the source row.
+        let cursor_moved =
+            drag.has_moved || drag.cursor_line.is_some_and(|c| c != drag.source_line);
+        if !cursor_moved {
+            return;
+        }
+        // Rate-limit the tick path so the scroll feels deliberate, not
+        // racing. Event-driven scrolls (from cursor movement) bypass
+        // this — they reset `last_tick_scroll_at` to None on every Drag.
+        const TICK_INTERVAL: Duration = Duration::from_millis(150);
+        if let Some(at) = drag.last_tick_scroll_at
+            && at.elapsed() < TICK_INTERVAL
+        {
+            return;
+        }
+        let row = drag.last_row;
+        let log_top = self.log_rect.y;
+        let log_bottom = self.log_rect.bottom();
+        let direction = if row <= log_top {
+            -1
+        } else if row + 1 >= log_bottom {
+            1
+        } else {
+            return;
+        };
+        self.scroll_relative(direction);
+        if let Some(drag) = self.drag.as_mut() {
+            drag.last_tick_scroll_at = Some(Instant::now());
+        }
+    }
+
+    /// Cancel any in-flight drag without producing an action.
+    pub fn cancel_drag(&mut self) {
+        if let Some(drag) = self.drag.take() {
+            // Restore the selection auto-scroll-at-edge moved during the drag.
+            self.head = drag.selection_at_start;
+        }
+        self.pending_action = None;
+    }
+
+    /// Take the pending drop action, if any.
+    pub fn take_pending_drag_action(&mut self) -> Option<DragAction> {
+        self.pending_action.take()
     }
 }
 
