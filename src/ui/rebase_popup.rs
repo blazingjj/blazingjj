@@ -162,8 +162,6 @@ impl Component for RebasePopup {
             .split(area);
 
         // Radio buttons for source
-        //let src_change_id: String = self.source_revs.change_id.as_str().chars().take(8).collect();
-        //let src_commit_id: String = self.source_revs.commit_id.as_str().chars().take(8).collect();
         let src_options = vec![
             "-s this and descendants",
             "-b whole branch",
@@ -174,13 +172,14 @@ impl Component for RebasePopup {
             CutOption::IncludeBranch => 1,
             CutOption::SingleRevision => 2,
         };
-        frame.render_widget(
-            Paragraph::new(Span::raw(format!(
-                //"Source @ {src_change_id} {src_commit_id}"
-                "Source"
-            ))),
-            chunks[0],
-        );
+        let src_label = match self.source_revs.as_slice() {
+            [only] => {
+                let prefix: String = only.as_str().chars().take(8).collect();
+                format!("Source {prefix}")
+            }
+            many => format!("Source: {} tagged changes", many.len()),
+        };
+        frame.render_widget(Paragraph::new(Span::raw(src_label)), chunks[0]);
         frame.render_stateful_widget(RadioButton::new(src_options), chunks[1], &mut src_select);
 
         // Radio buttons for target
