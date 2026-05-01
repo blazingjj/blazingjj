@@ -187,6 +187,18 @@ impl Commander {
             .run_void()?)
     }
 
+    /// Parallelize changes. Maps to `jj parallelize <revset>`.
+    pub fn run_parallelize(&self, revset: impl Into<Revset>) -> Result<()> {
+        self.run_parallelize_inner(revset.into().as_str())
+    }
+
+    #[instrument(level = "trace", name = "run_parallelize", skip(self))]
+    fn run_parallelize_inner(&self, revset: &str) -> Result<()> {
+        self.jj(["parallelize", revset])
+            .run_void()
+            .context("Failed executing jj parallelize")
+    }
+
     /// Squash changes. Maps to `jj squash -u [--from <revset>] --into <revset>`.
     /// `from` defaults to the working copy when `None`.
     pub fn run_squash(

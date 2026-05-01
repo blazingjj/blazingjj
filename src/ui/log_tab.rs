@@ -344,6 +344,11 @@ impl<'a> LogTab<'a> {
                 return Ok(Some(AppAction::Run(Command::Duplicate(revset))));
             }
 
+            LogTabEvent::Parallelize => {
+                let revset = Revset::union_or(&self.take_marked(), &self.head.commit_id);
+                return Ok(Some(AppAction::Run(Command::Parallelize(revset))));
+            }
+
             LogTabEvent::CreateNew { describe } => {
                 return Ok(Some(command::ask_new_change_from_selection(
                     &self.head,
