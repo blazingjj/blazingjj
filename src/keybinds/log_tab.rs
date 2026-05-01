@@ -194,8 +194,8 @@ impl LogTabKeybinds {
             LogTabEvent::Duplicate => "duplicate", Some(Section::Changes), "duplicate the marked changes or the selection",
             LogTabEvent::Abandon => "abandon", Some(Section::Changes), "abandon change",
             LogTabEvent::Rebase => "rebase", Some(Section::Changes), "rebase @ or the marked changes onto the selection",
-            LogTabEvent::Squash { ignore_immutable: false } => "squash", Some(Section::Changes), "squash @ into the selection",
-            LogTabEvent::Squash { ignore_immutable: true } => "squash-ignore-immutable", Some(Section::Changes), "squash @ into the selection, ignoring immutability",
+            LogTabEvent::Squash { ignore_immutable: false } => "squash", Some(Section::Changes), "squash the marked changes or @ into the selection",
+            LogTabEvent::Squash { ignore_immutable: true } => "squash-ignore-immutable", Some(Section::Changes), "squash the marked changes or @ into the selection, ignoring immutability",
             LogTabEvent::Absorb => "absorb", Some(Section::Changes), "absorb the selection into its mutable ancestors",
 
             LogTabEvent::SetBookmark => "set-bookmark", Some(Section::BookmarksAndRemotes), "set bookmark",

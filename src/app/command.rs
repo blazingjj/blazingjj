@@ -137,7 +137,10 @@ pub enum Command {
         insert: NewInsertMode,
         describe: bool,
     },
+    /// Squash `from`, or the working copy when it is [None], into
+    /// `target`.
     Squash {
+        from: Option<Revset>,
         target: Head,
         ignore_immutable: bool,
     },
@@ -264,12 +267,22 @@ impl Command {
                 Ok(Some(AppAction::Multiple(actions)))
             }
             Command::Squash {
+                from,
                 target,
                 ignore_immutable,
-            } => match new_commander().run_squash(&target.commit_id, ignore_immutable) {
-                Ok(()) => Ok(Some(show_change(new_commander().get_current_head()?))),
-                Err(err) => Ok(Some(refused("Squash", err))),
-            },
+            } => {
+                // Sources of its own are the marked changes, which the
+                // log is done marking once they are folded in.
+                let marked = from.is_some();
+                match new_commander().run_squash(from, &target.commit_id, ignore_immutable) {
+                    // Folding the working copy in moves it, so the view
+                    // follows it there; folding the marked changes in
+                    // leaves it where it was.
+                    Ok(()) if marked => Ok(Some(rewritten(marks_taken(marked)))),
+                    Ok(()) => Ok(Some(show_change(new_commander().get_current_head()?))),
+                    Err(err) => Ok(Some(refused("Squash", err))),
+                }
+            }
             Command::Edit {
                 revset,
                 ignore_immutable,
@@ -792,20 +805,47 @@ pub fn ask_new_change(acts_on: ActsOn, target: &str, describe: bool) -> AppActio
     })))
 }
 
-/// Asking to squash into `selected`: the target it picks, the refusal
-/// when that target cannot take it, or the question that runs it.
-pub fn ask_squash(selected: &Head, ignore_immutable: bool) -> Result<AppAction> {
-    // Squashing the change the working copy is on has nowhere to go but
-    // its parent.
-    let at = new_commander().get_current_head()?;
-    let onto_parent = selected.change_id == at.change_id;
-    let target = if onto_parent {
-        match new_commander().get_commit_parent(&at.commit_id) {
-            Ok(parent) => parent,
-            Err(_) => return Ok(message("Squash", "Cannot squash onto current change")),
-        }
+/// Asking to squash the marked changes, or the working copy when none
+/// are marked, into `selected`: the target it picks, the refusal when
+/// that target cannot take it, or the question that runs it.
+pub fn ask_squash(
+    selected: &Head,
+    marked: &[CommitId],
+    ignore_immutable: bool,
+) -> Result<AppAction> {
+    // Marking the change being squashed into says to fold the others
+    // into it, there being nowhere else they could go.
+    let sources: Vec<_> = marked
+        .iter()
+        .filter(|source| **source != selected.commit_id)
+        .cloned()
+        .collect();
+    if sources.is_empty() && !marked.is_empty() {
+        return Ok(message("Squash", "Cannot squash a change into itself"));
+    }
+
+    // Marked sources name themselves, so the selection is the target
+    // whatever it is. Squashing the change the working copy is on, on
+    // the other hand, has nowhere to go but its parent.
+    let from = Revset::union(&sources);
+    let (target, question) = if from.is_some() {
+        (
+            selected.clone(),
+            "Are you sure you want to squash the marked changes into this change?",
+        )
     } else {
-        selected.clone()
+        let at = new_commander().get_current_head()?;
+        if selected.change_id == at.change_id {
+            match new_commander().get_commit_parent(&at.commit_id) {
+                Ok(parent) => (parent, "Are you sure you want to squash @ into its parent?"),
+                Err(_) => return Ok(message("Squash", "Cannot squash onto current change")),
+            }
+        } else {
+            (
+                selected.clone(),
+                "Are you sure you want to squash @ into this change?",
+            )
+        }
     };
 
     if target.immutable && !ignore_immutable {
@@ -813,11 +853,7 @@ pub fn ask_squash(selected: &Head, ignore_immutable: bool) -> Result<AppAction> 
     }
 
     let mut lines = vec![
-        Line::from(if onto_parent {
-            "Are you sure you want to squash @ into its parent?"
-        } else {
-            "Are you sure you want to squash @ into this change?"
-        }),
+        Line::from(question),
         Line::from(format!("Squash into {}", target.change_id.as_str())),
     ];
     if ignore_immutable {
@@ -828,6 +864,7 @@ pub fn ask_squash(selected: &Head, ignore_immutable: bool) -> Result<AppAction> 
         "Squash",
         Text::from(lines),
         Command::Squash {
+            from,
             target,
             ignore_immutable,
         },
@@ -1178,6 +1215,29 @@ mod tests {
         let rows = rows(rebase(&marked, &onto).expect("the popup"));
 
         assert!(says_where(&rows, "Source: 1 marked change"), "{rows:?}");
+    }
+
+    #[test]
+    fn a_change_marked_as_its_own_squash_destination_is_turned_down() {
+        set_test_env();
+
+        let into = head("abc", false);
+        let action =
+            ask_squash(&into, std::slice::from_ref(&into.commit_id), false).expect("the question");
+
+        assert!(says(action, "Cannot squash a change into itself"));
+    }
+
+    #[test]
+    fn the_marked_changes_are_the_sources_the_squash_asks_about() {
+        set_test_env();
+
+        let into = head("abc", false);
+        let action = ask_squash(&into, &[CommitId("def".to_owned())], false).expect("the question");
+
+        let rows = rows(action);
+        assert!(says_where(&rows, "squash the marked changes"), "{rows:?}");
+        assert!(says_where(&rows, "Squash into abc"), "{rows:?}");
     }
 
     #[test]

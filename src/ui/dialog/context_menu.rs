@@ -74,15 +74,21 @@ pub fn log_context_menu(
                 &selected.commit_id,
             ))),
         ),
-        (
-            Line::raw(if selected_is_at {
+    ];
+    // With marks in play it is those that are folded in, so marking the
+    // destination alone leaves nothing to offer.
+    if marked.is_empty() || marked_elsewhere {
+        items.push((
+            Line::raw(if marked_elsewhere {
+                "Squash the marked changes into this"
+            } else if selected_is_at {
                 "Squash @ into its parent"
             } else {
                 "Squash @ into this"
             }),
-            command::ask_squash(selected, false)?,
-        ),
-    ];
+            command::ask_squash(selected, marked, false)?,
+        ));
+    }
     // The working copy change has nowhere to go, and with marks in play
     // it is those that move, so marking the destination alone leaves
     // nothing to offer.

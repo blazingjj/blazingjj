@@ -241,8 +241,10 @@ See all key mappings for the current tab with `?`.
   - Scroll in bookmark list with `j`/`k`
   - Create a new bookmark with `c`
   - Use auto-generated name with `g`
-- Squash current changes (in @) to the selected change with `s` (`jj squash`)
-  - Squash current changes to the selected change ignoring immutability with `S` (`jj squash --ignore-immutable`)
+- Squash the marked changes, or the ones in `@`, into the selected change with
+  `s` (`jj squash`)
+  - Squash the same way, ignoring immutability, with `S`
+    (`jj squash --ignore-immutable`)
 - Yank the change ID with `y` and the revision with `Y`
 - Git fetch with `f` (`jj git fetch`)
   - Git fetch all remotes with `F` (`jj git fetch --all-remotes`)
