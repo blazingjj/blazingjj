@@ -22,6 +22,16 @@ pub struct MessagePopup<'a> {
     pub text_align: Option<Alignment>,
 }
 
+impl<'a> MessagePopup<'a> {
+    pub fn new(title: impl Into<Line<'a>>, body: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            messages: Text::raw(body.into()),
+            text_align: None,
+        }
+    }
+}
+
 impl Component for MessagePopup<'_> {
     /// Render the parent into the area.
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
