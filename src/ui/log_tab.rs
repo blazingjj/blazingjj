@@ -209,6 +209,16 @@ impl<'a> LogTab<'a> {
         }
     }
 
+    /// The marked changes an operation is about to carry out, which the
+    /// log stops marking as it hands them over.
+    fn take_marked(&mut self) -> Vec<CommitId> {
+        let marked = self.marked();
+        if !marked.is_empty() {
+            self.clear_marks();
+        }
+        marked
+    }
+
     /// The menu of what can be done to the selected change, put at
     /// `anchor` or centered when there is nowhere to point at.
     fn context_menu(&self, anchor: Option<Position>) -> Result<Option<AppAction>> {
@@ -287,9 +297,8 @@ impl<'a> LogTab<'a> {
                 self.sync_head_output();
             }
             LogTabEvent::Duplicate => {
-                return Ok(Some(AppAction::Run(Command::Duplicate(Revset::from(
-                    &self.head.change_id,
-                )))));
+                let revset = Revset::union_or(&self.take_marked(), &self.head.change_id);
+                return Ok(Some(AppAction::Run(Command::Duplicate(revset))));
             }
 
             LogTabEvent::CreateNew { describe } => {
