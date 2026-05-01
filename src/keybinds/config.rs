@@ -118,6 +118,7 @@ pub struct LogTabKeybindsConfig {
     pub use_marks: Option<Keybind>,
 
     pub duplicate: Option<Keybind>,
+    pub parallelize: Option<Keybind>,
     pub create_new: Option<Keybind>,
     pub create_new_describe: Option<Keybind>,
     pub squash: Option<Keybind>,

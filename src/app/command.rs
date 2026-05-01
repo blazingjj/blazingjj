@@ -93,6 +93,7 @@ pub enum Command {
     /// Put text on the system clipboard.
     Copy(String),
     Duplicate(Revset),
+    Parallelize(Revset),
     Absorb(Head),
     /// Create a change from `revset`, put where `insert` says.
     New {
@@ -192,6 +193,10 @@ impl Command {
             Command::Duplicate(revset) => match new_commander().run_duplicate(revset) {
                 Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
                 Err(err) => Ok(Some(refused("Duplicate", err))),
+            },
+            Command::Parallelize(revset) => match new_commander().run_parallelize(revset) {
+                Ok(()) => Ok(Some(show_change(new_commander().get_current_head()?))),
+                Err(err) => Ok(Some(refused("Parallelize", err))),
             },
             Command::Absorb(head) => match new_commander().run_absorb(&head.commit_id) {
                 Ok(()) => Ok(Some(show_change(new_commander().get_head_latest(&head)?))),
