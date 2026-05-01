@@ -25,9 +25,9 @@ use tui_confirm_dialog::ConfirmDialog;
 use tui_confirm_dialog::ConfirmDialogState;
 use tui_confirm_dialog::Listener;
 
-use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
+use crate::commander::revset::Revset;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::env::get_env;
@@ -470,11 +470,9 @@ impl<'a> LogTab<'a> {
     // Execute new command, after self.popup returned
     fn execute_new(&mut self) -> Result<Option<AppAction>> {
         let commit_ids = self.log_panel.extract_and_clear_head_marks();
-        if commit_ids.is_empty() {
-            new_commander().run_new([self.head.commit_id.as_str()])?;
-        } else {
-            new_commander().run_new(commit_ids.iter().map(CommitId::as_str))?;
-        }
+        let revset =
+            Revset::union(&commit_ids).unwrap_or_else(|| Revset::from(&self.head.commit_id));
+        new_commander().run_new(revset)?;
         self.set_head(new_commander().get_current_head()?);
         if self.describe_after_new {
             self.describe_after_new = false;
@@ -542,7 +540,9 @@ impl<'a> LogTab<'a> {
         }
         // Abandon marked commmits
         let commit_id_list = self.log_panel.extract_and_clear_head_marks();
-        new_commander().run_abandon(&commit_id_list)?;
+        let revset =
+            Revset::union(&commit_id_list).unwrap_or_else(|| Revset::from(&self.head.commit_id));
+        new_commander().run_abandon(revset)?;
         // Update selection to latest version, in case abandon triggered a rebase.
         let new_selection = new_commander().get_head_latest(&selection)?;
         // Update log panel and diff panel

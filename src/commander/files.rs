@@ -233,6 +233,7 @@ mod tests {
     use insta::assert_debug_snapshot;
 
     use super::*;
+    use crate::commander::revset::Revset;
     use crate::commander::tests::TestRepo;
 
     #[test]
@@ -545,11 +546,11 @@ mod tests {
     fn create_conflicting_changes(test_repo: &TestRepo) -> Result<(Head, Head)> {
         let root = test_repo.commander.get_current_head()?;
 
-        test_repo.commander.run_new([root.commit_id.as_str()])?;
+        test_repo.commander.run_new(&root.commit_id)?;
         let head1 = test_repo.commander.get_current_head()?;
         write_conflicting_files(test_repo, b"AAA")?;
 
-        test_repo.commander.run_new([root.commit_id.as_str()])?;
+        test_repo.commander.run_new(&root.commit_id)?;
         let head2 = test_repo.commander.get_current_head()?;
         write_conflicting_files(test_repo, b"BBB")?;
 
@@ -603,9 +604,9 @@ mod tests {
 
         // By change ID, as writing the files moved both changes on from the
         // commits they were looked up as.
-        test_repo
-            .commander
-            .run_new([head1.change_id.as_str(), head2.change_id.as_str()])?;
+        let parents = Revset::union([&head1.change_id, &head2.change_id])
+            .expect("two change IDs are not an empty union");
+        test_repo.commander.run_new(parents)?;
 
         let head = test_repo.commander.get_current_head()?;
 

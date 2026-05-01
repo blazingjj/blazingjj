@@ -13,13 +13,19 @@ use crate::commander::CommandError;
 use crate::commander::Commander;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::ids::CommitId;
+use crate::commander::revset::Revset;
 
 impl Commander {
-    /// Create a new change after revisions. Maps to `jj new <revision>...`
-    #[instrument(level = "trace", skip(self, revisions))]
-    pub fn run_new<'a, T: IntoIterator<Item = &'a str>>(&self, revisions: T) -> Result<()> {
-        let args = ["new"].into_iter().chain::<T>(revisions);
-        self.jj(args).run_void().context("Failed executing jj new")
+    /// Create a new change. Maps to `jj new <revset>`.
+    pub fn run_new(&self, revset: impl Into<Revset>) -> Result<()> {
+        self.run_new_inner(revset.into().as_str())
+    }
+
+    #[instrument(level = "trace", name = "run_new", skip(self))]
+    fn run_new_inner(&self, revset: &str) -> Result<()> {
+        self.jj(["new", revset])
+            .run_void()
+            .context("Failed executing jj new")
     }
 
     /// Duplicate a change. Maps to `jj duplicate`
@@ -40,13 +46,14 @@ impl Commander {
         self.jj(args).run_void().context("Failed executing jj edit")
     }
 
-    /// Abandon change. Maps to `jj abandon <revision>`
-    #[instrument(level = "trace", skip(self))]
-    pub fn run_abandon(&self, commit_ids: &[CommitId]) -> Result<()> {
-        let args = ["abandon"]
-            .into_iter()
-            .chain(commit_ids.iter().map(CommitId::as_str));
-        self.jj(args)
+    /// Abandon change. Maps to `jj abandon <revset>`.
+    pub fn run_abandon(&self, revset: impl Into<Revset>) -> Result<()> {
+        self.run_abandon_inner(revset.into().as_str())
+    }
+
+    #[instrument(level = "trace", name = "run_abandon", skip(self))]
+    fn run_abandon_inner(&self, revset: &str) -> Result<()> {
+        self.jj(["abandon", revset])
             .run_void()
             .context("Failed executing jj abandon")
     }
@@ -64,8 +71,23 @@ impl Commander {
     }
 
     /// Rebase changes. Maps to `jj rebase -s <rev> -d <rev>` or similar
-    #[instrument(level = "trace", skip(self))]
     pub fn run_rebase(
+        &self,
+        src_mode: &str,
+        src_rev: impl Into<Revset>,
+        tgt_mode: &str,
+        tgt_rev: impl Into<Revset>,
+    ) -> Result<()> {
+        self.run_rebase_inner(
+            src_mode,
+            src_rev.into().as_str(),
+            tgt_mode,
+            tgt_rev.into().as_str(),
+        )
+    }
+
+    #[instrument(level = "trace", name = "run_rebase", skip(self))]
+    fn run_rebase_inner(
         &self,
         src_mode: &str,
         src_rev: &str,
@@ -216,8 +238,6 @@ impl Commander {
 
 #[cfg(test)]
 mod tests {
-    use core::slice;
-
     use super::*;
     use crate::commander::tests::TestRepo;
 
@@ -226,7 +246,7 @@ mod tests {
         let test_repo = TestRepo::new()?;
 
         let head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new([head.commit_id.as_str()])?;
+        test_repo.commander.run_new(&head.commit_id)?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
 
         Ok(())
@@ -237,7 +257,7 @@ mod tests {
         let test_repo = TestRepo::new()?;
 
         let head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new([head.commit_id.as_str()])?;
+        test_repo.commander.run_new(&head.commit_id)?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
         test_repo
             .commander
@@ -252,9 +272,7 @@ mod tests {
         let test_repo = TestRepo::new()?;
 
         let head = test_repo.commander.get_current_head()?;
-        test_repo
-            .commander
-            .run_abandon(slice::from_ref(&head.commit_id))?;
+        test_repo.commander.run_abandon(&head.commit_id)?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
 
         Ok(())
@@ -317,7 +335,7 @@ mod tests {
 
         // Create new change, since by default `jj bookmark create` uses current change
         let head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new([head.commit_id.as_str()])?;
+        test_repo.commander.run_new(&head.commit_id)?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
 
         let bookmark = test_repo
@@ -349,7 +367,7 @@ mod tests {
 
         // Create new change, since by default `jj bookmark create` uses current change
         let old_head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new([old_head.commit_id.as_str()])?;
+        test_repo.commander.run_new(&old_head.commit_id)?;
         let new_head = test_repo.commander.get_current_head()?;
         assert_ne!(old_head, new_head);
 
