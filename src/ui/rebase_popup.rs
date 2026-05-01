@@ -41,12 +41,16 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidget;
 
 use crate::ComponentInputResult;
+use crate::commander::ids::CommitId;
+use crate::commander::ids::commit_revset_union;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::keybinds::rebase_popup::CutOption;
 use crate::keybinds::rebase_popup::PasteOption;
 use crate::keybinds::rebase_popup::PopupAction;
 use crate::ui::Component;
+use crate::ui::ComponentAction;
+use crate::ui::message_popup::MessagePopup;
 use crate::ui::utils::centered_rect_fixed;
 
 type Keybinds = crate::keybinds::rebase_popup::Keybinds;
@@ -55,7 +59,7 @@ type Keybinds = crate::keybinds::rebase_popup::Keybinds;
 pub struct RebasePopup {
     pub keybinds: Keybinds,
 
-    pub source_rev: Head,
+    pub source_revs: Vec<CommitId>,
     pub target_rev: Head,
 
     pub source_mode: CutOption,
@@ -63,22 +67,14 @@ pub struct RebasePopup {
 }
 
 impl RebasePopup {
-    pub fn new(source_rev: Head, target_rev: Head) -> Self {
+    pub fn new(source_revs: Vec<CommitId>, target_rev: Head) -> Self {
         Self {
             keybinds: Keybinds::default(),
-            source_rev,
+            source_revs,
             target_rev,
             source_mode: CutOption::SingleRevision,
             target_mode: PasteOption::NewBranch,
         }
-    }
-
-    /// Collect all the rendering code that would have been in
-    /// log_tab.rs/draw
-    pub fn render_widget(&mut self, frame: &mut Frame) {
-        let area = centered_rect_fixed(frame.area(), 32, 12);
-        self.draw(frame, area)
-            .expect("Expected drawing without failues");
     }
 
     /// Map an event to a popup action
@@ -90,9 +86,7 @@ impl RebasePopup {
         PopupAction::None
     }
 
-    /// Run the command that the popup is currently configured to do
     fn run_command(&self) -> Result<()> {
-        let src_rev = self.source_rev.commit_id.as_str();
         let tgt_rev = self.target_rev.commit_id.as_str();
         let src_mode = match self.source_mode {
             CutOption::IncludeDescendants => "-s",
@@ -104,34 +98,15 @@ impl RebasePopup {
             PasteOption::InsertAfter => "-A",
             PasteOption::InsertBefore => "-B",
         };
-        new_commander().run_rebase(src_mode, src_rev, tgt_mode, tgt_rev)?;
+        let src_rev = commit_revset_union(&self.source_revs);
+        new_commander().run_rebase(src_mode, &src_rev, tgt_mode, tgt_rev)?;
         Ok(())
-    }
-
-    /// Process the input event. If this function returns Ok(true),
-    /// then the popup should be closed. Either a rebase was executed
-    /// or the operation was cancelled.
-    /// If the result is Ok(false) the function did handle
-    /// the input, but the popup should not be closed yet.
-    /// Err(_) will be returned if the jj command failed.
-    pub fn handle_input(&mut self, event: Event) -> Result<bool> {
-        match self.match_event(event) {
-            PopupAction::Ok => {
-                self.run_command()?;
-                return Ok(true);
-            }
-            PopupAction::Cancel => return Ok(true),
-            PopupAction::SetSourceMode(m) => self.source_mode = m,
-            PopupAction::SetTargetMode(m) => self.target_mode = m,
-            PopupAction::None => (),
-        }
-        Ok(false)
     }
 }
 
 impl Component for RebasePopup {
-    /// Render the dialog into the area.
     fn draw(&mut self, frame: &mut Frame<'_>, area: Rect) -> Result<()> {
+        let area = centered_rect_fixed(area, 32, 12);
         // The border of the dialog
         let block = Block::bordered()
             .title(Span::styled(" Rebase ", Style::new().bold().cyan()))
@@ -160,8 +135,6 @@ impl Component for RebasePopup {
             .split(area);
 
         // Radio buttons for source
-        let src_change_id: String = self.source_rev.change_id.as_str().chars().take(8).collect();
-        let src_commit_id: String = self.source_rev.commit_id.as_str().chars().take(8).collect();
         let src_options = vec![
             "-s this and descendants",
             "-b whole branch",
@@ -172,12 +145,14 @@ impl Component for RebasePopup {
             CutOption::IncludeBranch => 1,
             CutOption::SingleRevision => 2,
         };
-        frame.render_widget(
-            Paragraph::new(Span::raw(format!(
-                "Source @ {src_change_id} {src_commit_id}"
-            ))),
-            chunks[0],
-        );
+        let src_label = match self.source_revs.as_slice() {
+            [only] => {
+                let prefix: String = only.as_str().chars().take(8).collect();
+                format!("Source {prefix}")
+            }
+            many => format!("Source: {} tagged changes", many.len()),
+        };
+        frame.render_widget(Paragraph::new(Span::raw(src_label)), chunks[0]);
         frame.render_stateful_widget(RadioButton::new(src_options), chunks[1], &mut src_select);
 
         // Radio buttons for target
@@ -211,9 +186,35 @@ impl Component for RebasePopup {
         Ok(())
     }
 
-    fn input(&mut self, _event: Event) -> Result<ComponentInputResult> {
-        unreachable!();
-        //return Ok(ComponentInputResult::Handled);
+    fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
+        match self.match_event(event) {
+            PopupAction::Ok => match self.run_command() {
+                Ok(()) => Ok(ComponentInputResult::HandledAction(
+                    ComponentAction::Multiple(vec![
+                        ComponentAction::SetPopup(None),
+                        ComponentAction::RefreshTab(),
+                    ]),
+                )),
+                Err(e) => Ok(ComponentInputResult::HandledAction(
+                    ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                        "Error",
+                        e.to_string(),
+                    )))),
+                )),
+            },
+            PopupAction::Cancel => Ok(ComponentInputResult::HandledAction(
+                ComponentAction::SetPopup(None),
+            )),
+            PopupAction::SetSourceMode(m) => {
+                self.source_mode = m;
+                Ok(ComponentInputResult::Handled)
+            }
+            PopupAction::SetTargetMode(m) => {
+                self.target_mode = m;
+                Ok(ComponentInputResult::Handled)
+            }
+            PopupAction::None => Ok(ComponentInputResult::Handled),
+        }
     }
 }
 

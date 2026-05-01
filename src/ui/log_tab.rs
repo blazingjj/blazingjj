@@ -1,11 +1,13 @@
 #![expect(clippy::borrow_interior_mutable_const)]
 
-use std::cmp::max;
-
 use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
+use ratatui::crossterm::event::KeyModifiers;
+use ratatui::crossterm::event::MouseButton;
+use ratatui::crossterm::event::MouseEventKind;
 use ratatui::crossterm::execute;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -19,10 +21,13 @@ use tui_confirm_dialog::Listener;
 
 use crate::ComponentInputResult;
 use crate::commander::ids::CommitId;
+use crate::commander::ids::commit_revset_union;
+use crate::commander::jj::NewInsertMode;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::env::DescribeMode;
 use crate::env::DiffFormat;
+use crate::env::JJLayout;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::LogTabEvent;
@@ -33,15 +38,22 @@ use crate::ui::bookmark_set_popup::BookmarkSetPopup;
 use crate::ui::commit_show_cache::CommitShowCache;
 use crate::ui::commit_show_cache::CommitShowKey;
 use crate::ui::commit_show_cache::CommitShowValue;
+use crate::ui::context_menu_popup::ContextMenuPopup;
+use crate::ui::describe_popup::DescribePopup;
 use crate::ui::help_popup::HelpPopup;
 use crate::ui::loader_popup::LoaderPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
+use crate::ui::panel::DragAction;
+use crate::ui::panel::DragMode;
 use crate::ui::panel::LargeStringContent;
 use crate::ui::panel::LogPanel;
+use crate::ui::panel::MouseInput;
+use crate::ui::panel::PanelMouseInput;
+use crate::ui::panel::decode_drag_modifiers;
+use crate::ui::parent_select_popup::ParentSelectPopup;
 use crate::ui::rebase_popup::RebasePopup;
 use crate::ui::utils::PaneDivider;
-use crate::ui::utils::centered_rect_fixed;
 use crate::ui::utils::centered_rect_line_height;
 use crate::ui::utils::tabs_to_spaces;
 
@@ -80,17 +92,27 @@ pub struct LogTab<'a> {
     bookmark_set_popup_tx: std::sync::mpsc::Sender<bool>,
     bookmark_set_popup_rx: std::sync::mpsc::Receiver<bool>,
 
-    describe_textarea: Option<TextArea<'a>>,
+    context_menu_tx: std::sync::mpsc::Sender<LogTabEvent>,
+    context_menu_rx: std::sync::mpsc::Receiver<LogTabEvent>,
+
+    parent_select_popup_tx: std::sync::mpsc::Sender<Option<Head>>,
+    parent_select_popup_rx: std::sync::mpsc::Receiver<Option<Head>>,
+
     describe_after_new: bool,
+    new_insert_mode: NewInsertMode,
 
-    rebase_popup: Option<RebasePopup>,
-
+    /// Sources for the next squash, set when entering the confirm popup
+    /// with tagged commits. `Some((revset, count))` triggers
+    /// `--from <revset>`; `None` keeps the default "@ into selected"
+    /// behaviour.
+    squash_from: Option<(String, usize)>,
     squash_ignore_immutable: bool,
     squash_target: Option<Head>,
 
     edit_ignore_immutable: bool,
 
     config: JjConfig,
+    layout: JJLayout,
     pane_divider: PaneDivider,
     keybinds: LogTabKeybinds,
 }
@@ -140,6 +162,8 @@ impl<'a> LogTab<'a> {
 
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (bookmark_set_popup_tx, bookmark_set_popup_rx) = std::sync::mpsc::channel();
+        let (context_menu_tx, context_menu_rx) = std::sync::mpsc::channel();
+        let (parent_select_popup_tx, parent_select_popup_rx) = std::sync::mpsc::channel();
 
         let mut keybinds = LogTabKeybinds::default();
         if let Some(keybinds_config) = get_env().jj_config.keybinds() {
@@ -147,6 +171,7 @@ impl<'a> LogTab<'a> {
         }
 
         let config = get_env().jj_config.clone();
+        let layout = config.layout();
         let pane_divider = PaneDivider::new(config.layout_percent());
 
         Ok(Self {
@@ -169,17 +194,23 @@ impl<'a> LogTab<'a> {
             bookmark_set_popup_tx,
             bookmark_set_popup_rx,
 
-            describe_textarea: None,
+            context_menu_tx,
+            context_menu_rx,
+
+            parent_select_popup_tx,
+            parent_select_popup_rx,
+
             describe_after_new: false,
+            new_insert_mode: NewInsertMode::Child,
 
-            rebase_popup: None,
-
+            squash_from: None,
             squash_ignore_immutable: false,
             squash_target: None,
 
             edit_ignore_immutable: false,
 
             config,
+            layout,
             pane_divider,
             keybinds,
         })
@@ -258,6 +289,81 @@ impl<'a> LogTab<'a> {
         self.commit_show_cache.set_active(active_heads, &key);
     }
 
+    /// Apply a drag-and-drop action produced by the log panel. Bare drops
+    /// open the rebase popup with the source/target pre-filled; modifier
+    /// drops execute their op directly and refresh the log.
+    fn dispatch_drag_action(&mut self, action: DragAction) -> Result<ComponentInputResult> {
+        match action {
+            DragAction::RebaseOnto {
+                source_revs,
+                source_head,
+                target,
+            } => self.run_drag_rebase("-d", &source_revs, &source_head, &target),
+            DragAction::Squash {
+                source_revs,
+                target,
+            } => {
+                let from = commit_revset_union(&source_revs);
+                if let Err(err) =
+                    new_commander().run_squash(Some(&from), target.commit_id.as_str(), false)
+                {
+                    return Ok(ComponentInputResult::HandledAction(
+                        ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                            "Squash",
+                            err.to_string(),
+                        )))),
+                    ));
+                }
+                self.refresh_log_output();
+                Ok(ComponentInputResult::HandledAction(
+                    ComponentAction::RefreshTab(),
+                ))
+            }
+            DragAction::RebaseAfter {
+                source_revs,
+                source_head,
+                target,
+            } => self.run_drag_rebase("-A", &source_revs, &source_head, &target),
+            DragAction::RebaseBefore {
+                source_revs,
+                source_head,
+                target,
+            } => self.run_drag_rebase("-B", &source_revs, &source_head, &target),
+        }
+    }
+
+    fn run_drag_rebase(
+        &mut self,
+        tgt_mode: &str,
+        source_revs: &[CommitId],
+        source_head: &Head,
+        target: &Head,
+    ) -> Result<ComponentInputResult> {
+        // Use single-revision rebase so dragging an interior commit moves
+        // just that commit; its descendants get reparented to skip it.
+        // -s would silently no-op when the subtree's new position already
+        // matches its current one, which surprises users on interior drags.
+        let src_rev = commit_revset_union(source_revs);
+        if let Err(err) =
+            new_commander().run_rebase("-r", &src_rev, tgt_mode, target.commit_id.as_str())
+        {
+            return Ok(ComponentInputResult::HandledAction(
+                ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                    "Rebase",
+                    err.to_string(),
+                )))),
+            ));
+        }
+        // The dragged commit gets a new commit_id but keeps its change_id;
+        // re-locate it so the log selection follows the move instead of
+        // jumping to `@` via the default RefreshTab path.
+        let new_head = new_commander().get_head_latest(source_head)?;
+        self.set_head(new_head.clone());
+        Ok(ComponentInputResult::HandledAction(
+            ComponentAction::ChangeHead(new_head),
+        ))
+    }
+
     /// Extract head content from commander.get_commit_show
     /// Wraps it in a cache value before returning it.
     fn compute_head_content(
@@ -297,17 +403,26 @@ each other in code:
 * `execute_<action>` - Perform some action after the dialog closed.
 */
 impl<'a> LogTab<'a> {
-    fn handle_new(&mut self, describe: bool) -> Result<ComponentInputResult> {
+    fn handle_new(
+        &mut self,
+        describe: bool,
+        insert: NewInsertMode,
+    ) -> Result<ComponentInputResult> {
         let mark_count = self.log_panel.marked_heads.len();
+        let (action, target_label) = match insert {
+            NewInsertMode::Child => ("create a new change", "New parent"),
+            NewInsertMode::After => ("insert a new change after", "After"),
+            NewInsertMode::Before => ("insert a new change before", "Before"),
+        };
         let text = if mark_count > 0 {
             Text::from(vec![Line::from(format!(
-                "Are you sure you want to create a new change with {mark_count} marked parents?"
+                "Are you sure you want to {action} the {mark_count} marked changes?"
             ))])
             .fg(Color::default())
         } else {
             Text::from(vec![
-                Line::from("Are you sure you want to create a new change?"),
-                Line::from(format!("New parent: {}", self.head.change_id.as_str())),
+                Line::from(format!("Are you sure you want to {action}?")),
+                Line::from(format!("{target_label}: {}", self.head.change_id.as_str())),
             ])
             .fg(Color::default())
         };
@@ -322,22 +437,35 @@ impl<'a> LogTab<'a> {
             .with_listener(Some(self.popup_tx.clone()))
             .open();
         self.describe_after_new = describe;
+        self.new_insert_mode = insert;
         Ok(ComponentInputResult::Handled)
+    }
+
+    /// Build the revset to operate on: the union of tagged commits, or
+    /// the current head as a fallback when nothing is tagged. Drains
+    /// the tag set as a side effect.
+    fn marked_or_head_revset(&mut self) -> String {
+        let marks = self.log_panel.extract_and_clear_head_marks();
+        if marks.is_empty() {
+            self.head.commit_id.as_str().to_owned()
+        } else {
+            commit_revset_union(&marks)
+        }
     }
 
     // Execute new command, after self.popup returned
     fn execute_new(&mut self) -> Result<Option<ComponentAction>> {
-        let commit_ids = self.log_panel.extract_and_clear_head_marks();
-        if commit_ids.is_empty() {
-            new_commander().run_new([self.head.commit_id.as_str()])?;
-        } else {
-            new_commander().run_new(commit_ids.iter().map(CommitId::as_str))?;
-        }
+        new_commander().run_new_with_insert(&self.marked_or_head_revset(), self.new_insert_mode)?;
         self.set_head(new_commander().get_current_head()?);
         if self.describe_after_new {
             self.describe_after_new = false;
-            let textarea = TextArea::default();
-            self.describe_textarea = Some(textarea);
+            return Ok(Some(ComponentAction::Multiple(vec![
+                ComponentAction::ChangeHead(self.head.clone()),
+                ComponentAction::SetPopup(Some(Box::new(DescribePopup::new(
+                    self.head.clone(),
+                    vec![],
+                )))),
+            ])));
         }
         Ok(Some(ComponentAction::ChangeHead(self.head.clone())))
     }
@@ -395,7 +523,7 @@ impl<'a> LogTab<'a> {
         }
         // Abandon marked commmits
         let commit_id_list = self.log_panel.extract_and_clear_head_marks();
-        new_commander().run_abandon(&commit_id_list)?;
+        new_commander().run_abandon(&commit_revset_union(&commit_id_list))?;
         // Update selection to latest version, in case abandon triggered a rebase.
         let new_selection = new_commander().get_head_latest(&selection)?;
         // Update log panel and diff panel
@@ -406,6 +534,21 @@ impl<'a> LogTab<'a> {
         } else {
             Ok(None)
         }
+    }
+
+    fn open_context_menu(&self, anchor: Option<ratatui::layout::Position>) -> ComponentInputResult {
+        let selected_is_at = new_commander()
+            .get_current_head()
+            .ok()
+            .is_some_and(|at| at.change_id == self.head.change_id);
+        ComponentInputResult::HandledAction(ComponentAction::SetPopup(Some(Box::new(
+            ContextMenuPopup::new(
+                self.config.clone(),
+                self.context_menu_tx.clone(),
+                anchor,
+                selected_is_at,
+            ),
+        ))))
     }
 
     fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<ComponentInputResult> {
@@ -427,25 +570,52 @@ impl<'a> LogTab<'a> {
                 self.diff_format = self.diff_format.get_next(self.config.diff_tool());
                 self.refresh_head_output();
             }
+            LogTabEvent::ToggleLayout => {
+                self.layout = match self.layout {
+                    JJLayout::Horizontal => JJLayout::Vertical,
+                    JJLayout::Vertical => JJLayout::Horizontal,
+                };
+                self.pane_divider.reset();
+            }
             LogTabEvent::Refresh => {
                 self.mark_cache_as_dirty();
                 self.refresh_log_output();
             }
 
             LogTabEvent::Duplicate => {
-                let _ = new_commander().run_duplicate(&self.head.change_id.to_string());
+                let revset = self.marked_or_head_revset();
+                let _ = new_commander().run_duplicate(&revset);
                 self.refresh_log_output();
             }
 
+            LogTabEvent::Parallelize => {
+                let revset = self.marked_or_head_revset();
+                new_commander().run_parallelize(&revset)?;
+                self.set_head(new_commander().get_current_head()?);
+                return Ok(ComponentInputResult::HandledAction(
+                    ComponentAction::ChangeHead(self.head.clone()),
+                ));
+            }
+
             LogTabEvent::CreateNew { describe } => {
-                return self.handle_new(describe);
+                return self.handle_new(describe, NewInsertMode::Child);
+            }
+            LogTabEvent::CreateNewAfter { describe } => {
+                return self.handle_new(describe, NewInsertMode::After);
+            }
+            LogTabEvent::CreateNewBefore { describe } => {
+                return self.handle_new(describe, NewInsertMode::Before);
             }
             LogTabEvent::Rebase => {
-                let source_change = new_commander().get_current_head()?;
-                let target_change = &self.head;
-                self.rebase_popup = Some(RebasePopup::new(
-                    source_change.clone(),
-                    target_change.clone(),
+                let mut source_changes = self.log_panel.extract_and_clear_head_marks();
+                if source_changes.is_empty() {
+                    source_changes.push(new_commander().get_current_head()?.commit_id)
+                }
+                return Ok(ComponentInputResult::HandledAction(
+                    ComponentAction::SetPopup(Some(Box::new(RebasePopup::new(
+                        source_changes,
+                        self.head.clone(),
+                    )))),
                 ));
             }
             LogTabEvent::Squash { ignore_immutable } => {
@@ -479,15 +649,30 @@ impl<'a> LogTab<'a> {
                     ));
                 }
 
-                let description = if self.squash_target.is_some() {
-                    "Are you sure you want to squash @ into its parent?"
-                } else {
-                    "Are you sure you want to squash @ into this change?"
+                let marks = self.log_panel.extract_and_clear_head_marks();
+                self.squash_from =
+                    (!marks.is_empty()).then(|| (commit_revset_union(&marks), marks.len()));
+
+                let mut lines = match &self.squash_from {
+                    Some((_, count)) => vec![
+                        Line::from(format!(
+                            "Are you sure you want to squash {count} tagged changes into this change?"
+                        )),
+                        Line::from(format!("Squash into {}", self.head.change_id.as_str())),
+                    ],
+                    None => {
+                        let description = if self.squash_target.is_some() {
+                            "Are you sure you want to squash @ into its parent?"
+                        } else {
+                            "Are you sure you want to squash @ into this change?"
+                        };
+
+                        vec![
+                            Line::from(description),
+                            Line::from(format!("Squash into {}", target.change_id.as_str())),
+                        ]
+                    }
                 };
-                let mut lines = vec![
-                    Line::from(description),
-                    Line::from(format!("Squash into {}", target.change_id.as_str())),
-                ];
                 if ignore_immutable {
                     lines.push(Line::from("This change is immutable."));
                 }
@@ -553,16 +738,17 @@ impl<'a> LogTab<'a> {
                 } else {
                     match self.config.describe_mode() {
                         DescribeMode::Popup => {
-                            let mut textarea = TextArea::new(
-                                new_commander()
-                                    .get_commit_description(&self.head.commit_id)?
-                                    .split("\n")
-                                    .map(|line| line.to_string())
-                                    .collect(),
-                            );
-                            textarea.move_cursor(CursorMove::End);
-                            self.describe_textarea = Some(textarea);
-                            return Ok(ComponentInputResult::Handled);
+                            let lines = new_commander()
+                                .get_commit_description(&self.head.commit_id)?
+                                .split("\n")
+                                .map(|line| line.to_string())
+                                .collect();
+                            return Ok(ComponentInputResult::HandledAction(
+                                ComponentAction::SetPopup(Some(Box::new(DescribePopup::new(
+                                    self.head.clone(),
+                                    lines,
+                                )))),
+                            ));
                         }
                         DescribeMode::Jj => {
                             let command = new_commander().build_interactive_jj_command([
@@ -644,6 +830,9 @@ impl<'a> LogTab<'a> {
                     ComponentAction::SetPopup(Some(Box::new(loader))),
                 ));
             }
+            LogTabEvent::OpenContextMenu => {
+                return Ok(self.open_context_menu(None));
+            }
             LogTabEvent::OpenHelp => {
                 return Ok(ComponentInputResult::HandledAction(
                     ComponentAction::SetPopup(Some(Box::new(HelpPopup::new(
@@ -664,12 +853,51 @@ impl<'a> LogTab<'a> {
                     )))),
                 ));
             }
+            LogTabEvent::GotoParent => {
+                match new_commander().get_commit_parents(&self.head.commit_id) {
+                    Err(err) => {
+                        return Ok(ComponentInputResult::HandledAction(
+                            ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                                "Go to parent",
+                                err.to_string(),
+                            )))),
+                        ));
+                    }
+                    Ok(parents) if parents.is_empty() => {}
+                    Ok(mut parents) if parents.len() == 1 => {
+                        self.set_head(parents.remove(0));
+                    }
+                    Ok(parents) => {
+                        let parents_with_desc = parents
+                            .into_iter()
+                            .map(|h| {
+                                let desc = new_commander()
+                                    .get_commit_description(&h.commit_id)
+                                    .unwrap_or_default();
+                                (h, desc)
+                            })
+                            .collect();
+                        return Ok(ComponentInputResult::HandledAction(
+                            ComponentAction::SetPopup(Some(Box::new(ParentSelectPopup::new(
+                                parents_with_desc,
+                                self.config.clone(),
+                                self.parent_select_popup_tx.clone(),
+                            )))),
+                        ));
+                    }
+                }
+            }
+
             LogTabEvent::Save
             | LogTabEvent::Cancel
             | LogTabEvent::ClosePopup
             | LogTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
         };
         Ok(ComponentInputResult::Handled)
+    }
+
+    pub fn is_dragging(&self) -> bool {
+        self.log_panel.drag_active()
     }
 }
 
@@ -699,12 +927,17 @@ impl Component for LogTab<'_> {
                     return self.execute_abandon();
                 }
                 SQUASH_POPUP_ID => {
+                    let from = self.squash_from.take();
                     let target_id = self
                         .squash_target
                         .take()
                         .unwrap_or_else(|| self.head.clone())
                         .commit_id;
-                    new_commander().run_squash(target_id.as_str(), self.squash_ignore_immutable)?;
+                    new_commander().run_squash(
+                        from.as_ref().map(|(rev, _)| rev.as_str()),
+                        target_id.as_str(),
+                        self.squash_ignore_immutable,
+                    )?;
                     self.set_head(new_commander().get_current_head()?);
                     return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
                 }
@@ -716,7 +949,27 @@ impl Component for LogTab<'_> {
             self.refresh_log_output();
         }
 
+        // Advance the drag-at-edge auto-scroll on the periodic tick so
+        // the view keeps moving when the cursor is held at the edge
+        // without triggering Drag events.
+        self.log_panel.tick_drag_auto_scroll();
+
+        if let Ok(event) = self.context_menu_rx.try_recv() {
+            return Ok(match self.handle_event(event)? {
+                ComponentInputResult::HandledAction(action) => Some(action),
+                _ => None,
+            });
+        }
+
+        if let Ok(Some(head)) = self.parent_select_popup_rx.try_recv() {
+            self.set_head(head);
+        }
+
         Ok(None)
+    }
+
+    fn wants_tick(&self) -> bool {
+        self.log_panel.drag_active()
     }
 
     fn draw(
@@ -724,17 +977,72 @@ impl Component for LogTab<'_> {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = self.pane_divider.split(area, self.config.layout());
+        // While a drag is in flight, give the whole tab to the log panel so
+        // the user can see as many candidate targets as possible. The details
+        // panel is hidden until the drop completes (or is cancelled).
+        let drag_visible = self.log_panel.drag_active() && self.log_panel.drag_has_moved();
+        let (log_column, details_area) = if drag_visible {
+            (area, None)
+        } else {
+            let chunks = self.pane_divider.split(area, self.layout);
+            (chunks[0], Some(chunks[1]))
+        };
+
+        // Reserve a one-line footer under the log panel whenever a drag is
+        // in flight, so the user can see the modifier-to-op legend.
+        let (log_area, drag_footer_area) = if drag_visible {
+            let split = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(1), Constraint::Length(1)])
+                .split(log_column);
+            (split[0], Some(split[1]))
+        } else {
+            (log_column, None)
+        };
 
         // Draw log
-        self.log_panel.draw(f, chunks[0])?;
+        self.log_panel.draw(f, log_area)?;
 
-        // Draw change details
-        if let Some(content) = self.commit_show_cache.get(&self.head_key) {
+        // Drag footer. The action description tracks the modifier keys
+        // currently held so the user can preview what release will do.
+        if let Some(footer_area) = drag_footer_area {
+            let src_label = match self.log_panel.drag_source_revs() {
+                Some(revs) if revs.len() > 1 => format!("{} commits", revs.len()),
+                _ => self
+                    .log_panel
+                    .drag_source_head()
+                    .map(|h| h.change_id.as_str().chars().take(8).collect::<String>())
+                    .unwrap_or_else(|| "?".to_owned()),
+            };
+            let tgt_label = self
+                .log_panel
+                .drag_target_head()
+                .map(|h| h.change_id.as_str().chars().take(8).collect::<String>())
+                .unwrap_or_else(|| "?".to_owned());
+            let modifiers = self
+                .log_panel
+                .drag_modifiers()
+                .unwrap_or(KeyModifiers::NONE);
+            let hint = match decode_drag_modifiers(modifiers) {
+                DragMode::Squash => format!("Squash {src_label} into {tgt_label}    Esc=cancel"),
+                DragMode::Before => format!("Move {src_label} before {tgt_label}    Esc=cancel"),
+                DragMode::After => format!("Move {src_label} after {tgt_label}    Esc=cancel"),
+                DragMode::Onto => format!(
+                    "Move {src_label} onto {tgt_label}    Shift=squash  Ctrl=before  Alt=after  Esc=cancel"
+                ),
+            };
+            let para = Paragraph::new(hint).fg(Color::DarkGray);
+            f.render_widget(para, footer_area);
+        }
+
+        // Draw change details (skipped while dragging — log is maximized)
+        if let Some(details_area) = details_area
+            && let Some(content) = self.commit_show_cache.get(&self.head_key)
+        {
             self.head_panel
                 .render_context::<LargeStringContent>(content.value())
                 .title(format!(" Details for {} ", self.head.change_id))
-                .draw(f, chunks[1])
+                .draw(f, details_area)
         }
 
         // Draw popup
@@ -749,47 +1057,6 @@ impl Component for LogTab<'_> {
                         .underlined(),
                 );
             f.render_stateful_widget(popup, area, &mut self.popup);
-        }
-
-        // Draw describe textarea
-        {
-            if let Some(describe_textarea) = self.describe_textarea.as_mut() {
-                let block = Block::bordered()
-                    .title(Span::styled(" Describe ", Style::new().bold().cyan()))
-                    .title_alignment(Alignment::Center)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Green));
-                // Text target size
-                const MAX_COMMIT_WIDTH: u16 = 72; // git recommended max width
-                const MIN_COMMIT_HEIGHT: u16 = 5; // heading + blank + 3 lines
-                // Include margin and help text to get size
-                let area = centered_rect_fixed(
-                    area,
-                    /* width */ MAX_COMMIT_WIDTH + 2,
-                    /* height */ max(MIN_COMMIT_HEIGHT + 4, area.height / 2),
-                );
-                f.render_widget(Clear, area);
-                f.render_widget(&block, area);
-
-                let popup_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Fill(1), Constraint::Length(2)])
-                    .split(block.inner(area));
-
-                f.render_widget(&*describe_textarea, popup_chunks[0]);
-
-                let help = Paragraph::new(vec!["Ctrl+s: save | Escape: cancel".into()])
-                    .fg(Color::DarkGray)
-                    .alignment(Alignment::Center)
-                    .block(
-                        Block::default()
-                            .borders(Borders::TOP)
-                            .border_type(BorderType::Rounded)
-                            .border_style(Style::default().fg(Color::DarkGray)),
-                    );
-
-                f.render_widget(help, popup_chunks[1]);
-            }
         }
 
         // Draw revset textarea
@@ -825,41 +1092,10 @@ impl Component for LogTab<'_> {
             }
         }
 
-        // Draw rebase popup
-        {
-            if let Some(log_rebase_popup) = &mut self.rebase_popup {
-                log_rebase_popup.render_widget(f)
-            }
-        }
-
         Ok(())
     }
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
-        if let Some(describe_textarea) = self.describe_textarea.as_mut() {
-            if let Event::Key(key) = event {
-                match self.keybinds.match_event(key) {
-                    LogTabEvent::Save => {
-                        // TODO: Handle error
-                        new_commander().run_describe(
-                            self.head.commit_id.as_str(),
-                            &describe_textarea.lines().join("\n"),
-                        )?;
-                        self.set_head(new_commander().get_head_latest(&self.head)?);
-                        self.describe_textarea = None;
-                        return Ok(ComponentInputResult::Handled);
-                    }
-                    LogTabEvent::Cancel => {
-                        self.describe_textarea = None;
-                        return Ok(ComponentInputResult::Handled);
-                    }
-                    _ => (),
-                }
-            }
-            describe_textarea.input(event);
-            return Ok(ComponentInputResult::Handled);
-        }
-
         if let Some(log_revset_textarea) = self.log_revset_textarea.as_mut() {
             if let Event::Key(key) = event {
                 match self.keybinds.match_event(key) {
@@ -885,33 +1121,21 @@ impl Component for LogTab<'_> {
             return Ok(ComponentInputResult::Handled);
         }
 
-        if let Some(rebase_popup) = &mut self.rebase_popup {
-            let handled = rebase_popup.handle_input(event.clone());
-            if handled.is_err() {
-                // Close popup and show error message
-                self.rebase_popup = None;
-                let msg = handled.err().unwrap();
-                return Ok(ComponentInputResult::HandledAction(
-                    ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
-                        "Error",
-                        msg.to_string(),
-                    )))),
-                ));
-            }
-            if handled.ok() == Some(true) {
-                // when handle_input returns true,
-                // the popup should be closed
-                self.rebase_popup = None;
-                return Ok(ComponentInputResult::HandledAction(
-                    ComponentAction::RefreshTab(),
-                ));
-            }
-            return Ok(ComponentInputResult::Handled);
-        }
-
         if let Event::Key(key) = &event {
             let key = *key;
+            // Modifier-only key press/release during drag: forward to log panel
+            // so the drag footer updates without requiring mouse movement.
+            if self.log_panel.drag_active() && matches!(key.code, KeyCode::Modifier(_)) {
+                return self.log_panel.input(event);
+            }
             if key.kind != KeyEventKind::Press {
+                return Ok(ComponentInputResult::Handled);
+            }
+
+            if self.log_panel.drag_active()
+                && matches!(self.keybinds.match_event(key), LogTabEvent::Cancel)
+            {
+                self.log_panel.cancel_drag();
                 return Ok(ComponentInputResult::Handled);
             }
 
@@ -921,6 +1145,7 @@ impl Component for LogTab<'_> {
                     LogTabEvent::ClosePopup | LogTabEvent::Cancel
                 ) {
                     self.popup = ConfirmDialogState::default();
+                    self.squash_from = None;
                 } else {
                     self.popup.handle(&key);
                 }
@@ -943,18 +1168,26 @@ impl Component for LogTab<'_> {
         }
 
         if let Event::Mouse(mouse_event) = event {
-            if self
-                .pane_divider
-                .handle_mouse(mouse_event, self.config.layout())
-            {
+            if self.pane_divider.handle_mouse(mouse_event, self.layout) {
                 return Ok(ComponentInputResult::Handled);
             }
             let input_result = self.log_panel.input(event.clone())?;
+            if let Some(action) = self.log_panel.take_pending_drag_action() {
+                return self.dispatch_drag_action(action);
+            }
             if input_result.is_handled() {
                 self.sync_head_output();
+                if matches!(mouse_event.kind, MouseEventKind::Up(MouseButton::Right)) {
+                    let anchor =
+                        ratatui::layout::Position::new(mouse_event.column, mouse_event.row);
+                    return Ok(self.open_context_menu(Some(anchor)));
+                }
                 return Ok(input_result);
             }
-            if self.head_panel.input_mouse(mouse_event) {
+            if !matches!(
+                self.head_panel.input_mouse(mouse_event),
+                MouseInput::NotHandled
+            ) {
                 return Ok(ComponentInputResult::Handled);
             }
             return Ok(ComponentInputResult::NotHandled);

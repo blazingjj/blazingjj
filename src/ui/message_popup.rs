@@ -26,6 +26,7 @@ use crate::keybinds::MessagePopupEvent;
 use crate::keybinds::MessagePopupKeybinds;
 use crate::ui::Component;
 use crate::ui::utils::LargeString;
+use crate::ui::utils::ScrollbarDrag;
 use crate::ui::utils::centered_rect;
 
 pub struct MessagePopup<'a> {
@@ -36,6 +37,7 @@ pub struct MessagePopup<'a> {
     lines: usize,
     content_height: u16,
     keybinds: Option<MessagePopupKeybinds>,
+    scrollbar_drag: ScrollbarDrag,
 }
 
 impl<'a> MessagePopup<'a> {
@@ -50,6 +52,7 @@ impl<'a> MessagePopup<'a> {
             lines,
             content_height: 0,
             keybinds: None,
+            scrollbar_drag: ScrollbarDrag::new(),
         }
     }
 
@@ -138,15 +141,15 @@ impl Component for MessagePopup<'_> {
         if max_scroll > 0 {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
             let mut scrollbar_state = ScrollbarState::new(max_scroll + 1).position(self.scroll);
-            f.render_stateful_widget(
-                scrollbar,
-                Rect {
-                    y: inner.y,
-                    height: inner.height,
-                    ..popup_rect
-                },
-                &mut scrollbar_state,
-            );
+            let scrollbar_rect = Rect {
+                y: inner.y,
+                height: inner.height,
+                ..popup_rect
+            };
+            f.render_stateful_widget(scrollbar, scrollbar_rect, &mut scrollbar_state);
+            self.scrollbar_drag.set_rect(scrollbar_rect);
+        } else {
+            self.scrollbar_drag.set_rect(Rect::ZERO);
         }
 
         Ok(())
@@ -169,17 +172,28 @@ impl Component for MessagePopup<'_> {
                 self.do_scroll(delta);
                 Ok(ComponentInputResult::Handled)
             }
-            Event::Mouse(mouse) => match mouse.kind {
-                MouseEventKind::ScrollDown => {
-                    self.do_scroll(3);
-                    Ok(ComponentInputResult::Handled)
+            Event::Mouse(mouse) => {
+                let (consumed, new_pos) = self
+                    .scrollbar_drag
+                    .handle_mouse(*mouse, self.max_scroll() + 1);
+                if consumed {
+                    if let Some(pos) = new_pos {
+                        self.scroll = pos.min(self.max_scroll());
+                    }
+                    return Ok(ComponentInputResult::Handled);
                 }
-                MouseEventKind::ScrollUp => {
-                    self.do_scroll(-3);
-                    Ok(ComponentInputResult::Handled)
+                match mouse.kind {
+                    MouseEventKind::ScrollDown => {
+                        self.do_scroll(3);
+                        Ok(ComponentInputResult::Handled)
+                    }
+                    MouseEventKind::ScrollUp => {
+                        self.do_scroll(-3);
+                        Ok(ComponentInputResult::Handled)
+                    }
+                    _ => Ok(ComponentInputResult::NotHandled),
                 }
-                _ => Ok(ComponentInputResult::NotHandled),
-            },
+            }
             _ => Ok(ComponentInputResult::NotHandled),
         }
     }

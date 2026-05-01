@@ -1,10 +1,20 @@
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
+use std::sync::mpsc::channel;
+use std::thread;
 use std::vec;
+
+type DiffKey = (Option<String>, DiffFormat, usize);
+type DiffMsg = (u64, DiffKey, Result<Option<String>, CommandError>);
 
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
+use ratatui::crossterm::event::KeyModifiers;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use tracing::instrument;
@@ -16,6 +26,7 @@ use crate::commander::files::File;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::env::DiffFormat;
+use crate::env::JJLayout;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::ui::Component;
@@ -23,7 +34,10 @@ use crate::ui::ComponentAction;
 use crate::ui::help_popup::HelpPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
+use crate::ui::panel::ListPane;
+use crate::ui::panel::MouseInput;
 use crate::ui::panel::TextContent;
+use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::tabs_to_spaces;
 
@@ -34,15 +48,21 @@ pub struct FilesTab {
 
     files_output: Result<Vec<File>, CommandError>,
     conflicts_output: Vec<Conflict>,
+    files_pane: ListPane,
     files_list_state: ListState,
-    files_height: u16,
 
     pub file: Option<File>,
     diff_panel: DetailsPanel,
     diff_output: Result<Option<String>, CommandError>,
+    diff_cache: HashMap<DiffKey, String>,
+    diff_inflight: HashSet<DiffKey>,
+    diff_tx: Sender<DiffMsg>,
+    diff_rx: Receiver<DiffMsg>,
+    diff_generation: u64,
     diff_format: DiffFormat,
 
     config: JjConfig,
+    layout: JJLayout,
     pane_divider: PaneDivider,
 }
 
@@ -89,28 +109,45 @@ impl FilesTab {
             current_file.as_ref(),
             files_output.as_ref(),
         ));
+        let files_pane = ListPane::default();
 
         let config = get_env().jj_config.clone();
+        let layout = config.layout();
         let pane_divider = PaneDivider::new(config.layout_percent());
 
-        Ok(Self {
+        let mut diff_cache = HashMap::new();
+        if let (Ok(Some(s)), Some(file)) = (&diff_output, &current_file) {
+            diff_cache.insert((file.path.clone(), diff_format.clone(), 0usize), s.clone());
+        }
+
+        let (diff_tx, diff_rx) = channel();
+
+        let mut tab = Self {
             head,
             is_current_head,
 
             files_output,
             file: current_file,
+            files_pane,
             files_list_state,
-            files_height: 0,
 
             conflicts_output,
 
             diff_output,
+            diff_cache,
+            diff_inflight: HashSet::new(),
+            diff_tx,
+            diff_rx,
+            diff_generation: 0,
             diff_format,
             diff_panel: DetailsPanel::new(),
 
             config,
+            layout,
             pane_divider,
-        })
+        };
+        tab.preload_nearby_diffs();
+        Ok(tab)
     }
 
     pub fn set_head(&mut self, head: &Head) -> Result<()> {
@@ -124,7 +161,9 @@ impl FilesTab {
             .ok()
             .and_then(|files_output| files_output.first())
             .map(|file| file.to_owned());
-        self.refresh_diff()?;
+        self.invalidate_diff_cache();
+        self.load_file_diff();
+        self.preload_nearby_diffs();
 
         Ok(())
     }
@@ -139,21 +178,110 @@ impl FilesTab {
         Ok(())
     }
 
-    pub fn refresh_diff(&mut self) -> Result<()> {
-        let mut commander = new_commander();
-        let inner_width = self.diff_panel.columns() as usize;
-        commander.limit_width(inner_width);
-        self.diff_output = self
-            .file
-            .as_ref()
-            .map(|current_file| {
-                commander.get_file_diff(&self.head, current_file, &self.diff_format, true)
-            })
-            .map_or(Ok(None), |r| {
-                r.map(|diff| diff.map(|diff| tabs_to_spaces(&diff)))
-            });
+    fn diff_key_for(&self, file: &File) -> DiffKey {
+        let width = if let DiffFormat::DiffTool(_) = &self.diff_format {
+            self.diff_panel.columns() as usize
+        } else {
+            0
+        };
+        (file.path.clone(), self.diff_format.clone(), width)
+    }
+
+    fn invalidate_diff_cache(&mut self) {
+        self.diff_generation += 1;
+        self.diff_inflight.clear();
+        self.diff_cache.clear();
+    }
+
+    /// Spawn a background diff load for `file` unless it is already cached or in flight.
+    fn spawn_diff_for(&mut self, file: File) {
+        let key = self.diff_key_for(&file);
+        if self.diff_cache.contains_key(&key) || self.diff_inflight.contains(&key) {
+            return;
+        }
+        self.diff_inflight.insert(key.clone());
+
+        let tx = self.diff_tx.clone();
+        let head = self.head.clone();
+        let diff_format = self.diff_format.clone();
+        let inner_width = key.2;
+        let generation = self.diff_generation;
+
+        thread::spawn(move || {
+            let mut commander = new_commander();
+            commander.limit_width(inner_width);
+            let result = commander
+                .get_file_diff(&head, &file, &diff_format, true)
+                .map(|diff| diff.map(|d| tabs_to_spaces(&d)));
+            let _ = tx.send((generation, key, result));
+        });
+    }
+
+    /// Check the cache and display immediately, or start a background load.
+    fn load_file_diff(&mut self) {
+        let Some(file) = self.file.clone() else {
+            return;
+        };
+        let key = self.diff_key_for(&file);
+
+        if let Some(cached) = self.diff_cache.get(&key) {
+            self.diff_output = Ok(Some(cached.clone()));
+            self.diff_panel.scroll_to(0);
+            return;
+        }
+
         self.diff_panel.scroll_to(0);
-        Ok(())
+        self.spawn_diff_for(file);
+    }
+
+    /// Kick off background loads for up to PRELOAD_AHEAD files after the current
+    /// selection. Runs them sequentially in one thread so we don't saturate the
+    /// system, and stops early when the generation is invalidated.
+    fn preload_nearby_diffs(&mut self) {
+        const PRELOAD_AHEAD: usize = 5;
+
+        let start = self.get_current_file_index().map_or(0, |i| i + 1);
+        let to_preload: Vec<(DiffKey, File)> = match self.files_output.as_ref() {
+            Ok(files) => files[start..]
+                .iter()
+                .take(PRELOAD_AHEAD)
+                .filter_map(|f| {
+                    let key = self.diff_key_for(f);
+                    if self.diff_cache.contains_key(&key) || self.diff_inflight.contains(&key) {
+                        None
+                    } else {
+                        Some((key, f.clone()))
+                    }
+                })
+                .collect(),
+            Err(_) => return,
+        };
+
+        if to_preload.is_empty() {
+            return;
+        }
+
+        for (key, _) in &to_preload {
+            self.diff_inflight.insert(key.clone());
+        }
+
+        let tx = self.diff_tx.clone();
+        let head = self.head.clone();
+        let diff_format = self.diff_format.clone();
+        let generation = self.diff_generation;
+
+        thread::spawn(move || {
+            for (key, file) in to_preload {
+                let mut commander = new_commander();
+                commander.limit_width(key.2);
+                let result = commander
+                    .get_file_diff(&head, &file, &diff_format, true)
+                    .map(|diff| diff.map(|d| tabs_to_spaces(&d)));
+                if tx.send((generation, key, result)).is_err() {
+                    break;
+                }
+            }
+        });
     }
 
     pub fn untrack_file(&mut self) -> Result<()> {
@@ -186,19 +314,46 @@ impl FilesTab {
             .map(|x| x.to_owned());
             if let Some(next_file) = next_file {
                 self.file = Some(next_file.to_owned());
-                self.refresh_diff()?;
+                self.load_file_diff();
+                self.preload_nearby_diffs();
             }
         }
         Ok(())
     }
+
+    pub fn has_pending_diff(&self) -> bool {
+        !self.diff_inflight.is_empty()
+    }
 }
 
 impl Component for FilesTab {
+    fn update(&mut self) -> Result<Option<ComponentAction>> {
+        while let Ok((generation, key, result)) = self.diff_rx.try_recv() {
+            if generation != self.diff_generation {
+                continue;
+            }
+            self.diff_inflight.remove(&key);
+            if let Ok(Some(ref diff)) = result {
+                self.diff_cache.insert(key.clone(), diff.clone());
+            }
+            let is_current = self
+                .file
+                .as_ref()
+                .is_some_and(|f| self.diff_key_for(f) == key);
+            if is_current {
+                self.diff_output = result;
+            }
+        }
+        Ok(None)
+    }
+
     fn focus(&mut self) -> Result<()> {
         self.is_current_head = self.head == new_commander().get_current_head()?;
         self.head = new_commander().get_head_latest(&self.head)?;
         self.refresh_files()?;
-        self.refresh_diff()?;
+        self.invalidate_diff_cache();
+        self.load_file_diff();
+        self.preload_nearby_diffs();
         Ok(())
     }
 
@@ -207,7 +362,7 @@ impl Component for FilesTab {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = self.pane_divider.split(area, self.config.layout());
+        let chunks = self.pane_divider.split(area, self.layout);
 
         // Draw files
         {
@@ -290,26 +445,8 @@ impl Component for FilesTab {
                 )
                 .scroll_padding(3);
             *self.files_list_state.selected_mut() = current_file_index;
-            f.render_stateful_widget(&files, chunks[0], &mut self.files_list_state);
-            self.files_height = chunks[0].height - 2;
-
-            if let Some(index) = current_file_index
-                && files.len() > self.files_height as usize
-            {
-                let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-                let mut scrollbar_state = ScrollbarState::default()
-                    .content_length(files.len())
-                    .position(index);
-
-                f.render_stateful_widget(
-                    scrollbar,
-                    chunks[0].inner(Margin {
-                        vertical: 1,
-                        horizontal: 0,
-                    }),
-                    &mut scrollbar_state,
-                );
-            }
+            self.files_pane
+                .render(f, chunks[0], files, &mut self.files_list_state);
         }
 
         // Draw diff
@@ -334,6 +471,23 @@ impl Component for FilesTab {
                 return Ok(ComponentInputResult::Handled);
             }
 
+            let is_toggle_layout = self
+                .config
+                .keybinds()
+                .and_then(|k| k.toggle_layout.as_ref())
+                .map(|kb| kb.matches(key))
+                .unwrap_or(
+                    key.code == KeyCode::Char('w') && key.modifiers.contains(KeyModifiers::CONTROL),
+                );
+            if is_toggle_layout {
+                self.layout = match self.layout {
+                    JJLayout::Horizontal => JJLayout::Vertical,
+                    JJLayout::Vertical => JJLayout::Horizontal,
+                };
+                self.pane_divider.reset();
+                return Ok(ComponentInputResult::Handled);
+            }
+
             if self.diff_panel.input(key) {
                 return Ok(ComponentInputResult::Handled);
             }
@@ -342,14 +496,16 @@ impl Component for FilesTab {
                 KeyCode::Char('j') | KeyCode::Down => self.scroll_files(1)?,
                 KeyCode::Char('k') | KeyCode::Up => self.scroll_files(-1)?,
                 KeyCode::Char('J') => {
-                    self.scroll_files(self.files_height as isize / 2)?;
+                    self.scroll_files(self.files_pane.half_page_delta())?;
                 }
                 KeyCode::Char('K') => {
-                    self.scroll_files((self.files_height as isize / 2).saturating_neg())?;
+                    self.scroll_files(self.files_pane.half_page_delta().saturating_neg())?;
                 }
                 KeyCode::Char('w') => {
                     self.diff_format = self.diff_format.get_next(self.config.diff_tool());
-                    self.refresh_diff()?;
+                    self.invalidate_diff_cache();
+                    self.load_file_diff();
+                    self.preload_nearby_diffs();
                 }
                 KeyCode::Char('x') => {
                     // this works even for deleted files because jj doesn't return error in that case
@@ -377,7 +533,9 @@ impl Component for FilesTab {
                 KeyCode::Char('R') | KeyCode::F(5) => {
                     self.head = new_commander().get_head_latest(&self.head)?;
                     self.refresh_files()?;
-                    self.refresh_diff()?;
+                    self.invalidate_diff_cache();
+                    self.load_file_diff();
+                    self.preload_nearby_diffs();
                 }
                 KeyCode::Char('@') => {
                     let head = &new_commander().get_current_head()?;
@@ -414,13 +572,23 @@ impl Component for FilesTab {
         }
 
         if let Event::Mouse(mouse) = event {
-            if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+            if self.pane_divider.handle_mouse(mouse, self.layout) {
                 return Ok(ComponentInputResult::Handled);
             }
-            if self.diff_panel.input_mouse(mouse) {
-                return Ok(ComponentInputResult::Handled);
+            match route_mouse(mouse, &mut [&mut self.files_pane, &mut self.diff_panel]) {
+                MouseInput::Scroll(delta) => self.scroll_files(delta)?,
+                MouseInput::Select(index) => {
+                    if let Ok(files) = self.files_output.as_ref()
+                        && let Some(file) = files.get(index).cloned()
+                    {
+                        self.file = Some(file);
+                        self.load_file_diff();
+                    }
+                }
+                MouseInput::Handled => {}
+                MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }
-            return Ok(ComponentInputResult::NotHandled);
+            return Ok(ComponentInputResult::Handled);
         }
 
         Ok(ComponentInputResult::Handled)

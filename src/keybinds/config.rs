@@ -1,3 +1,5 @@
+use ratatui::crossterm::event::KeyEvent;
+
 use super::Shortcut;
 
 #[derive(Debug, Clone, serde::Deserialize, Default)]
@@ -7,6 +9,8 @@ pub struct KeybindsConfig {
     pub scroll_up: Option<Keybind>,
     pub scroll_down_half: Option<Keybind>,
     pub scroll_up_half: Option<Keybind>,
+
+    pub toggle_layout: Option<Keybind>,
 
     pub log_tab: Option<LogTabKeybindsConfig>,
     pub message_popup: Option<MessagePopupKeybindsConfig>,
@@ -31,6 +35,17 @@ pub enum Keybind {
     Enable(bool),
 }
 
+impl Keybind {
+    pub fn matches(&self, event: KeyEvent) -> bool {
+        let shortcut = Shortcut::from_event(event);
+        match self {
+            Keybind::Single(s) => *s == shortcut,
+            Keybind::Multiple(list) => list.contains(&shortcut),
+            Keybind::Enable(_) => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct LogTabKeybindsConfig {
@@ -49,6 +64,7 @@ pub struct LogTabKeybindsConfig {
 
     pub refresh: Option<Keybind>,
     pub duplicate: Option<Keybind>,
+    pub parallelize: Option<Keybind>,
     pub create_new: Option<Keybind>,
     pub create_new_describe: Option<Keybind>,
     pub squash: Option<Keybind>,
@@ -73,4 +89,7 @@ pub struct LogTabKeybindsConfig {
     pub fetch_all: Option<Keybind>,
 
     pub open_help: Option<Keybind>,
+    pub open_context_menu: Option<Keybind>,
+
+    pub goto_parent: Option<Keybind>,
 }

@@ -2,12 +2,15 @@ pub mod bookmark_set_popup;
 pub mod bookmarks_tab;
 pub mod command_popup;
 pub mod commit_show_cache;
+pub mod context_menu_popup;
+pub mod describe_popup;
 pub mod files_tab;
 pub mod help_popup;
 pub mod loader_popup;
 pub mod log_tab;
 pub mod message_popup;
 pub mod panel;
+pub mod parent_select_popup;
 pub mod rebase_popup;
 pub mod styles;
 pub mod utils;
@@ -58,7 +61,16 @@ pub trait Component {
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()>;
 
-    fn input(&mut self, event: Event) -> Result<ComponentInputResult>;
+    fn input(&mut self, _event: Event) -> Result<ComponentInputResult> {
+        Ok(ComponentInputResult::NotHandled)
+    }
+
+    /// True if the component needs `update()` calls on a steady tick
+    /// (e.g. an in-flight drag auto-scroll). Drives the input poll
+    /// timeout in the main loop.
+    fn wants_tick(&self) -> bool {
+        false
+    }
 }
 
 #[instrument(level = "trace", name = "draw", skip(f, app))]

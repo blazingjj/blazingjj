@@ -263,6 +263,18 @@ impl Commander {
         );
     }
 
+    /// Get all parents of a commit.
+    /// Maps to `jj log -r <revision>-`
+    #[instrument(level = "trace", skip(self))]
+    pub fn get_commit_parents(&self, commit_id: &CommitId) -> Result<Vec<Head>> {
+        self.execute_jj_log(&format!("{commit_id}-"), HEAD_TEMPLATE_NL)
+            .with_context(|| format!("Failed getting commit parents: {commit_id}"))?
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(parse_head)
+            .collect()
+    }
+
     /// Get a commit's parent.
     /// Maps to `jj log -r <revision>-`
     #[instrument(level = "trace", skip(self))]

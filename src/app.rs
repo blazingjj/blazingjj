@@ -169,6 +169,26 @@ impl<'a> App<'a> {
         Ok(())
     }
 
+    fn current_tab_ref(&self) -> Option<&dyn Component> {
+        match self.current_tab {
+            Tab::Log => self.log.as_ref().map(|t| t as &dyn Component),
+            Tab::Files => self.files.as_ref().map(|t| t as &dyn Component),
+            Tab::Bookmarks => self.bookmarks.as_ref().map(|t| t as &dyn Component),
+        }
+    }
+
+    pub fn is_dragging(&self) -> bool {
+        self.log.as_ref().is_some_and(|t| t.is_dragging())
+    }
+
+    /// True if any active component (popup or current tab) needs the
+    /// main loop to tick at a steady rate (animations, auto-scroll).
+    pub fn wants_tick(&self) -> bool {
+        self.has_background_work()
+            || self.popup.as_ref().is_some_and(|p| p.wants_tick())
+            || self.current_tab_ref().is_some_and(|t| t.wants_tick())
+    }
+
     pub fn handle_action(&mut self, component_action: ComponentAction) -> Result<()> {
         match component_action {
             ComponentAction::ViewFiles(head) => {
@@ -203,6 +223,10 @@ impl<'a> App<'a> {
         }
 
         Ok(())
+    }
+
+    pub fn has_background_work(&self) -> bool {
+        self.files.as_ref().is_some_and(|f| f.has_pending_diff())
     }
 
     #[instrument(level = "trace", skip(self))]

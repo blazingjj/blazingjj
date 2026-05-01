@@ -32,6 +32,7 @@ use ratatui::widgets::Wrap;
 use tracing::trace;
 
 use crate::ui::utils::LargeString;
+use crate::ui::utils::ScrollbarDrag;
 
 /// Details panel used for the right side of each tab.
 /// This handles scrolling and wrapping.
@@ -46,6 +47,7 @@ pub struct DetailsPanel {
     lines: u16,
     /// Wrap long lines of content into multiple lines
     wrap: bool,
+    scrollbar_drag: ScrollbarDrag,
 }
 
 /// Content of the detail panel must be able to render as a paragraph
@@ -180,18 +182,18 @@ where
         // render scrollbar on top of border
         if self.panel.lines > paragraph_area.height {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
+            let scrollbar_rect = area.inner(Margin {
+                vertical: 1,
+                horizontal: 0,
+            });
 
             let mut scrollbar_state =
                 ScrollbarState::new(self.panel.lines.into()).position(self.panel.scroll.into());
 
-            f.render_stateful_widget(
-                scrollbar,
-                area.inner(Margin {
-                    vertical: 1,
-                    horizontal: 0,
-                }),
-                &mut scrollbar_state,
-            );
+            f.render_stateful_widget(scrollbar, scrollbar_rect, &mut scrollbar_state);
+            self.panel.scrollbar_drag.set_rect(scrollbar_rect);
+        } else {
+            self.panel.scrollbar_drag.set_rect(Rect::ZERO);
         }
     }
 }
@@ -204,6 +206,7 @@ impl DetailsPanel {
             scroll: 0,
             lines: 0,
             wrap: true,
+            scrollbar_drag: ScrollbarDrag::new(),
         }
     }
 
@@ -280,15 +283,25 @@ impl DetailsPanel {
 
         true
     }
+}
 
-    /// Handle input. Returns bool of if event was handled
-    pub fn input_mouse(&mut self, mouse: MouseEvent) -> bool {
-        if !self.panel_rect.contains(Position {
-            y: mouse.row,
-            x: mouse.column,
-        }) {
+impl super::PanelMouseInput for DetailsPanel {
+    fn input_mouse(&mut self, mouse: MouseEvent) -> super::MouseInput {
+        // Check scrollbar drag first; drag events can land outside panel_rect.
+        let (consumed, new_pos) = self.scrollbar_drag.handle_mouse(mouse, self.lines as usize);
+        if consumed {
+            if let Some(pos) = new_pos {
+                self.scroll_to(pos as u16);
+            }
+            return super::MouseInput::Handled;
+        }
+
+        if !self
+            .panel_rect
+            .contains(Position::new(mouse.column, mouse.row))
+        {
             trace!("mouse {:?} not in rect {:?}", &mouse, &self.panel_rect);
-            return false;
+            return super::MouseInput::NotHandled;
         }
         trace!("mouse {:?} inside  rect {:?}", &mouse, &self.panel_rect);
         match mouse.kind {
@@ -302,8 +315,8 @@ impl DetailsPanel {
                 self.handle_event(DetailsPanelEvent::ScrollDown);
                 self.handle_event(DetailsPanelEvent::ScrollDown);
             }
-            _ => return false,
+            _ => return super::MouseInput::NotHandled,
         }
-        true
+        super::MouseInput::Handled
     }
 }

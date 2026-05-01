@@ -14,18 +14,44 @@ use crate::commander::Commander;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::ids::CommitId;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewInsertMode {
+    /// `jj new <rev>` — leaves children of rev in place.
+    Child,
+    /// `jj new --insert-after <rev>` — splices between rev and its children.
+    After,
+    /// `jj new --insert-before <rev>` — splices between rev and its parents.
+    Before,
+}
+
 impl Commander {
-    /// Create a new change after revisions. Maps to `jj new <revision>...`
-    #[instrument(level = "trace", skip(self, revisions))]
-    pub fn run_new<'a, T: IntoIterator<Item = &'a str>>(&self, revisions: T) -> Result<()> {
-        let args = ["new"].into_iter().chain::<T>(revisions);
+    /// Create a new change. Maps to `jj new <revset>`. Pass a union
+    /// expression (`commit_revset_union`) for multiple parents.
+    #[instrument(level = "trace", skip(self, revset))]
+    pub fn run_new(&self, revset: &str) -> Result<()> {
+        self.run_new_with_insert(revset, NewInsertMode::Child)
+    }
+
+    /// Like [`run_new`], but with an explicit insertion mode.
+    #[instrument(level = "trace", skip(self, revset))]
+    pub fn run_new_with_insert(&self, revset: &str, insert: NewInsertMode) -> Result<()> {
+        let flag: &[&str] = match insert {
+            NewInsertMode::Child => &[],
+            NewInsertMode::After => &["--insert-after"],
+            NewInsertMode::Before => &["--insert-before"],
+        };
+        let args = ["new"]
+            .into_iter()
+            .chain(flag.iter().copied())
+            .chain([revset]);
         self.execute_void_jj_command(args)
             .context("Failed executing jj new")
     }
 
-    /// Duplicate a change. Maps to `jj duplicate`
-    pub fn run_duplicate(&self, revision: &str) -> Result<()> {
-        self.execute_void_jj_command(vec!["duplicate", revision])
+    /// Duplicate changes. Maps to `jj duplicate <revset>`. Pass a union
+    /// expression (`commit_revset_union`) to duplicate multiple commits.
+    pub fn run_duplicate(&self, revset: &str) -> Result<()> {
+        self.execute_void_jj_command(["duplicate", revset])
             .context("Failed executing jj duplicate")
     }
 
@@ -41,13 +67,11 @@ impl Commander {
             .context("Failed executing jj edit")
     }
 
-    /// Abandon change. Maps to `jj abandon <revision>`
+    /// Abandon change. Maps to `jj abandon <revset>`. Pass a union
+    /// expression (`commit_revset_union`) to abandon multiple commits.
     #[instrument(level = "trace", skip(self))]
-    pub fn run_abandon(&self, commit_ids: &[CommitId]) -> Result<()> {
-        let args = ["abandon"]
-            .into_iter()
-            .chain(commit_ids.iter().map(CommitId::as_str));
-        self.execute_void_jj_command(args)
+    pub fn run_abandon(&self, revset: &str) -> Result<()> {
+        self.execute_void_jj_command(["abandon", revset])
             .context("Failed executing jj abandon")
     }
 
@@ -58,7 +82,9 @@ impl Commander {
             .context("Failed executing jj describe")
     }
 
-    /// Rebase changes. Maps to `jj rebase -s <rev> -d <rev>` or similar
+    /// Rebase changes. Maps to `jj rebase -s <rev> -d <rev>` or similar.
+    /// `src_rev` may be a union expression (`commit_revset_union`) to
+    /// rebase multiple sources at once.
     #[instrument(level = "trace", skip(self))]
     pub fn run_rebase(
         &mut self,
@@ -67,13 +93,33 @@ impl Commander {
         tgt_mode: &str,
         tgt_rev: &str,
     ) -> Result<()> {
-        Ok(self.execute_void_jj_command(vec!["rebase", src_mode, src_rev, tgt_mode, tgt_rev])?)
+        self.execute_void_jj_command(["rebase", src_mode, src_rev, tgt_mode, tgt_rev])?;
+        Ok(())
     }
 
-    /// Squash changes. Maps to `jj squash -u --into <revision>`
+    /// Parallelize changes. Maps to `jj parallelize <revset>`. Pass a
+    /// union expression (`commit_revset_union`) to parallelize multiple
+    /// commits at once.
     #[instrument(level = "trace", skip(self))]
-    pub fn run_squash(&mut self, revision: &str, ignore_immutable: bool) -> Result<()> {
-        let mut args = vec!["squash", "-u", "--into", revision];
+    pub fn run_parallelize(&self, revset: &str) -> Result<()> {
+        self.execute_void_jj_command(["parallelize", revset])
+            .context("Failed executing jj parallelize")
+    }
+
+    /// Squash changes. Maps to `jj squash -u [--from <revset>] --into <revset>`.
+    /// `from` defaults to the working copy when `None`. Pass a union
+    /// expression (`commit_revset_union`) to squash multiple sources.
+    #[instrument(level = "trace", skip(self))]
+    pub fn run_squash(
+        &mut self,
+        from: Option<&str>,
+        into: &str,
+        ignore_immutable: bool,
+    ) -> Result<()> {
+        let mut args = vec!["squash", "-u", "--into", into];
+        if let Some(f) = from {
+            args.extend_from_slice(&["--from", f]);
+        }
         if ignore_immutable {
             args.push("--ignore-immutable");
         }
@@ -203,8 +249,6 @@ impl Commander {
 
 #[cfg(test)]
 mod tests {
-    use core::slice;
-
     use super::*;
     use crate::commander::tests::TestRepo;
 
@@ -213,7 +257,7 @@ mod tests {
         let test_repo = TestRepo::new()?;
 
         let head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new([head.commit_id.as_str()])?;
+        test_repo.commander.run_new(head.commit_id.as_str())?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
 
         Ok(())
@@ -224,7 +268,7 @@ mod tests {
         let test_repo = TestRepo::new()?;
 
         let head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new([head.commit_id.as_str()])?;
+        test_repo.commander.run_new(head.commit_id.as_str())?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
         test_repo
             .commander
@@ -239,9 +283,7 @@ mod tests {
         let test_repo = TestRepo::new()?;
 
         let head = test_repo.commander.get_current_head()?;
-        test_repo
-            .commander
-            .run_abandon(slice::from_ref(&head.commit_id))?;
+        test_repo.commander.run_abandon(head.commit_id.as_str())?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
 
         Ok(())
@@ -258,6 +300,28 @@ mod tests {
 
         let head = test_repo.commander.get_current_head()?.commit_id;
         assert_eq!(test_repo.commander.get_commit_description(&head)?, "AAA");
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_squash_from() -> Result<()> {
+        let mut test_repo = TestRepo::new()?;
+
+        let source = test_repo.commander.get_current_head()?;
+        test_repo.commander.run_new(source.commit_id.as_str())?;
+        let dest = test_repo.commander.get_current_head()?;
+
+        test_repo.commander.run_squash(
+            Some(source.commit_id.as_str()),
+            dest.commit_id.as_str(),
+            false,
+        )?;
+
+        // The destination commit must have been rewritten — its new
+        // version is the current head.
+        let new_head = test_repo.commander.get_current_head()?;
+        assert_ne!(new_head.commit_id, dest.commit_id);
 
         Ok(())
     }
@@ -288,7 +352,7 @@ mod tests {
 
         // Create new change, since by default `jj bookmark create` uses current change
         let head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new([head.commit_id.as_str()])?;
+        test_repo.commander.run_new(head.commit_id.as_str())?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
 
         let bookmark = test_repo
@@ -321,7 +385,7 @@ mod tests {
 
         // Create new change, since by default `jj bookmark create` uses current change
         let old_head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new([old_head.commit_id.as_str()])?;
+        test_repo.commander.run_new(old_head.commit_id.as_str())?;
         let new_head = test_repo.commander.get_current_head()?;
         assert_ne!(old_head, new_head);
 

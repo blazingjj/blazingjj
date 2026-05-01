@@ -164,6 +164,8 @@ fn init_env() -> Result<Env> {
 }
 
 fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
+    let kbd_enhanced = supports_keyboard_enhancement()?;
+    let mut drag_flags_pushed = false;
     loop {
         app.update()?;
 
@@ -171,7 +173,7 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
             let _ = ui(f, app);
         })?;
 
-        let should_stop = input_to_app(app)?;
+        let should_stop = input_to_app(app, kbd_enhanced, &mut drag_flags_pushed)?;
 
         if let Some(mut command) = app.pending_interactive.take() {
             restore_terminal()?;
@@ -183,6 +185,9 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
         }
 
         if should_stop {
+            if drag_flags_pushed {
+                execute!(io::stdout(), PopKeyboardEnhancementFlags)?;
+            }
             return Ok(());
         }
     }
@@ -191,14 +196,15 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
 /// Let app process all input events in queue before returning
 /// to draw the next frame.
 /// Return true if application should stop
-fn input_to_app(app: &mut App) -> Result<bool> {
+fn input_to_app(app: &mut App, kbd_enhanced: bool, drag_flags_pushed: &mut bool) -> Result<bool> {
     // Duration::MAX overflows the timespec struct used by kevent/kqueue on macOS,
     // causing EINVAL (os error 22). Use a safe large value instead.
     const FOREVER: Duration = Duration::from_secs(24 * 3600);
 
-    // Allow popups like the fetch animation to update every 100ms.
-    let wait_duration = if app.popup.is_some() {
-        Duration::from_millis(100)
+    // Allow components that opt in via wants_tick (fetch/push spinner,
+    // log-tab drag auto-scroll, ...) to update every 50ms.
+    let wait_duration = if app.wants_tick() {
+        Duration::from_millis(50)
     } else {
         FOREVER
     };
@@ -216,6 +222,24 @@ fn input_to_app(app: &mut App) -> Result<bool> {
         let event = event::read()?;
         should_stop = app.input(event)?;
     }
+
+    if kbd_enhanced {
+        let dragging = app.is_dragging();
+        if !*drag_flags_pushed && dragging {
+            execute!(
+                io::stdout(),
+                PushKeyboardEnhancementFlags(
+                    KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+                        | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+                )
+            )?;
+            *drag_flags_pushed = true;
+        } else if *drag_flags_pushed && !dragging {
+            execute!(io::stdout(), PopKeyboardEnhancementFlags)?;
+            *drag_flags_pushed = false;
+        }
+    }
+
     Ok(should_stop)
 }
 
@@ -237,7 +261,9 @@ fn setup_terminal() -> Result<()> {
     if supports_keyboard_enhancement()? {
         execute!(
             stdout,
-            // required to properly detect ctrl+shift
+            // Required for ctrl+shift disambiguation. REPORT_ALL_KEYS_AS_ESCAPE_CODES
+            // and REPORT_EVENT_TYPES are pushed only during drag to detect modifier
+            // key transitions without breaking normal key handling (e.g. shift+;).
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
         )?;
     }

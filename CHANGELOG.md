@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Command popup output now preserves ANSI color
 - Drag to resize pane divider in all tabs
 - Configurable describe mode (`describe-mode = "jj"` runs `jj describe` interactively instead of using the popup)
+- Context menu popup (right-click or `Menu` key) with common single-commit
+  operations for the selected change
+- "New after" and "New before" operations (jj new --insert-after /
+  --insert-before), accessible from the context menu
+- Toggle horizontal/vertical split at runtime with `Ctrl+w` (configurable via `toggle-layout` keybind)
+- Mouse scrolling in the file and bookmark list panes
+- Left-click to select items in all list panes; log tab click now fires on press rather than release
 
 ### Changed
 
