@@ -64,6 +64,8 @@ pub enum Role {
     FileDeleted,
     Conflict,
     Value,
+    DragSource,
+    DragTarget,
     DiffHeader,
     DiffFileHeader,
     DiffHunkHeader,
@@ -102,6 +104,8 @@ impl Role {
         Self::FileCopied,
         Self::FileDeleted,
         Self::Conflict,
+        Self::DragSource,
+        Self::DragTarget,
         Self::DiffHeader,
         Self::DiffFileHeader,
         Self::DiffHunkHeader,
@@ -146,6 +150,8 @@ impl Role {
             Self::FileDeleted => "file-deleted",
             Self::Conflict => "conflict",
             Self::Value => "value",
+            Self::DragSource => "drag-source",
+            Self::DragTarget => "drag-target",
             Self::DiffHeader => "diff-header",
             Self::DiffFileHeader => "diff-file-header",
             Self::DiffHunkHeader => "diff-hunk-header",
@@ -197,6 +203,8 @@ impl Role {
             Self::Value => {
                 "What an option or a binding is set to, where the settings and keybindings tabs list them."
             }
+            Self::DragSource => "The change being dragged.",
+            Self::DragTarget => "The change a drag would drop onto.",
             Self::DiffHeader => "The line a diff names a file under, in the color words format.",
             Self::DiffFileHeader => {
                 "The block naming a file and what it was, above its hunks in the git format."
@@ -236,6 +244,7 @@ impl Role {
             | Self::FileCopied
             | Self::FileDeleted
             | Self::Conflict => "Files",
+            Self::DragSource | Self::DragTarget => "Dragging",
             Self::DiffHeader
             | Self::DiffFileHeader
             | Self::DiffHunkHeader
@@ -316,6 +325,14 @@ impl Role {
                 ansi(Ansi::Red)
             }
             Self::Warning | Self::DiffHeader => ansi(Ansi::Yellow),
+            Self::DragSource => RoleStyle {
+                bg: Some(ThemeColor::Rgb(40, 80, 80)),
+                ..RoleStyle::default()
+            },
+            Self::DragTarget => RoleStyle {
+                bg: Some(ThemeColor::Rgb(120, 100, 30)),
+                ..RoleStyle::default()
+            },
             Self::Button => ansi(Ansi::BrightWhite),
             Self::ChangeId | Self::Bookmark => ansi(Ansi::Magenta),
         }
@@ -369,7 +386,13 @@ impl Role {
     /// foreground on the highlight would flatten jj's colouring of the
     /// selected row.
     fn keeps_off(self, channel: Channel) -> bool {
-        matches!((self, channel), (Self::Highlight, Channel::Fg))
+        matches!(
+            (self, channel),
+            (
+                Self::Highlight | Self::DragSource | Self::DragTarget,
+                Channel::Fg
+            )
+        )
     }
 }
 

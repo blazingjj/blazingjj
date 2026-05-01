@@ -22,6 +22,9 @@ pub struct LogTabKeybinds {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum LogTabEvent {
+    /// Take back whatever the tab is in the middle of, such as a drag.
+    Cancel,
+
     ToggleHeadMark,
     ClearMarks,
     UseMarks,
@@ -29,12 +32,18 @@ pub enum LogTabEvent {
     Goto(Relation),
     LoadMore,
 
-    CreateNew { describe: bool },
+    CreateNew {
+        describe: bool,
+    },
     Duplicate,
     Parallelize,
     Rebase,
-    Squash { ignore_immutable: bool },
-    EditChange { ignore_immutable: bool },
+    Squash {
+        ignore_immutable: bool,
+    },
+    EditChange {
+        ignore_immutable: bool,
+    },
     Abandon,
     Absorb,
     Describe,
@@ -47,7 +56,9 @@ pub enum LogTabEvent {
 
     PushMenu,
     Push(PushScope),
-    Fetch { all_remotes: bool },
+    Fetch {
+        all_remotes: bool,
+    },
 
     Unbound,
 }
@@ -81,6 +92,7 @@ impl Default for LogTabKeybinds {
         let mut keys = KeybindsStore::<LogTabEvent>::default();
         set_keybinds!(
             keys,
+            LogTabEvent::Cancel => "esc",
             LogTabEvent::ToggleHeadMark => "space",
             LogTabEvent::ClearMarks => "ctrl+space",
             LogTabEvent::UseMarks => ";",
@@ -143,6 +155,7 @@ impl LogTabKeybinds {
             LogTabEvent::ToggleHeadMark => config.mark_head,
             LogTabEvent::ClearMarks => config.clear_marks,
             LogTabEvent::UseMarks => config.use_marks,
+            LogTabEvent::Cancel => config.cancel,
             LogTabEvent::Goto(Relation::Parent) => config.goto_parent,
             LogTabEvent::Goto(Relation::Child) => config.goto_child,
             LogTabEvent::LoadMore => config.load_more,
