@@ -187,14 +187,32 @@ impl Commander {
             .run_void()?)
     }
 
-    /// Squash changes. Maps to `jj squash -u --into <revset>`
-    pub fn run_squash(&self, revset: impl Into<Revset>, ignore_immutable: bool) -> Result<()> {
-        self.run_squash_inner(revset.into().as_str(), ignore_immutable)
+    /// Squash changes. Maps to `jj squash -u [--from <revset>] --into <revset>`.
+    /// `from` defaults to the working copy when `None`.
+    pub fn run_squash(
+        &self,
+        from: Option<Revset>,
+        into: impl Into<Revset>,
+        ignore_immutable: bool,
+    ) -> Result<()> {
+        self.run_squash_inner(
+            from.as_ref().map(Revset::as_str),
+            into.into().as_str(),
+            ignore_immutable,
+        )
     }
 
     #[instrument(level = "trace", name = "run_squash", skip(self))]
-    fn run_squash_inner(&self, revset: &str, ignore_immutable: bool) -> Result<()> {
-        let mut args = vec!["squash", "-u", "--into", revset];
+    fn run_squash_inner(
+        &self,
+        from: Option<&str>,
+        into: &str,
+        ignore_immutable: bool,
+    ) -> Result<()> {
+        let mut args = vec!["squash", "-u", "--into", into];
+        if let Some(f) = from {
+            args.extend_from_slice(&["--from", f]);
+        }
         if ignore_immutable {
             args.push("--ignore-immutable");
         }
@@ -468,6 +486,28 @@ mod tests {
 
         let head = test_repo.commander.get_current_head()?.commit_id;
         assert_eq!(test_repo.commander.get_commit_description(&head)?, "-AAA");
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_squash_from() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        let source = test_repo.commander.get_current_head()?;
+        test_repo.commander.run_new(&source.commit_id)?;
+        let dest = test_repo.commander.get_current_head()?;
+
+        test_repo.commander.run_squash(
+            Some(Revset::from(&source.commit_id)),
+            &dest.commit_id,
+            false,
+        )?;
+
+        // The destination commit must have been rewritten — its new
+        // version is the current head.
+        let new_head = test_repo.commander.get_current_head()?;
+        assert_ne!(new_head.commit_id, dest.commit_id);
 
         Ok(())
     }

@@ -220,7 +220,7 @@ impl Command {
             Command::Squash {
                 target,
                 ignore_immutable,
-            } => match new_commander().run_squash(&target.commit_id, ignore_immutable) {
+            } => match new_commander().run_squash(None, &target.commit_id, ignore_immutable) {
                 Ok(()) => Ok(Some(show_change(new_commander().get_current_head()?))),
                 Err(err) => Ok(Some(refused("Squash", err))),
             },
