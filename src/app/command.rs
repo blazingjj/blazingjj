@@ -569,7 +569,7 @@ pub fn ask_new_change_from_selection(
     } else {
         format!("the {} marked changes", marked.len())
     };
-    let revset = Revset::union(marked).unwrap_or_else(|| Revset::from(&selected.commit_id));
+    let revset = Revset::union_or(marked, &selected.commit_id);
     let source = if marked.is_empty() {
         NewSource::Change
     } else {
