@@ -84,6 +84,11 @@ pub struct LogTab<'a> {
 
     rebase_popup: Option<RebasePopup>,
 
+    /// Sources for the next squash, set when entering the confirm popup
+    /// with tagged commits. `Some((revset, count))` triggers
+    /// `--from <revset>`; `None` keeps the default "@ into selected"
+    /// behaviour.
+    squash_from: Option<(String, usize)>,
     squash_ignore_immutable: bool,
     squash_target: Option<Head>,
 
@@ -173,6 +178,7 @@ impl<'a> LogTab<'a> {
 
             rebase_popup: None,
 
+            squash_from: None,
             squash_ignore_immutable: false,
             squash_target: None,
 
@@ -480,15 +486,30 @@ impl<'a> LogTab<'a> {
                     ));
                 }
 
-                let description = if self.squash_target.is_some() {
-                    "Are you sure you want to squash @ into its parent?"
-                } else {
-                    "Are you sure you want to squash @ into this change?"
+                let marks = self.log_panel.extract_and_clear_head_marks();
+                self.squash_from =
+                    (!marks.is_empty()).then(|| (commit_revset_union(&marks), marks.len()));
+
+                let mut lines = match &self.squash_from {
+                    Some((_, count)) => vec![
+                        Line::from(format!(
+                            "Are you sure you want to squash {count} tagged changes into this change?"
+                        )),
+                        Line::from(format!("Squash into {}", self.head.change_id.as_str())),
+                    ],
+                    None => {
+                        let description = if self.squash_target.is_some() {
+                            "Are you sure you want to squash @ into its parent?"
+                        } else {
+                            "Are you sure you want to squash @ into this change?"
+                        };
+
+                        vec![
+                            Line::from(description),
+                            Line::from(format!("Squash into {}", target.change_id.as_str())),
+                        ]
+                    }
                 };
-                let mut lines = vec![
-                    Line::from(description),
-                    Line::from(format!("Squash into {}", target.change_id.as_str())),
-                ];
                 if ignore_immutable {
                     lines.push(Line::from("This change is immutable."));
                 }
@@ -687,13 +708,14 @@ impl Component for LogTab<'_> {
                     return self.execute_abandon();
                 }
                 SQUASH_POPUP_ID => {
+                    let from = self.squash_from.take();
                     let target_id = self
                         .squash_target
                         .take()
                         .unwrap_or_else(|| self.head.clone())
                         .commit_id;
                     new_commander().run_squash(
-                        None,
+                        from.as_ref().map(|(rev, _)| rev.as_str()),
                         target_id.as_str(),
                         self.squash_ignore_immutable,
                     )?;
@@ -913,6 +935,7 @@ impl Component for LogTab<'_> {
                     LogTabEvent::ClosePopup | LogTabEvent::Cancel
                 ) {
                     self.popup = ConfirmDialogState::default();
+                    self.squash_from = None;
                 } else {
                     self.popup.handle(&key);
                 }
