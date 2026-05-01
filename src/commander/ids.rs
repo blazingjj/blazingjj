@@ -63,3 +63,35 @@ impl Display for CommitId {
         write!(f, "{}", self.as_str())
     }
 }
+
+/// Build a revset expression that is the union of the given commit IDs:
+/// `id1 | id2 | id3`. A single id returns the bare id. Empty input is a
+/// misuse — callers must fall back to a single commit (typically the
+/// current head) before calling.
+pub fn commit_revset_union(ids: &[CommitId]) -> String {
+    ids.iter()
+        .map(CommitId::as_str)
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commit_revset_union_single() {
+        let ids = [CommitId("abc".to_owned())];
+        assert_eq!(commit_revset_union(&ids), "abc");
+    }
+
+    #[test]
+    fn commit_revset_union_multiple() {
+        let ids = [
+            CommitId("abc".to_owned()),
+            CommitId("def".to_owned()),
+            CommitId("ghi".to_owned()),
+        ];
+        assert_eq!(commit_revset_union(&ids), "abc | def | ghi");
+    }
+}
