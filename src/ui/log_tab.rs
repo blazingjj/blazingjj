@@ -522,6 +522,13 @@ impl<'a> LogTab<'a> {
             LogTabEvent::Abandon => {
                 return self.handle_abandon();
             }
+            LogTabEvent::Absorb => {
+                new_commander().run_absorb(self.head.commit_id.as_str())?;
+                self.set_head(new_commander().get_head_latest(&self.head)?);
+                return Ok(ComponentInputResult::HandledAction(
+                    ComponentAction::ChangeHead(self.head.clone()),
+                ));
+            }
             LogTabEvent::Describe => {
                 if self.head.immutable {
                     return Ok(ComponentInputResult::HandledAction(
