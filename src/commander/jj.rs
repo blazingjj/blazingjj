@@ -72,10 +72,20 @@ impl Commander {
         Ok(())
     }
 
-    /// Squash changes. Maps to `jj squash -u --into <revision>`
+    /// Squash changes. Maps to `jj squash -u [--from <revset>] --into <revset>`.
+    /// `from` defaults to the working copy when `None`. Pass a union
+    /// expression (`commit_revset_union`) to squash multiple sources.
     #[instrument(level = "trace", skip(self))]
-    pub fn run_squash(&mut self, revision: &str, ignore_immutable: bool) -> Result<()> {
-        let mut args = vec!["squash", "-u", "--into", revision];
+    pub fn run_squash(
+        &mut self,
+        from: Option<&str>,
+        into: &str,
+        ignore_immutable: bool,
+    ) -> Result<()> {
+        let mut args = vec!["squash", "-u", "--into", into];
+        if let Some(f) = from {
+            args.extend_from_slice(&["--from", f]);
+        }
         if ignore_immutable {
             args.push("--ignore-immutable");
         }
@@ -256,6 +266,28 @@ mod tests {
 
         let head = test_repo.commander.get_current_head()?.commit_id;
         assert_eq!(test_repo.commander.get_commit_description(&head)?, "AAA");
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_squash_from() -> Result<()> {
+        let mut test_repo = TestRepo::new()?;
+
+        let source = test_repo.commander.get_current_head()?;
+        test_repo.commander.run_new(source.commit_id.as_str())?;
+        let dest = test_repo.commander.get_current_head()?;
+
+        test_repo.commander.run_squash(
+            Some(source.commit_id.as_str()),
+            dest.commit_id.as_str(),
+            false,
+        )?;
+
+        // The destination commit must have been rewritten — its new
+        // version is the current head.
+        let new_head = test_repo.commander.get_current_head()?;
+        assert_ne!(new_head.commit_id, dest.commit_id);
 
         Ok(())
     }

@@ -686,8 +686,11 @@ impl Component for LogTab<'_> {
                     return self.execute_abandon();
                 }
                 SQUASH_POPUP_ID => {
-                    new_commander()
-                        .run_squash(self.head.commit_id.as_str(), self.squash_ignore_immutable)?;
+                    new_commander().run_squash(
+                        None,
+                        self.head.commit_id.as_str(),
+                        self.squash_ignore_immutable,
+                    )?;
                     self.set_head(new_commander().get_current_head()?);
                     return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
                 }
