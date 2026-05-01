@@ -395,7 +395,7 @@ impl<'a> LogTab<'a> {
         }
         // Abandon marked commmits
         let commit_id_list = self.log_panel.extract_and_clear_head_marks();
-        new_commander().run_abandon(&commit_id_list)?;
+        new_commander().run_abandon(&commit_revset_union(&commit_id_list))?;
         // Update selection to latest version, in case abandon triggered a rebase.
         let new_selection = new_commander().get_head_latest(&selection)?;
         // Update log panel and diff panel
