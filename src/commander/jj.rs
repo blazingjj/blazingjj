@@ -14,11 +14,39 @@ use crate::commander::Commander;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::ids::CommitId;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewInsertMode {
+    /// `jj new <rev>` — leaves children of rev in place.
+    Child,
+    /// `jj new --insert-after <rev>` — splices between rev and its children.
+    After,
+    /// `jj new --insert-before <rev>` — splices between rev and its parents.
+    Before,
+}
+
 impl Commander {
     /// Create a new change after revisions. Maps to `jj new <revision>...`
     #[instrument(level = "trace", skip(self, revisions))]
     pub fn run_new<'a, T: IntoIterator<Item = &'a str>>(&self, revisions: T) -> Result<()> {
-        let args = ["new"].into_iter().chain::<T>(revisions);
+        self.run_new_with_insert(revisions, NewInsertMode::Child)
+    }
+
+    /// Like [`run_new`], but with an explicit insertion mode.
+    #[instrument(level = "trace", skip(self, revisions))]
+    pub fn run_new_with_insert<'a, T: IntoIterator<Item = &'a str>>(
+        &self,
+        revisions: T,
+        insert: NewInsertMode,
+    ) -> Result<()> {
+        let flag: &[&str] = match insert {
+            NewInsertMode::Child => &[],
+            NewInsertMode::After => &["--insert-after"],
+            NewInsertMode::Before => &["--insert-before"],
+        };
+        let args = ["new"]
+            .into_iter()
+            .chain(flag.iter().copied())
+            .chain(revisions);
         self.execute_void_jj_command(args)
             .context("Failed executing jj new")
     }

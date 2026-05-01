@@ -55,4 +55,5 @@ pub struct LogTabKeybindsConfig {
     pub fetch_all: Option<Keybind>,
 
     pub open_help: Option<Keybind>,
+    pub open_context_menu: Option<Keybind>,
 }

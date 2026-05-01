@@ -58,6 +58,26 @@ pub fn centered_rect_fixed(area: Rect, width: u16, height: u16) -> Rect {
     }
 }
 
+/// Place a rect of fixed width and height with its top-left at `anchor`,
+/// clamped so it stays within `area`.
+pub fn anchored_rect_fixed(
+    area: Rect,
+    anchor: ratatui::layout::Position,
+    width: u16,
+    height: u16,
+) -> Rect {
+    let width = width.min(area.width);
+    let height = height.min(area.height);
+    let max_x = area.x + area.width.saturating_sub(width);
+    let max_y = area.y + area.height.saturating_sub(height);
+    Rect {
+        x: anchor.x.clamp(area.x, max_x),
+        y: anchor.y.clamp(area.y, max_y),
+        width,
+        height,
+    }
+}
+
 /// replaces tabs in a string by spaces
 ///
 /// ratatui doesn't work well displaying tabs, so any

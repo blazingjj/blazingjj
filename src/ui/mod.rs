@@ -2,6 +2,7 @@ pub mod bookmark_set_popup;
 pub mod bookmarks_tab;
 pub mod command_popup;
 pub mod commit_show_cache;
+pub mod context_menu_popup;
 pub mod files_tab;
 pub mod help_popup;
 pub mod loader_popup;
