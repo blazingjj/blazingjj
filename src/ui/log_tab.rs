@@ -88,6 +88,11 @@ pub struct LogTab<'a> {
 
     rebase_popup: Option<RebasePopup>,
 
+    /// Sources for the next squash, set when entering the confirm popup
+    /// with tagged commits. `Some((revset, count))` triggers
+    /// `--from <revset>`; `None` keeps the default "@ into selected"
+    /// behaviour.
+    squash_from: Option<(String, usize)>,
     squash_ignore_immutable: bool,
 
     edit_ignore_immutable: bool,
@@ -178,6 +183,7 @@ impl<'a> LogTab<'a> {
 
             rebase_popup: None,
 
+            squash_from: None,
             squash_ignore_immutable: false,
 
             edit_ignore_immutable: false,
@@ -476,10 +482,22 @@ impl<'a> LogTab<'a> {
                     ));
                 }
 
-                let mut lines = vec![
-                    Line::from("Are you sure you want to squash @ into this change?"),
-                    Line::from(format!("Squash into {}", self.head.change_id.as_str())),
-                ];
+                let marks = self.log_panel.extract_and_clear_head_marks();
+                self.squash_from =
+                    (!marks.is_empty()).then(|| (commit_revset_union(&marks), marks.len()));
+
+                let mut lines = match &self.squash_from {
+                    Some((_, count)) => vec![
+                        Line::from(format!(
+                            "Are you sure you want to squash {count} tagged changes into this change?"
+                        )),
+                        Line::from(format!("Squash into {}", self.head.change_id.as_str())),
+                    ],
+                    None => vec![
+                        Line::from("Are you sure you want to squash @ into this change?"),
+                        Line::from(format!("Squash into {}", self.head.change_id.as_str())),
+                    ],
+                };
                 if ignore_immutable {
                     lines.push(Line::from("This change is immutable."));
                 }
@@ -686,8 +704,9 @@ impl Component for LogTab<'_> {
                     return self.execute_abandon();
                 }
                 SQUASH_POPUP_ID => {
+                    let from = self.squash_from.take();
                     new_commander().run_squash(
-                        None,
+                        from.as_ref().map(|(rev, _)| rev.as_str()),
                         self.head.commit_id.as_str(),
                         self.squash_ignore_immutable,
                     )?;
@@ -916,6 +935,7 @@ impl Component for LogTab<'_> {
                     LogTabEvent::ClosePopup | LogTabEvent::Cancel
                 ) {
                     self.popup = ConfirmDialogState::default();
+                    self.squash_from = None;
                 } else {
                     self.popup.handle(&key);
                 }
