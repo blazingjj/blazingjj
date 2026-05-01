@@ -44,6 +44,14 @@ impl Revset {
         Some(Self(expressions.join(" | ")))
     }
 
+    /// The union of the given revsets, or `fallback` if there are none.
+    pub fn union_or(
+        revsets: impl IntoIterator<Item = impl Into<Revset>>,
+        fallback: impl Into<Revset>,
+    ) -> Self {
+        Self::union(revsets).unwrap_or_else(|| fallback.into())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -93,6 +101,22 @@ mod tests {
             Revset::union(&ids),
             Some(Revset::expression("abc | def | ghi"))
         );
+    }
+
+    #[test]
+    fn union_or_falls_back_when_empty() {
+        let fallback = CommitId("abc".to_owned());
+        assert_eq!(
+            Revset::union_or(Vec::<Revset>::new(), &fallback),
+            Revset::expression("abc")
+        );
+    }
+
+    #[test]
+    fn union_or_ignores_the_fallback_when_non_empty() {
+        let ids = [CommitId("abc".to_owned())];
+        let fallback = CommitId("def".to_owned());
+        assert_eq!(Revset::union_or(&ids, &fallback), Revset::expression("abc"));
     }
 
     #[test]
