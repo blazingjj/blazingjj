@@ -148,6 +148,13 @@ pub trait Component {
     fn input_mouse(&mut self, _mouse: Mouse) -> Result<ComponentInputResult> {
         Ok(ComponentInputResult::NotHandled)
     }
+
+    /// True if the component needs `update()` calls on a steady tick
+    /// (e.g. an in-flight drag auto-scroll). Drives the input poll
+    /// timeout in the main loop.
+    fn wants_tick(&self) -> bool {
+        false
+    }
 }
 
 /// A top-level tab, showing what it reads from the repo.

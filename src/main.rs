@@ -202,6 +202,8 @@ fn update_stale_workspace() -> Result<bool> {
 fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
     app.launch_input_channel();
     let mut quiet = false;
+    let kbd_enhanced = supports_keyboard_enhancement()?;
+    let mut drag_flags_pushed = false;
     loop {
         let mut changed = app.update()?;
 
@@ -224,8 +226,13 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
             })?;
         }
 
-        match input_to_app(app)? {
-            Handled::Stop => return Ok(()),
+        match input_to_app(app, kbd_enhanced, &mut drag_flags_pushed)? {
+            Handled::Stop => {
+                if drag_flags_pushed {
+                    execute!(io::stdout(), PopKeyboardEnhancementFlags)?;
+                }
+                return Ok(());
+            }
             Handled::Redraw => quiet = false,
             Handled::Nothing => quiet = true,
         }
@@ -264,7 +271,11 @@ fn run_interactive(
 }
 
 /// Let app process all input events in queue before returning.
-fn input_to_app(app: &mut App) -> Result<Handled> {
+fn input_to_app(
+    app: &mut App,
+    kbd_enhanced: bool,
+    drag_flags_pushed: &mut bool,
+) -> Result<Handled> {
     // Duration::MAX overflows the timespec struct used by kevent/kqueue on macOS,
     // causing EINVAL (os error 22). Use a safe large value instead.
     const FOREVER: Duration = Duration::from_secs(24 * 3600);
@@ -292,6 +303,23 @@ fn input_to_app(app: &mut App) -> Result<Handled> {
             Handled::Nothing => {}
         }
         event = app.try_recv_app_event(Duration::ZERO);
+    }
+
+    if kbd_enhanced {
+        let dragging = app.is_dragging();
+        if !*drag_flags_pushed && dragging {
+            execute!(
+                io::stdout(),
+                PushKeyboardEnhancementFlags(
+                    KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+                        | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+                )
+            )?;
+            *drag_flags_pushed = true;
+        } else if *drag_flags_pushed && !dragging {
+            execute!(io::stdout(), PopKeyboardEnhancementFlags)?;
+            *drag_flags_pushed = false;
+        }
     }
 
     Ok(if changed {
@@ -326,7 +354,9 @@ fn setup_terminal() -> Result<()> {
     if supports_keyboard_enhancement()? {
         execute!(
             stdout,
-            // required to properly detect ctrl+shift
+            // Required for ctrl+shift disambiguation. REPORT_ALL_KEYS_AS_ESCAPE_CODES
+            // and REPORT_EVENT_TYPES are pushed only during drag to detect modifier
+            // key transitions without breaking normal key handling (e.g. shift+;).
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
         )?;
     }

@@ -118,6 +118,8 @@ pub struct JjConfigBlazingjj {
     #[serde(deserialize_with = "deserialize_highlight_color")]
     highlight_color: Color,
     describe_mode: DescribeMode,
+    drag_source_color: Color,
+    drag_target_color: Color,
     diff_format: Option<ConfiguredDiffFormat>,
     diff_tool: Option<String>,
     diff_pager: Option<DiffPager>,
@@ -143,6 +145,8 @@ impl Default for JjConfigBlazingjj {
         Self {
             highlight_color: Color::Rgb(50, 50, 150),
             confirm_push: true,
+            drag_source_color: Color::Rgb(40, 80, 80),
+            drag_target_color: Color::Rgb(120, 100, 30),
             layout_percent: 50,
             poll_interval: Some(Duration::from_secs(1)),
             // Standard defaults for the rest
@@ -288,6 +292,14 @@ impl JjConfig {
 
     pub fn highlight_color(&self) -> Color {
         self.blazingjj.highlight_color
+    }
+
+    pub fn drag_source_color(&self) -> Color {
+        self.blazingjj.drag_source_color
+    }
+
+    pub fn drag_target_color(&self) -> Color {
+        self.blazingjj.drag_target_color
     }
 
     pub fn bookmark_template(&self) -> String {

@@ -489,6 +489,28 @@ impl<'a> App<'a> {
         self.handle_action(AppAction::MarkTabsStale)
     }
 
+    fn current_tab_ref(&self) -> &dyn Component {
+        match self.current_tab {
+            TabId::Log => &self.log,
+            TabId::Files => &self.files,
+            TabId::Bookmarks => &self.bookmarks,
+            TabId::Evolog => &self.evolog,
+            TabId::OpLog => &self.op_log,
+            TabId::Settings => &self.settings,
+            TabId::Keybindings => &self.keybindings,
+        }
+    }
+
+    pub fn is_dragging(&self) -> bool {
+        self.log.is_dragging()
+    }
+
+    /// True if any active component (popup or current tab) needs the
+    /// main loop to tick at a steady rate (animations, auto-scroll).
+    pub fn wants_tick(&self) -> bool {
+        self.popup.as_ref().is_some_and(|p| p.wants_tick()) || self.current_tab_ref().wants_tick()
+    }
+
     /// When a component wants the app to do something,
     /// it sends a AppAction which the App handles.
     pub fn handle_action(&mut self, app_action: AppAction) -> Result<()> {
@@ -754,7 +776,7 @@ impl<'a> App<'a> {
     /// Whether something on screen counts up on its own, so that the main
     /// loop has to come back on a timer rather than only on an event.
     pub fn needs_periodic_redraw(&mut self) -> bool {
-        self.popup.is_some() || self.get_current_tab().needs_periodic_redraw()
+        self.popup.is_some() || self.get_current_tab().needs_periodic_redraw() || self.wants_tick()
     }
 
     /// Hand the output of a finished task to whoever asked for it

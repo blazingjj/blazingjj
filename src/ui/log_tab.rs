@@ -2,8 +2,10 @@ use std::fmt::Display;
 
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyEventKind;
+use ratatui::crossterm::event::KeyModifiers;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use ratatui_textarea::CursorMove;
@@ -17,6 +19,8 @@ use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
 use crate::commander::ids::CommitId;
+use crate::commander::jj::RebaseSource;
+use crate::commander::jj::RebaseTarget;
 use crate::commander::log::Head;
 use crate::commander::log::LOG_LINES_PER_ITEM;
 use crate::commander::log::Relative;
@@ -42,9 +46,12 @@ use crate::ui::dialog::log_context_menu;
 use crate::ui::dialog::push_menu;
 use crate::ui::dialog::relative_select;
 use crate::ui::panel::CommitShowPanel;
+use crate::ui::panel::DragAction;
+use crate::ui::panel::DragMode;
 use crate::ui::panel::LogPanel;
 use crate::ui::panel::MouseInput;
 use crate::ui::panel::copy_marked;
+use crate::ui::panel::decode_drag_modifiers;
 use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::centered_rect_line_height;
@@ -106,7 +113,7 @@ impl<'a> LogTab<'a> {
             log_revset: get_env().default_revset.clone(),
             log_revset_textarea: None,
 
-            log_panel: LogPanel::new(head.clone(), LOG_LINES_PER_ITEM),
+            log_panel: LogPanel::new(head.clone(), LOG_LINES_PER_ITEM).draggable(),
 
             head,
             head_panel: CommitShowPanel::new(TabId::Log, background_tasks),
@@ -151,6 +158,74 @@ impl<'a> LogTab<'a> {
         self.head = self.log_panel.selected.clone();
         let title = format!(" Details for {} ", self.head.change_id);
         self.head_panel.show(Some(self.head.clone()), title);
+    }
+
+    /// Apply a drag-and-drop action produced by the log panel. Bare drops
+    /// open the rebase popup with the source/target pre-filled; modifier
+    /// drops execute their op directly and refresh the log.
+    fn dispatch_drag_action(&mut self, action: DragAction<Head>) -> Result<ComponentInputResult> {
+        let DragAction {
+            mode,
+            source_marks,
+            source_item,
+            target,
+        } = action;
+        let target_mode = match mode {
+            DragMode::Onto => RebaseTarget::Onto,
+            DragMode::After => RebaseTarget::After,
+            DragMode::Before => RebaseTarget::Before,
+            DragMode::Squash => {
+                let Some(from) = Revset::union(&source_marks) else {
+                    return Ok(ComponentInputResult::Handled);
+                };
+                if let Err(err) = new_commander().run_squash(Some(from), &target.commit_id, false) {
+                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                        Box::new(MessagePopup::new("Squash", err.to_string())),
+                    )));
+                }
+                self.refresh_log_output();
+                return Ok(ComponentInputResult::HandledAction(
+                    AppAction::MarkTabsStale,
+                ));
+            }
+        };
+
+        self.run_drag_rebase(target_mode, &source_marks, &source_item, &target)
+    }
+
+    fn run_drag_rebase(
+        &mut self,
+        tgt_mode: RebaseTarget,
+        source_marks: &[CommitId],
+        source_item: &Head,
+        target: &Head,
+    ) -> Result<ComponentInputResult> {
+        // Use single-revision rebase so dragging an interior commit moves
+        // just that commit; its descendants get reparented to skip it.
+        // -s would silently no-op when the subtree's new position already
+        // matches its current one, which surprises users on interior drags.
+        let Some(src_rev) = Revset::union(source_marks) else {
+            return Ok(ComponentInputResult::Handled);
+        };
+        if let Err(err) = new_commander().run_rebase(
+            RebaseSource::SingleRevision,
+            src_rev,
+            tgt_mode,
+            &target.commit_id,
+        ) {
+            return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                Box::new(MessagePopup::new("Rebase", err.to_string())),
+            )));
+        }
+        // The dragged commit gets a new commit_id but keeps its change_id;
+        // re-locate it so the log selection follows the move instead of
+        // jumping to `@` via the default RefreshTab path.
+        let new_head = new_commander().get_head_latest(source_item)?;
+        self.set_head(new_head.clone());
+        self.refresh_log_output();
+        Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
+            vec![AppAction::ChangeHead(new_head), AppAction::MarkTabsStale],
+        )))
     }
 }
 
@@ -398,10 +473,15 @@ impl<'a> LogTab<'a> {
                 return self.handle_goto(relation);
             }
 
-            // Both are taken before an event is handled at all.
-            LogTabEvent::UseMarks | LogTabEvent::Unbound => {}
+            // All taken before an event is handled at all, the cancel
+            // where the drag is.
+            LogTabEvent::Cancel | LogTabEvent::UseMarks | LogTabEvent::Unbound => {}
         };
         Ok(None)
+    }
+
+    pub fn is_dragging(&self) -> bool {
+        self.log_panel.drag_active()
     }
 }
 
@@ -472,6 +552,11 @@ impl Component for LogTab<'_> {
     fn update(&mut self) -> Result<Option<AppAction>> {
         self.head_panel.update();
 
+        // Advance the drag-at-edge auto-scroll on the periodic tick so
+        // the view keeps moving when the cursor is held at the edge
+        // without triggering Drag events.
+        self.log_panel.tick_drag_auto_scroll();
+
         Ok(None)
     }
 
@@ -486,18 +571,77 @@ impl Component for LogTab<'_> {
         self.head_panel.needs_periodic_redraw()
     }
 
+    fn wants_tick(&self) -> bool {
+        self.log_panel.drag_active()
+    }
+
     fn draw(
         &mut self,
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = self.pane_divider.split(area);
+        // While a drag is in flight, give the whole tab to the log panel so
+        // the user can see as many candidate targets as possible. The details
+        // panel is hidden until the drop completes (or is cancelled).
+        let drag_visible = self.log_panel.drag_active() && self.log_panel.drag_has_moved();
+        let (log_column, details_area) = if drag_visible {
+            (area, None)
+        } else {
+            let chunks = self.pane_divider.split(area);
+            (chunks[0], Some(chunks[1]))
+        };
+
+        // Reserve a one-line footer under the log panel whenever a drag is
+        // in flight, so the user can see the modifier-to-op legend.
+        let (log_area, drag_footer_area) = if drag_visible {
+            let split = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(1), Constraint::Length(1)])
+                .split(log_column);
+            (split[0], Some(split[1]))
+        } else {
+            (log_column, None)
+        };
 
         // Draw log
-        self.log_panel.draw(f, chunks[0])?;
+        self.log_panel.draw(f, log_area)?;
 
-        // Draw change details
-        self.head_panel.draw(f, chunks[1]);
+        // Drag footer. The action description tracks the modifier keys
+        // currently held so the user can preview what release will do.
+        if let Some(footer_area) = drag_footer_area {
+            let src_label = match self.log_panel.drag_source_marks() {
+                Some(marks) if marks.len() > 1 => format!("{} commits", marks.len()),
+                _ => self
+                    .log_panel
+                    .drag_source_item()
+                    .map(|h| h.change_id.as_str().chars().take(8).collect::<String>())
+                    .unwrap_or_else(|| "?".to_owned()),
+            };
+            let tgt_label = self
+                .log_panel
+                .drag_target_item()
+                .map(|h| h.change_id.as_str().chars().take(8).collect::<String>())
+                .unwrap_or_else(|| "?".to_owned());
+            let modifiers = self
+                .log_panel
+                .drag_modifiers()
+                .unwrap_or(KeyModifiers::NONE);
+            let hint = match decode_drag_modifiers(modifiers) {
+                DragMode::Squash => format!("Squash {src_label} into {tgt_label}    Esc=cancel"),
+                DragMode::Before => format!("Move {src_label} before {tgt_label}    Esc=cancel"),
+                DragMode::After => format!("Move {src_label} after {tgt_label}    Esc=cancel"),
+                DragMode::Onto => format!(
+                    "Move {src_label} onto {tgt_label}    Shift=squash  Ctrl=before  Alt=after  Esc=cancel"
+                ),
+            };
+            let para = Paragraph::new(hint).fg(Color::DarkGray);
+            f.render_widget(para, footer_area);
+        }
+
+        // Draw change details (skipped while dragging — log is maximized)
+        if let Some(details_area) = details_area {
+            self.head_panel.draw(f, details_area);
+        }
 
         // Draw revset textarea
         {
@@ -563,7 +707,19 @@ impl Component for LogTab<'_> {
 
         if let Event::Key(key) = &event {
             let key = *key;
+            // Modifier-only key press/release during drag: forward to log panel
+            // so the drag footer updates without requiring mouse movement.
+            if self.log_panel.drag_active() && matches!(key.code, KeyCode::Modifier(_)) {
+                return self.log_panel.input(event);
+            }
             if key.kind != KeyEventKind::Press {
+                return Ok(ComponentInputResult::Handled);
+            }
+
+            if self.log_panel.drag_active()
+                && matches!(self.keybinds.match_event(key), LogTabEvent::Cancel)
+            {
+                self.log_panel.cancel_drag();
                 return Ok(ComponentInputResult::Handled);
             }
 
@@ -608,6 +764,9 @@ impl Component for LogTab<'_> {
             MouseInput::Copy(text) => return Ok(copy_marked(text)),
             MouseInput::Handled => {}
             MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
+        }
+        if let Some(action) = self.log_panel.take_pending_drag_action() {
+            return self.dispatch_drag_action(action);
         }
         self.sync_head_output();
         Ok(ComponentInputResult::Handled)
