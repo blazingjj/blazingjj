@@ -72,6 +72,15 @@ impl Commander {
         Ok(())
     }
 
+    /// Parallelize changes. Maps to `jj parallelize <revset>`. Pass a
+    /// union expression (`commit_revset_union`) to parallelize multiple
+    /// commits at once.
+    #[instrument(level = "trace", skip(self))]
+    pub fn run_parallelize(&self, revset: &str) -> Result<()> {
+        self.execute_void_jj_command(["parallelize", revset])
+            .context("Failed executing jj parallelize")
+    }
+
     /// Squash changes. Maps to `jj squash -u [--from <revset>] --into <revset>`.
     /// `from` defaults to the working copy when `None`. Pass a union
     /// expression (`commit_revset_union`) to squash multiple sources.

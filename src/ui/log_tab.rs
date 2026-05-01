@@ -444,6 +444,15 @@ impl<'a> LogTab<'a> {
                 self.refresh_log_output();
             }
 
+            LogTabEvent::Parallelize => {
+                let revset = self.marked_or_head_revset();
+                new_commander().run_parallelize(&revset)?;
+                self.set_head(new_commander().get_current_head()?);
+                return Ok(ComponentInputResult::HandledAction(
+                    ComponentAction::ChangeHead(self.head.clone()),
+                ));
+            }
+
             LogTabEvent::CreateNew { describe } => {
                 return self.handle_new(describe);
             }

@@ -49,6 +49,7 @@ pub struct LogTabKeybindsConfig {
 
     pub refresh: Option<Keybind>,
     pub duplicate: Option<Keybind>,
+    pub parallelize: Option<Keybind>,
     pub create_new: Option<Keybind>,
     pub create_new_describe: Option<Keybind>,
     pub squash: Option<Keybind>,
