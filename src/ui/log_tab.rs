@@ -316,6 +316,7 @@ impl<'a> LogTab<'a> {
                 return Ok(Some(command::ask_squash(
                     get_env().jj_config.clone(),
                     &self.head,
+                    self.marked(),
                     ignore_immutable,
                 )?));
             }

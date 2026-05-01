@@ -101,7 +101,10 @@ pub enum Command {
         insert: NewInsertMode,
         describe: bool,
     },
+    /// Squash `from`, or the working copy when it is [None], into
+    /// `target`.
     Squash {
+        from: Option<Revset>,
         target: Head,
         ignore_immutable: bool,
     },
@@ -218,12 +221,22 @@ impl Command {
                 Ok(Some(AppAction::Multiple(actions)))
             }
             Command::Squash {
+                from,
                 target,
                 ignore_immutable,
-            } => match new_commander().run_squash(None, &target.commit_id, ignore_immutable) {
-                Ok(()) => Ok(Some(show_change(new_commander().get_current_head()?))),
-                Err(err) => Ok(Some(refused("Squash", err))),
-            },
+            } => {
+                let marked = from.is_some();
+                match new_commander().run_squash(from, &target.commit_id, ignore_immutable) {
+                    Ok(()) => {
+                        let mut actions = vec![show_change(new_commander().get_current_head()?)];
+                        if marked {
+                            actions.push(AppAction::ClearLogMarks);
+                        }
+                        Ok(Some(AppAction::Multiple(actions)))
+                    }
+                    Err(err) => Ok(Some(refused("Squash", err))),
+                }
+            }
             Command::Edit {
                 revset,
                 ignore_immutable,
@@ -749,13 +762,22 @@ pub fn ask_new_change(
     })))
 }
 
-/// Asking to squash into `selected`: the target it picks, the refusal
-/// when that target cannot take it, or the question that runs it.
-pub fn ask_squash(config: JjConfig, selected: &Head, ignore_immutable: bool) -> Result<AppAction> {
+/// Asking to squash the marked changes, or the working copy when none
+/// are marked, into `selected`: the target it picks, the refusal when
+/// that target cannot take it, or the question that runs it.
+pub fn ask_squash(
+    config: JjConfig,
+    selected: &Head,
+    marked: Vec<CommitId>,
+    ignore_immutable: bool,
+) -> Result<AppAction> {
+    let from = Revset::union(&marked);
+
     // Squashing the change the working copy is on has nowhere to go but
-    // its parent.
+    // its parent. Marked sources name themselves, so the selection is
+    // the target whatever it is.
     let at = new_commander().get_current_head()?;
-    let onto_parent = selected.change_id == at.change_id;
+    let onto_parent = from.is_none() && selected.change_id == at.change_id;
     let target = if onto_parent {
         match new_commander().get_commit_parent(&at.commit_id) {
             Ok(parent) => parent,
@@ -770,10 +792,15 @@ pub fn ask_squash(config: JjConfig, selected: &Head, ignore_immutable: bool) -> 
     }
 
     let mut lines = vec![
-        Line::from(if onto_parent {
-            "Are you sure you want to squash @ into its parent?"
+        Line::from(if from.is_some() {
+            format!(
+                "Are you sure you want to squash {} marked changes into this change?",
+                marked.len()
+            )
+        } else if onto_parent {
+            "Are you sure you want to squash @ into its parent?".to_owned()
         } else {
-            "Are you sure you want to squash @ into this change?"
+            "Are you sure you want to squash @ into this change?".to_owned()
         }),
         Line::from(format!("Squash into {}", target.change_id.as_str())),
     ];
@@ -786,6 +813,7 @@ pub fn ask_squash(config: JjConfig, selected: &Head, ignore_immutable: bool) -> 
         "Squash",
         Text::from(lines),
         Command::Squash {
+            from,
             target,
             ignore_immutable,
         },
