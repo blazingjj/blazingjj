@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Message popup now supports scrolling with a scrollbar
 - Command popup output now preserves ANSI color
 - Drag to resize pane divider in all tabs
+- Context menu popup (right-click or `Menu` key) with common single-commit
+  operations for the selected change
+- "New after" and "New before" operations (jj new --insert-after /
+  --insert-before), accessible from the context menu
 
 ### Changed
 

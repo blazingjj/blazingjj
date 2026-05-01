@@ -6,6 +6,8 @@ use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyEventKind;
+use ratatui::crossterm::event::MouseButton;
+use ratatui::crossterm::event::MouseEventKind;
 use ratatui::crossterm::execute;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -19,6 +21,7 @@ use tui_confirm_dialog::Listener;
 
 use crate::ComponentInputResult;
 use crate::commander::ids::CommitId;
+use crate::commander::jj::NewInsertMode;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::env::DiffFormat;
@@ -32,6 +35,7 @@ use crate::ui::bookmark_set_popup::BookmarkSetPopup;
 use crate::ui::commit_show_cache::CommitShowCache;
 use crate::ui::commit_show_cache::CommitShowKey;
 use crate::ui::commit_show_cache::CommitShowValue;
+use crate::ui::context_menu_popup::ContextMenuPopup;
 use crate::ui::help_popup::HelpPopup;
 use crate::ui::loader_popup::LoaderPopup;
 use crate::ui::message_popup::MessagePopup;
@@ -79,8 +83,12 @@ pub struct LogTab<'a> {
     bookmark_set_popup_tx: std::sync::mpsc::Sender<bool>,
     bookmark_set_popup_rx: std::sync::mpsc::Receiver<bool>,
 
+    context_menu_tx: std::sync::mpsc::Sender<LogTabEvent>,
+    context_menu_rx: std::sync::mpsc::Receiver<LogTabEvent>,
+
     describe_textarea: Option<TextArea<'a>>,
     describe_after_new: bool,
+    new_insert_mode: NewInsertMode,
 
     rebase_popup: Option<RebasePopup>,
 
@@ -139,6 +147,7 @@ impl<'a> LogTab<'a> {
 
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (bookmark_set_popup_tx, bookmark_set_popup_rx) = std::sync::mpsc::channel();
+        let (context_menu_tx, context_menu_rx) = std::sync::mpsc::channel();
 
         let mut keybinds = LogTabKeybinds::default();
         if let Some(keybinds_config) = get_env().jj_config.keybinds() {
@@ -168,8 +177,12 @@ impl<'a> LogTab<'a> {
             bookmark_set_popup_tx,
             bookmark_set_popup_rx,
 
+            context_menu_tx,
+            context_menu_rx,
+
             describe_textarea: None,
             describe_after_new: false,
+            new_insert_mode: NewInsertMode::Child,
 
             rebase_popup: None,
 
@@ -289,17 +302,26 @@ each other in code:
 * `execute_<action>` - Perform some action after the dialog closed.
 */
 impl<'a> LogTab<'a> {
-    fn handle_new(&mut self, describe: bool) -> Result<ComponentInputResult> {
+    fn handle_new(
+        &mut self,
+        describe: bool,
+        insert: NewInsertMode,
+    ) -> Result<ComponentInputResult> {
         let mark_count = self.log_panel.marked_heads.len();
+        let (action, target_label) = match insert {
+            NewInsertMode::Child => ("create a new change", "New parent"),
+            NewInsertMode::After => ("insert a new change after", "After"),
+            NewInsertMode::Before => ("insert a new change before", "Before"),
+        };
         let text = if mark_count > 0 {
             Text::from(vec![Line::from(format!(
-                "Are you sure you want to create a new change with {mark_count} marked parents?"
+                "Are you sure you want to {action} the {mark_count} marked changes?"
             ))])
             .fg(Color::default())
         } else {
             Text::from(vec![
-                Line::from("Are you sure you want to create a new change?"),
-                Line::from(format!("New parent: {}", self.head.change_id.as_str())),
+                Line::from(format!("Are you sure you want to {action}?")),
+                Line::from(format!("{target_label}: {}", self.head.change_id.as_str())),
             ])
             .fg(Color::default())
         };
@@ -314,16 +336,18 @@ impl<'a> LogTab<'a> {
             .with_listener(Some(self.popup_tx.clone()))
             .open();
         self.describe_after_new = describe;
+        self.new_insert_mode = insert;
         Ok(ComponentInputResult::Handled)
     }
 
     // Execute new command, after self.popup returned
     fn execute_new(&mut self) -> Result<Option<ComponentAction>> {
         let commit_ids = self.log_panel.extract_and_clear_head_marks();
+        let insert = self.new_insert_mode;
         if commit_ids.is_empty() {
-            new_commander().run_new([self.head.commit_id.as_str()])?;
+            new_commander().run_new_with_insert([self.head.commit_id.as_str()], insert)?;
         } else {
-            new_commander().run_new(commit_ids.iter().map(CommitId::as_str))?;
+            new_commander().run_new_with_insert(commit_ids.iter().map(CommitId::as_str), insert)?;
         }
         self.set_head(new_commander().get_current_head()?);
         if self.describe_after_new {
@@ -400,6 +424,21 @@ impl<'a> LogTab<'a> {
         }
     }
 
+    fn open_context_menu(&self, anchor: Option<ratatui::layout::Position>) -> ComponentInputResult {
+        let selected_is_at = new_commander()
+            .get_current_head()
+            .ok()
+            .is_some_and(|at| at.change_id == self.head.change_id);
+        ComponentInputResult::HandledAction(ComponentAction::SetPopup(Some(Box::new(
+            ContextMenuPopup::new(
+                self.config.clone(),
+                self.context_menu_tx.clone(),
+                anchor,
+                selected_is_at,
+            ),
+        ))))
+    }
+
     fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<ComponentInputResult> {
         match log_tab_event {
             LogTabEvent::ScrollDown
@@ -430,7 +469,13 @@ impl<'a> LogTab<'a> {
             }
 
             LogTabEvent::CreateNew { describe } => {
-                return self.handle_new(describe);
+                return self.handle_new(describe, NewInsertMode::Child);
+            }
+            LogTabEvent::CreateNewAfter { describe } => {
+                return self.handle_new(describe, NewInsertMode::After);
+            }
+            LogTabEvent::CreateNewBefore { describe } => {
+                return self.handle_new(describe, NewInsertMode::Before);
             }
             LogTabEvent::Rebase => {
                 let source_change = new_commander().get_current_head()?;
@@ -623,6 +668,9 @@ impl<'a> LogTab<'a> {
                     ComponentAction::SetPopup(Some(Box::new(loader))),
                 ));
             }
+            LogTabEvent::OpenContextMenu => {
+                return Ok(self.open_context_menu(None));
+            }
             LogTabEvent::OpenHelp => {
                 return Ok(ComponentInputResult::HandledAction(
                     ComponentAction::SetPopup(Some(Box::new(HelpPopup::new(
@@ -693,6 +741,13 @@ impl Component for LogTab<'_> {
 
         if let Ok(true) = self.bookmark_set_popup_rx.try_recv() {
             self.refresh_log_output();
+        }
+
+        if let Ok(event) = self.context_menu_rx.try_recv() {
+            return Ok(match self.handle_event(event)? {
+                ComponentInputResult::HandledAction(action) => Some(action),
+                _ => None,
+            });
         }
 
         Ok(None)
@@ -931,6 +986,11 @@ impl Component for LogTab<'_> {
             let input_result = self.log_panel.input(event.clone())?;
             if input_result.is_handled() {
                 self.sync_head_output();
+                if matches!(mouse_event.kind, MouseEventKind::Up(MouseButton::Right)) {
+                    let anchor =
+                        ratatui::layout::Position::new(mouse_event.column, mouse_event.row);
+                    return Ok(self.open_context_menu(Some(anchor)));
+                }
                 return Ok(input_result);
             }
             if self.head_panel.input_mouse(mouse_event) {

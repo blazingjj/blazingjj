@@ -38,6 +38,12 @@ pub enum LogTabEvent {
     CreateNew {
         describe: bool,
     },
+    CreateNewAfter {
+        describe: bool,
+    },
+    CreateNewBefore {
+        describe: bool,
+    },
     Duplicate,
     Rebase,
     Squash {
@@ -64,6 +70,7 @@ pub enum LogTabEvent {
     },
 
     OpenHelp,
+    OpenContextMenu,
 
     Unbound,
 }
@@ -113,6 +120,7 @@ impl Default for LogTabKeybinds {
             LogTabEvent::Fetch { all_remotes: false } => "f",
             LogTabEvent::Fetch { all_remotes: true } => "shift+f",
             LogTabEvent::OpenHelp => "?",
+            LogTabEvent::OpenContextMenu => "menu",
         );
 
         Self { keys }
@@ -176,6 +184,7 @@ impl LogTabKeybinds {
             LogTabEvent::Fetch { all_remotes: false } => config.fetch,
             LogTabEvent::Fetch { all_remotes: true } => config.fetch_all,
             LogTabEvent::OpenHelp => config.open_help,
+            LogTabEvent::OpenContextMenu => config.open_context_menu,
         );
     }
     pub fn make_main_panel_help(&self) -> Vec<(String, String)> {

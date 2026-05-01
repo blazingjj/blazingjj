@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::MouseButton;
 use ratatui::crossterm::event::MouseEvent;
 use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Rect;
@@ -68,6 +69,10 @@ pub struct LogPanel<'a> {
 
     /// Configuration of colours
     config: JjConfig,
+
+    /// Whether to apply scroll_padding on the next draw.
+    /// Disabled after a right-click so the viewport doesn't jump.
+    scroll_padding_active: bool,
 }
 
 const LEFT_MARGIN_BLANK: char = ' ';
@@ -140,6 +145,7 @@ impl<'a> LogPanel<'a> {
             panel_rect: Rect::ZERO,
 
             config: get_env().jj_config.clone(),
+            scroll_padding_active: true,
         })
     }
 
@@ -258,6 +264,7 @@ impl<'a> LogPanel<'a> {
     /// Move selection to a specific head. This may cause the next draw to
     /// scroll to a different line.
     pub fn set_head(&mut self, head: Head) {
+        self.scroll_padding_active = true;
         head.clone_into(&mut self.head);
     }
 
@@ -376,7 +383,12 @@ impl Component for LogPanel<'_> {
             .border_type(BorderType::Rounded);
         self.log_rect = log_block.inner(area);
         self.log_list_state.select(self.selected_log_line());
-        let log = List::new(log_lines).block(log_block).scroll_padding(7);
+        let log = List::new(log_lines).block(log_block);
+        let log = if self.scroll_padding_active {
+            log.scroll_padding(7)
+        } else {
+            log
+        };
         f.render_stateful_widget(log, area, &mut self.log_list_state);
 
         // Show scrollbar if lines don't fit the screen height
@@ -418,7 +430,7 @@ impl Component for LogPanel<'_> {
                     self.handle_event(LogTabEvent::ScrollDown)?;
                     return Ok(ComponentInputResult::Handled);
                 }
-                MouseEventKind::Up(_) => {
+                MouseEventKind::Up(button) => {
                     // Check all items in list
 
                     // TODO make a function that constructs the log list
@@ -436,7 +448,14 @@ impl Component for LogPanel<'_> {
                         &mouse_event,
                     ) && let Some(head) = self.head_at_log_line(inx)
                     {
-                        self.set_head(head);
+                        if matches!(button, MouseButton::Right) {
+                            // Right-click: select without scrolling so the
+                            // context menu stays anchored to the clicked row.
+                            self.scroll_padding_active = false;
+                            head.clone_into(&mut self.head);
+                        } else {
+                            self.set_head(head);
+                        }
                         return Ok(ComponentInputResult::Handled);
                     }
                 }
