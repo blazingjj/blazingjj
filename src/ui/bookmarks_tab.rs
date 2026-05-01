@@ -8,8 +8,8 @@ use tracing::warn;
 
 use crate::app::TabId;
 use crate::app::command;
+use crate::app::command::ActsOn;
 use crate::app::command::Command;
-use crate::app::command::NewSource;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
@@ -18,7 +18,6 @@ use crate::commander::bookmarks::Bookmark;
 use crate::commander::bookmarks::BookmarkLine;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
-use crate::commander::revset::Revset;
 use crate::event::Mouse;
 use crate::keybinds::Binding;
 use crate::keybinds::BookmarksTabEvent;
@@ -337,8 +336,7 @@ impl BookmarksTab {
             BookmarksTabEvent::NewChange { describe } => {
                 if let Some((bookmark, head)) = self.selected_target() {
                     return Ok(Some(command::ask_new_change(
-                        Revset::from(&head.commit_id),
-                        NewSource::Change,
+                        ActsOn::change(&head.commit_id),
                         &bookmark.to_string(),
                         describe,
                     )));

@@ -54,15 +54,50 @@ use crate::ui::dialog::describe_action;
 use crate::ui::dialog::new_insert;
 use crate::ui::styles::AnsiText;
 
-/// What a new change is created from, which decides whether the log is
-/// done marking it.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum NewSource {
-    /// The changes the log has marked, which the new change now stands
-    /// on.
-    Marks,
-    /// A single change, named by the selection or by a bookmark.
-    Change,
+/// What an operation acts on: the changes the log has marked, or what
+/// it falls back to when none are. Which of the two it is decides
+/// whether the log is done marking them once the operation has gone
+/// through.
+#[derive(Clone)]
+pub struct ActsOn {
+    changes: Revset,
+    marked: bool,
+}
+
+impl ActsOn {
+    /// The changes the log has marked.
+    pub fn marked(changes: impl Into<Revset>) -> Self {
+        Self {
+            changes: changes.into(),
+            marked: true,
+        }
+    }
+
+    /// A change the log has not marked.
+    pub fn change(changes: impl Into<Revset>) -> Self {
+        Self {
+            changes: changes.into(),
+            marked: false,
+        }
+    }
+
+    /// The union of the marked changes, or `fallback` when none are
+    /// marked.
+    pub fn marked_or(marked: &[CommitId], fallback: impl Into<Revset>) -> Self {
+        Revset::union(marked).map_or_else(|| Self::change(fallback), Self::marked)
+    }
+
+    /// The changes to act on, and what the log is to do once the
+    /// operation has gone through.
+    fn into_parts(self) -> (Revset, Option<AppAction>) {
+        (self.changes, marks_taken(self.marked))
+    }
+}
+
+/// What the log is to do once an operation that was handed the marked
+/// changes has gone through: it is done marking them.
+fn marks_taken(marked: bool) -> Option<AppAction> {
+    marked.then_some(AppAction::ClearLogMarks)
 }
 
 /// Which version of a file an editor is opened on. The editor edits the
@@ -94,10 +129,10 @@ pub enum Command {
     Copy(String),
     Duplicate(Revset),
     Absorb(Head),
-    /// Create a change from `revset`, put where `insert` says.
+    /// Create a change from what `acts_on` names, put where `insert`
+    /// says.
     New {
-        revset: Revset,
-        source: NewSource,
+        acts_on: ActsOn,
         insert: NewInsertMode,
         describe: bool,
     },
@@ -204,22 +239,20 @@ impl Command {
                 Err(err) => Ok(Some(refused("Absorb", err))),
             },
             Command::New {
-                revset,
-                source,
+                acts_on,
                 insert,
                 describe,
             } => {
                 // Inserting can hit immutable changes, so the changes stay
                 // marked for another attempt, which has to ask for them again.
-                if let Err(err) = new_commander().run_new_with_insert(revset, insert) {
+                let (changes, taken) = acts_on.into_parts();
+                if let Err(err) = new_commander().run_new_with_insert(changes, insert) {
                     return Ok(Some(refused("New", err)));
                 }
 
                 let head = new_commander().get_current_head()?;
                 let mut actions = vec![show_change(head.clone())];
-                if source == NewSource::Marks {
-                    actions.push(AppAction::ClearLogMarks);
-                }
+                actions.extend(taken);
                 if describe {
                     actions.push(describe_action(&head, || Ok(vec![]))?);
                 }
@@ -575,21 +608,15 @@ pub fn ask_new_change_from_selection(
     } else {
         format!("the {} marked changes", marked.len())
     };
-    let revset = Revset::union(marked).unwrap_or_else(|| Revset::from(&selected.commit_id));
-    let source = if marked.is_empty() {
-        NewSource::Change
-    } else {
-        NewSource::Marks
-    };
+    let acts_on = ActsOn::marked_or(marked, &selected.commit_id);
 
-    ask_new_change(revset, source, &target, describe)
+    ask_new_change(acts_on, &target, describe)
 }
 
 /// Asking for a new change from the one a bookmark points at.
 pub fn ask_new_change_from_bookmark(bookmark: &Bookmark, head: &Head, describe: bool) -> AppAction {
     ask_new_change(
-        Revset::from(&head.commit_id),
-        NewSource::Change,
+        ActsOn::change(&head.commit_id),
         &bookmark.to_string(),
         describe,
     )
@@ -728,16 +755,10 @@ pub fn set_bookmark(config: JjConfig, head: &Head) -> AppAction {
 
 /// Asking for a new change from `revset`, which `target` names as the
 /// user sees it: where the change goes is a question of its own.
-pub fn ask_new_change(
-    revset: Revset,
-    source: NewSource,
-    target: &str,
-    describe: bool,
-) -> AppAction {
+pub fn ask_new_change(acts_on: ActsOn, target: &str, describe: bool) -> AppAction {
     AppAction::SetPopup(Box::new(new_insert(target, |insert| {
         AppAction::Run(Command::New {
-            revset: revset.clone(),
-            source,
+            acts_on: acts_on.clone(),
             insert,
             describe,
         })
@@ -1082,6 +1103,20 @@ mod tests {
 
     fn says_where(rows: &[String], text: &str) -> bool {
         rows.iter().any(|row| row.contains(text))
+    }
+
+    #[test]
+    fn only_the_marked_changes_are_done_with_once_acted_on() {
+        let marked = [CommitId("abc".to_owned()), CommitId("def".to_owned())];
+        let fallback = CommitId("ghi".to_owned());
+
+        let (changes, taken) = ActsOn::marked_or(&marked, &fallback).into_parts();
+        assert_eq!(changes, Revset::expression("abc | def"));
+        assert!(matches!(taken, Some(AppAction::ClearLogMarks)));
+
+        let (changes, taken) = ActsOn::marked_or(&[], &fallback).into_parts();
+        assert_eq!(changes, Revset::expression("ghi"));
+        assert!(taken.is_none());
     }
 
     /// What jj answers when asked what a push would do
