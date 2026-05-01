@@ -12,6 +12,7 @@ use tracing::instrument;
 
 use crate::app::TabId;
 use crate::app::command;
+use crate::app::command::ActsOn;
 use crate::app::command::Command;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
@@ -21,7 +22,6 @@ use crate::commander::log::Head;
 use crate::commander::log::LOG_LINES_PER_ITEM;
 use crate::commander::log::Relative;
 use crate::commander::new_commander;
-use crate::commander::revset::Revset;
 use crate::env::get_env;
 use crate::event::Mouse;
 use crate::keybinds::Binding;
@@ -356,9 +356,8 @@ impl<'a> LogTab<'a> {
                 self.sync_head_output();
             }
             LogTabEvent::Duplicate => {
-                return Ok(Some(AppAction::Run(Command::Duplicate(Revset::from(
-                    &self.head.change_id,
-                )))));
+                let acts_on = ActsOn::marked_or(&self.marked(), &self.head.commit_id);
+                return Ok(Some(AppAction::Run(Command::Duplicate(acts_on))));
             }
 
             LogTabEvent::CreateNew { describe } => {

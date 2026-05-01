@@ -191,7 +191,7 @@ impl LogTabKeybinds {
             LogTabEvent::Describe => "describe", Some(Section::Changes), "describe change",
             LogTabEvent::EditChange { ignore_immutable: false } => "edit-change", Some(Section::Changes), "edit change",
             LogTabEvent::EditChange { ignore_immutable: true } => "edit-change-ignore-immutable", Some(Section::Changes), "edit change ignoring immutability",
-            LogTabEvent::Duplicate => "duplicate", Some(Section::Changes), "duplicate change",
+            LogTabEvent::Duplicate => "duplicate", Some(Section::Changes), "duplicate the marked changes or the selection",
             LogTabEvent::Abandon => "abandon", Some(Section::Changes), "abandon change",
             LogTabEvent::Rebase => "rebase", Some(Section::Changes), "rebase @ or the marked changes onto the selection",
             LogTabEvent::Squash { ignore_immutable: false } => "squash", Some(Section::Changes), "squash @ into the selection",

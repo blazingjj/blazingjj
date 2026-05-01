@@ -228,7 +228,8 @@ See all key mappings for the current tab with `?`.
 - Edit highlighted change with `e` (`jj edit`)
   - Edit highlighted change ignoring immutability with `E` (`jj edit --ignore-immutable`)
 - Abandon a change with `a` (`jj abandon`)
-- Duplicate the highlighted change with `D` (`jj duplicate`)
+- Duplicate the marked changes, or the highlighted one, with `D`
+  (`jj duplicate`)
 - Rebase with `Ctrl+r` (`jj rebase`), moving the marked changes or `@`, and
   choosing whether the change moves alone, with its descendants or as a whole
   branch, and whether it lands on the selected change or before or after it

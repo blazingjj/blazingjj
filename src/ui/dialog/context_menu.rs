@@ -8,6 +8,7 @@ use ratatui::layout::Position;
 use ratatui::text::Line;
 
 use crate::app::command;
+use crate::app::command::ActsOn;
 use crate::app::command::Command;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::files::File;
@@ -15,7 +16,6 @@ use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::operation::Operation;
-use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::ui::AppAction;
 use crate::ui::dialog::BookmarkNamePopup;
@@ -64,8 +64,15 @@ pub fn log_context_menu(
             command::ask_abandon(selected, marked.to_vec()),
         ),
         (
-            Line::raw("Duplicate"),
-            AppAction::Run(Command::Duplicate(Revset::from(&selected.change_id))),
+            Line::raw(if marked.is_empty() {
+                "Duplicate"
+            } else {
+                "Duplicate the marked changes"
+            }),
+            AppAction::Run(Command::Duplicate(ActsOn::marked_or(
+                marked,
+                &selected.commit_id,
+            ))),
         ),
         (
             Line::raw(if selected_is_at {
@@ -138,7 +145,7 @@ pub fn evolog_context_menu(anchor: Option<Position>, version: &Head, change: &He
         ),
         (
             Line::raw("Duplicate"),
-            AppAction::Run(Command::Duplicate(Revset::from(&version.commit_id))),
+            AppAction::Run(Command::Duplicate(ActsOn::change(&version.commit_id))),
         ),
         (
             Line::raw("Copy commit id"),

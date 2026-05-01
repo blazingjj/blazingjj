@@ -128,7 +128,7 @@ pub struct BookmarkSetDialog {
 pub enum Command {
     /// Put text on the system clipboard.
     Copy(String),
-    Duplicate(Revset),
+    Duplicate(ActsOn),
     Absorb(Head),
     /// Create a change from what `acts_on` names, put where `insert`
     /// says.
@@ -231,10 +231,13 @@ impl Command {
                 let _ = execute!(std::io::stdout(), CopyToClipboard::to_clipboard_from(text));
                 Ok(None)
             }
-            Command::Duplicate(revset) => match new_commander().run_duplicate(revset) {
-                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
-                Err(err) => Ok(Some(refused("Duplicate", err))),
-            },
+            Command::Duplicate(acts_on) => {
+                let (changes, taken) = acts_on.into_parts();
+                match new_commander().run_duplicate(changes) {
+                    Ok(()) => Ok(Some(rewritten(taken))),
+                    Err(err) => Ok(Some(refused("Duplicate", err))),
+                }
+            }
             Command::Absorb(head) => match new_commander().run_absorb(&head.commit_id) {
                 Ok(()) => Ok(Some(show_change(new_commander().get_head_latest(&head)?))),
                 Err(err) => Ok(Some(refused("Absorb", err))),
