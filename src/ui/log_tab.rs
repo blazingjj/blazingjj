@@ -692,7 +692,11 @@ impl Component for LogTab<'_> {
                         .take()
                         .unwrap_or_else(|| self.head.clone())
                         .commit_id;
-                    new_commander().run_squash(target_id.as_str(), self.squash_ignore_immutable)?;
+                    new_commander().run_squash(
+                        None,
+                        target_id.as_str(),
+                        self.squash_ignore_immutable,
+                    )?;
                     self.set_head(new_commander().get_current_head()?);
                     return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
                 }
