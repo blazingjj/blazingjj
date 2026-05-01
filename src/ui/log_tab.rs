@@ -317,14 +317,21 @@ impl<'a> LogTab<'a> {
         Ok(ComponentInputResult::Handled)
     }
 
-    // Execute new command, after self.popup returned
-    fn execute_new(&mut self) -> Result<Option<ComponentAction>> {
-        let commit_ids = self.log_panel.extract_and_clear_head_marks();
-        let revset = if commit_ids.is_empty() {
+    /// Build the revset to operate on: the union of tagged commits, or
+    /// the current head as a fallback when nothing is tagged. Drains
+    /// the tag set as a side effect.
+    fn marked_or_head_revset(&mut self) -> String {
+        let marks = self.log_panel.extract_and_clear_head_marks();
+        if marks.is_empty() {
             self.head.commit_id.as_str().to_owned()
         } else {
-            commit_revset_union(&commit_ids)
-        };
+            commit_revset_union(&marks)
+        }
+    }
+
+    // Execute new command, after self.popup returned
+    fn execute_new(&mut self) -> Result<Option<ComponentAction>> {
+        let revset = self.marked_or_head_revset();
         new_commander().run_new(&revset)?;
         self.set_head(new_commander().get_current_head()?);
         if self.describe_after_new {
