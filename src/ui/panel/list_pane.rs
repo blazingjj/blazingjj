@@ -99,8 +99,18 @@ impl ListPane {
         })
     }
 
+    /// Whether `pos` falls inside the pane, borders included.
+    pub fn contains(&self, pos: Position) -> bool {
+        self.panel_rect.contains(pos)
+    }
+
+    /// Area the items were drawn in, borders excluded.
+    pub fn content_rect(&self) -> Rect {
+        self.content_rect
+    }
+
     /// Index of the item drawn at `pos`, if any.
-    fn item_at(&self, pos: Position) -> Option<usize> {
+    pub fn item_at(&self, pos: Position) -> Option<usize> {
         if !self.content_rect.contains(pos) {
             return None;
         }
