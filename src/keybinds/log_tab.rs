@@ -3,6 +3,7 @@ use std::str::FromStr;
 use ratatui::crossterm::event::KeyEvent;
 
 use super::Shortcut;
+use super::config::KeybindsConfig;
 use super::config::LogTabKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
 use crate::make_keybinds_help;
@@ -37,7 +38,14 @@ pub enum LogTabEvent {
     CreateNew {
         describe: bool,
     },
+    CreateNewAfter {
+        describe: bool,
+    },
+    CreateNewBefore {
+        describe: bool,
+    },
     Duplicate,
+    Parallelize,
     Rebase,
     Squash {
         ignore_immutable: bool,
@@ -63,6 +71,7 @@ pub enum LogTabEvent {
     },
 
     OpenHelp,
+    OpenContextMenu,
 
     Unbound,
 }
@@ -90,6 +99,7 @@ impl Default for LogTabKeybinds {
             LogTabEvent::Refresh => "shift+r",
             LogTabEvent::Refresh => "f5",
             LogTabEvent::Duplicate => "shift+d",
+            LogTabEvent::Parallelize => "|",
             LogTabEvent::CreateNew { describe: false } => "n",
             LogTabEvent::CreateNew { describe: true } => "shift+n",
             LogTabEvent::Rebase => "ctrl+r",
@@ -112,6 +122,7 @@ impl Default for LogTabKeybinds {
             LogTabEvent::Fetch { all_remotes: false } => "f",
             LogTabEvent::Fetch { all_remotes: true } => "shift+f",
             LogTabEvent::OpenHelp => "?",
+            LogTabEvent::OpenContextMenu => "menu",
         );
 
         Self { keys }
@@ -126,7 +137,20 @@ impl LogTabKeybinds {
             LogTabEvent::Unbound
         }
     }
-    pub fn extend_from_config(&mut self, config: &LogTabKeybindsConfig) {
+    pub fn extend_from_config(&mut self, config: &KeybindsConfig) {
+        update_keybinds!(
+            self.keys,
+            LogTabEvent::ScrollDown => config.scroll_down,
+            LogTabEvent::ScrollUp => config.scroll_up,
+            LogTabEvent::ScrollDownHalf => config.scroll_down_half,
+            LogTabEvent::ScrollUpHalf => config.scroll_up_half,
+        );
+        if let Some(ref log_tab) = config.log_tab {
+            self.extend_from_log_tab_config(log_tab);
+        }
+    }
+
+    fn extend_from_log_tab_config(&mut self, config: &LogTabKeybindsConfig) {
         update_keybinds!(
             self.keys,
             LogTabEvent::Save => config.save,
@@ -140,6 +164,7 @@ impl LogTabKeybinds {
             LogTabEvent::ToggleDiffFormat => config.toggle_diff_format,
             LogTabEvent::Refresh => config.refresh,
             LogTabEvent::Duplicate => config.duplicate,
+            LogTabEvent::Parallelize => config.parallelize,
             LogTabEvent::CreateNew { describe: false } => config.create_new,
             LogTabEvent::CreateNew { describe: true } => config.create_new_describe,
             LogTabEvent::Squash { ignore_immutable: false } => config.squash,
@@ -162,6 +187,7 @@ impl LogTabKeybinds {
             LogTabEvent::Fetch { all_remotes: false } => config.fetch,
             LogTabEvent::Fetch { all_remotes: true } => config.fetch_all,
             LogTabEvent::OpenHelp => config.open_help,
+            LogTabEvent::OpenContextMenu => config.open_context_menu,
         );
     }
     pub fn make_main_panel_help(&self) -> Vec<(String, String)> {
@@ -176,6 +202,7 @@ impl LogTabKeybinds {
             LogTabEvent::EditRevset => "set revset",
             LogTabEvent::Describe => "describe change",
             LogTabEvent::Duplicate => "duplicate change",
+            LogTabEvent::Parallelize => "parallelize tagged changes",
             LogTabEvent::EditChange { ignore_immutable: false } => "edit change",
             LogTabEvent::EditChange { ignore_immutable: true } => "edit change ignoring immutability",
             LogTabEvent::CreateNew { describe: false } => "new change",

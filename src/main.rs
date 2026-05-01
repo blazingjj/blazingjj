@@ -196,8 +196,9 @@ fn input_to_app(app: &mut App) -> Result<bool> {
     // causing EINVAL (os error 22). Use a safe large value instead.
     const FOREVER: Duration = Duration::from_secs(24 * 3600);
 
-    // Allow popups like the fetch animation to update every 100ms.
-    let wait_duration = if app.popup.is_some() {
+    // Allow components that opt in via wants_tick (fetch/push spinner,
+    // log-tab drag auto-scroll, ...) to update every 100ms.
+    let wait_duration = if app.wants_tick() {
         Duration::from_millis(100)
     } else {
         FOREVER
@@ -238,7 +239,11 @@ fn setup_terminal() -> Result<()> {
         execute!(
             stdout,
             // required to properly detect ctrl+shift
-            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+            PushKeyboardEnhancementFlags(
+                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+            )
         )?;
     }
 

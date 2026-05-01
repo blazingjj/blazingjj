@@ -5,6 +5,8 @@ pub use config::Keybind;
 pub use config::KeybindsConfig;
 pub use log_tab::LogTabEvent;
 pub use log_tab::LogTabKeybinds;
+pub use message_popup::MessagePopupEvent;
+pub use message_popup::MessagePopupKeybinds;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyModifiers;
@@ -12,6 +14,7 @@ use ratatui::crossterm::event::KeyModifiers;
 mod config;
 mod keybinds_store;
 mod log_tab;
+mod message_popup;
 pub mod rebase_popup;
 
 /*#[derive(Debug)]
@@ -111,6 +114,9 @@ impl FromStr for Shortcut {
                 "down" => key = Some(KeyCode::Down),
                 "home" => key = Some(KeyCode::Home),
                 "end" => key = Some(KeyCode::End),
+                "pagedown" => key = Some(KeyCode::PageDown),
+                "pageup" => key = Some(KeyCode::PageUp),
+                "menu" => key = Some(KeyCode::Menu),
                 s if s.starts_with('f') && s.chars().count() > 1 => {
                     let s = s.trim_start_matches('f');
                     match s.parse::<u8>() {
@@ -149,9 +155,12 @@ impl Display for Shortcut {
             KeyCode::Right => "Right".to_string(),
             KeyCode::Up => "Up".to_string(),
             KeyCode::Down => "Down".to_string(),
+            KeyCode::PageDown => "PageDown".to_string(),
+            KeyCode::PageUp => "PageUp".to_string(),
             KeyCode::F(n) => format!("F{n}"),
             KeyCode::Char(c) => c.to_string(),
             KeyCode::Esc => "Esc".to_string(),
+            KeyCode::Menu => "Menu".to_string(),
             _ => "Unknown".to_string(),
         };
         parts.push(k);
@@ -219,6 +228,8 @@ mod tests {
             ("right", Ok(Shortcut::new_key(KeyCode::Right))),
             ("up", Ok(Shortcut::new_key(KeyCode::Up))),
             ("down", Ok(Shortcut::new_key(KeyCode::Down))),
+            ("pagedown", Ok(Shortcut::new_key(KeyCode::PageDown))),
+            ("pageup", Ok(Shortcut::new_key(KeyCode::PageUp))),
             ("ctrl+ff", Err(ShortcutParseError::InvalidF)),
             ("qq", Err(ShortcutParseError::NoKey)),
             ("", Err(ShortcutParseError::NoKey)),

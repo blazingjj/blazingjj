@@ -8,7 +8,6 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
-use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
@@ -64,6 +63,10 @@ impl LoaderPopup {
 }
 
 impl Component for LoaderPopup {
+    fn wants_tick(&self) -> bool {
+        true
+    }
+
     /// Update the state of the popup
     ///
     /// This updates the animation and also polls the running operation to see if the popup may be
@@ -80,22 +83,20 @@ impl Component for LoaderPopup {
 
         let action = match result {
             Ok(output) if !output.is_empty() => ComponentAction::Multiple(vec![
-                ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                    title: format!("{} message", self.operation_name).into(),
-                    messages: output.into_text()?,
-                    text_align: None,
-                }))),
+                ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                    format!("{} message", self.operation_name),
+                    output,
+                )))),
                 ComponentAction::RefreshTab(),
             ]),
             Ok(_) => ComponentAction::Multiple(vec![
                 ComponentAction::SetPopup(None),
                 ComponentAction::RefreshTab(),
             ]),
-            Err(err) => ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                title: format!("{} error", self.operation_name).into(),
-                messages: err.into_text("")?,
-                text_align: None,
-            }))),
+            Err(err) => ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                format!("{} error", self.operation_name),
+                err.to_string(),
+            )))),
         };
 
         Ok(Some(action))
