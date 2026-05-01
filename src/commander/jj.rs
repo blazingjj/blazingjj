@@ -23,9 +23,10 @@ impl Commander {
             .context("Failed executing jj new")
     }
 
-    /// Duplicate a change. Maps to `jj duplicate`
-    pub fn run_duplicate(&self, revision: &str) -> Result<()> {
-        self.execute_void_jj_command(vec!["duplicate", revision])
+    /// Duplicate changes. Maps to `jj duplicate <revset>`. Pass a union
+    /// expression (`commit_revset_union`) to duplicate multiple commits.
+    pub fn run_duplicate(&self, revset: &str) -> Result<()> {
+        self.execute_void_jj_command(["duplicate", revset])
             .context("Failed executing jj duplicate")
     }
 

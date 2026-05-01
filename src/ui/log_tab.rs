@@ -433,7 +433,8 @@ impl<'a> LogTab<'a> {
             }
 
             LogTabEvent::Duplicate => {
-                let _ = new_commander().run_duplicate(&self.head.change_id.to_string());
+                let revset = self.marked_or_head_revset();
+                let _ = new_commander().run_duplicate(&revset);
                 self.refresh_log_output();
             }
 
