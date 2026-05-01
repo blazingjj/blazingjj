@@ -97,7 +97,7 @@ impl Commander {
         self.jj(args).run_void().context("Failed executing jj new")
     }
 
-    /// Duplicate a change. Maps to `jj duplicate <revset>`.
+    /// Duplicate changes. Maps to `jj duplicate <revset>`.
     pub fn run_duplicate(&self, revset: impl Into<Revset>) -> Result<()> {
         self.jj(["duplicate", revset.into().as_str()])
             .run_void()
