@@ -89,6 +89,13 @@ pub fn log_context_menu(
             command::ask_squash(selected, marked, false)?,
         ));
     }
+    // A single change has nothing to be taken apart from.
+    if marked.len() > 1 {
+        items.push((
+            Line::raw("Parallelize the marked changes"),
+            command::parallelize(marked),
+        ));
+    }
     // The working copy change has nowhere to go, and with marks in play
     // it is those that move, so marking the destination alone leaves
     // nothing to offer.

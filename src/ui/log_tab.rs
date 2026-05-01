@@ -360,6 +360,10 @@ impl<'a> LogTab<'a> {
                 return Ok(Some(AppAction::Run(Command::Duplicate(acts_on))));
             }
 
+            LogTabEvent::Parallelize => {
+                return Ok(Some(command::parallelize(&self.marked())));
+            }
+
             LogTabEvent::CreateNew { describe } => {
                 return Ok(Some(command::ask_new_change_from_selection(
                     &self.head,

@@ -129,6 +129,7 @@ pub enum Command {
     /// Put text on the system clipboard.
     Copy(String),
     Duplicate(ActsOn),
+    Parallelize(ActsOn),
     Absorb(Head),
     /// Create a change from what `acts_on` names, put where `insert`
     /// says.
@@ -239,6 +240,13 @@ impl Command {
                 match new_commander().run_duplicate(changes) {
                     Ok(()) => Ok(Some(rewritten(taken))),
                     Err(err) => Ok(Some(refused("Duplicate", err))),
+                }
+            }
+            Command::Parallelize(acts_on) => {
+                let (changes, taken) = acts_on.into_parts();
+                match new_commander().run_parallelize(changes) {
+                    Ok(()) => Ok(Some(rewritten(taken))),
+                    Err(err) => Ok(Some(refused("Parallelize", err))),
                 }
             }
             Command::Absorb(head) => match new_commander().run_absorb(&head.commit_id) {
@@ -670,6 +678,20 @@ pub fn describe(head: &Head) -> Result<AppAction> {
             .map(str::to_owned)
             .collect())
     })
+}
+
+/// Parallelizing the marked changes, or the refusal when there are
+/// fewer than two of them to take apart from one another.
+pub fn parallelize(marked: &[CommitId]) -> AppAction {
+    if marked.len() < 2 {
+        return message(
+            "Parallelize",
+            "Parallelizing acts on more than one marked change, once the marks are asked for",
+        );
+    }
+    let changes = Revset::union(marked).expect("changes to unite");
+
+    AppAction::Run(Command::Parallelize(ActsOn::marked(changes)))
 }
 
 /// Asking to rebase `sources`, or the working copy commit when none are
@@ -1238,6 +1260,20 @@ mod tests {
         let rows = rows(action);
         assert!(says_where(&rows, "squash the marked changes"), "{rows:?}");
         assert!(says_where(&rows, "Squash into abc"), "{rows:?}");
+    }
+
+    #[test]
+    fn parallelizing_takes_more_than_one_change() {
+        set_test_env();
+
+        let one = [CommitId("abc".to_owned())];
+        assert!(says(parallelize(&one), "more than one marked change"));
+
+        let two = [CommitId("abc".to_owned()), CommitId("def".to_owned())];
+        assert!(matches!(
+            parallelize(&two),
+            AppAction::Run(Command::Parallelize(_))
+        ));
     }
 
     #[test]

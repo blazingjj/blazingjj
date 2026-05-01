@@ -187,6 +187,18 @@ impl Commander {
             .run_void()?)
     }
 
+    /// Parallelize changes. Maps to `jj parallelize <revset>`.
+    pub fn run_parallelize(&self, revset: impl Into<Revset>) -> Result<()> {
+        self.run_parallelize_inner(revset.into().as_str())
+    }
+
+    #[instrument(level = "trace", name = "run_parallelize", skip(self))]
+    fn run_parallelize_inner(&self, revset: &str) -> Result<()> {
+        self.jj(["parallelize", revset])
+            .run_void()
+            .context("Failed executing jj parallelize")
+    }
+
     /// Squash changes. Maps to `jj squash -u [--from <revset>] --into <revset>`.
     /// `from` defaults to the working copy when `None`.
     pub fn run_squash(
@@ -488,6 +500,35 @@ mod tests {
 
         let head = test_repo.commander.get_current_head()?.commit_id;
         assert_eq!(test_repo.commander.get_commit_description(&head)?, "-AAA");
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_parallelize_makes_the_changes_siblings() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let repo = &test_repo.commander;
+
+        let root = repo.get_current_head()?;
+        repo.run_new(&root.commit_id)?;
+        let first = repo.get_current_head()?;
+        repo.run_new(&first.commit_id)?;
+        let second = repo.get_current_head()?;
+
+        let both = Revset::union([&first.commit_id, &second.commit_id]).expect("two changes");
+        repo.run_parallelize(both)?;
+
+        // Both changes now stand on what the first one stood on.
+        let second = repo.get_current_head()?;
+        assert_eq!(
+            repo.get_commit_parent(&second.commit_id)?.change_id,
+            root.change_id
+        );
+        assert!(
+            repo.get_commit_children(&root.commit_id)?
+                .iter()
+                .any(|child| child.head.change_id == first.change_id)
+        );
 
         Ok(())
     }

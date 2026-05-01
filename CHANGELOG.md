@@ -56,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selected one alone
 - Squashing folds the marked changes into the selected one, rather than only
   ever folding the working copy in
+- `|` in the log tab takes the marked changes apart from one another, so that
+  they stand side by side (`jj parallelize`)
 - `delta` is a diff format of its own, offered as soon as delta is installed
   and run in the colors a diff is drawn in rather than the ones you configured
   it with under git, rather than something to spell out as a diff pager. Where

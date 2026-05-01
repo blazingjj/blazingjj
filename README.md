@@ -230,6 +230,8 @@ See all key mappings for the current tab with `?`.
 - Abandon a change with `a` (`jj abandon`)
 - Duplicate the marked changes, or the highlighted one, with `D`
   (`jj duplicate`)
+- Parallelize the marked changes with `|` (`jj parallelize`), making changes
+  that follow each other siblings under the first one's parents
 - Rebase with `Ctrl+r` (`jj rebase`), moving the marked changes or `@`, and
   choosing whether the change moves alone, with its descendants or as a whole
   branch, and whether it lands on the selected change or before or after it
