@@ -18,7 +18,7 @@ use tui_confirm_dialog::ConfirmDialogState;
 use tui_confirm_dialog::Listener;
 
 use crate::ComponentInputResult;
-use crate::commander::ids::CommitId;
+use crate::commander::ids::commit_revset_union;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::env::DiffFormat;
@@ -320,11 +320,12 @@ impl<'a> LogTab<'a> {
     // Execute new command, after self.popup returned
     fn execute_new(&mut self) -> Result<Option<ComponentAction>> {
         let commit_ids = self.log_panel.extract_and_clear_head_marks();
-        if commit_ids.is_empty() {
-            new_commander().run_new([self.head.commit_id.as_str()])?;
+        let revset = if commit_ids.is_empty() {
+            self.head.commit_id.as_str().to_owned()
         } else {
-            new_commander().run_new(commit_ids.iter().map(CommitId::as_str))?;
-        }
+            commit_revset_union(&commit_ids)
+        };
+        new_commander().run_new(&revset)?;
         self.set_head(new_commander().get_current_head()?);
         if self.describe_after_new {
             self.describe_after_new = false;
