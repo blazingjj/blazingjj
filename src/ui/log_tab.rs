@@ -355,7 +355,11 @@ impl<'a> LogTab<'a> {
                 return Ok(Some(command::rebase(&self.marked(), &self.head)?));
             }
             LogTabEvent::Squash { ignore_immutable } => {
-                return Ok(Some(command::ask_squash(&self.head, ignore_immutable)?));
+                return Ok(Some(command::ask_squash(
+                    &self.head,
+                    self.marked(),
+                    ignore_immutable,
+                )?));
             }
             LogTabEvent::EditChange { ignore_immutable } => {
                 return Ok(Some(command::ask_edit(

@@ -65,12 +65,14 @@ pub fn log_context_menu(
             AppAction::Run(Command::Duplicate(Revset::from(&selected.change_id))),
         ),
         (
-            Line::raw(if selected_is_at {
+            Line::raw(if !marked.is_empty() {
+                "Squash the marked changes into this"
+            } else if selected_is_at {
                 "Squash @ into its parent"
             } else {
                 "Squash @ into this"
             }),
-            command::ask_squash(selected, false)?,
+            command::ask_squash(selected, marked.to_vec(), false)?,
         ),
     ];
     if !selected_is_at {
