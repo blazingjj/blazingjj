@@ -46,6 +46,9 @@ pub struct JjConfigBlazingjj {
     highlight_color: Color,
     drag_source_color: Color,
     drag_target_color: Color,
+    drag_insert_color: Color,
+    drag_insert_bg_color: Color,
+    drag_insert_target_color: Color,
     diff_format: Option<DiffFormat>,
     diff_tool: Option<String>,
     bookmark_template: Option<String>,
@@ -60,6 +63,9 @@ impl Default for JjConfigBlazingjj {
             highlight_color: Color::Rgb(50, 50, 150),
             drag_source_color: Color::Rgb(40, 80, 80),
             drag_target_color: Color::Rgb(120, 100, 30),
+            drag_insert_color: Color::LightCyan,
+            drag_insert_bg_color: Color::Rgb(0, 40, 50),
+            drag_insert_target_color: Color::Rgb(50, 40, 15),
             layout_percent: 50,
             // Standard defaults for the rest
             diff_format: None,
@@ -117,6 +123,18 @@ impl JjConfig {
 
     pub fn drag_target_color(&self) -> Color {
         self.blazingjj.drag_target_color
+    }
+
+    pub fn drag_insert_color(&self) -> Color {
+        self.blazingjj.drag_insert_color
+    }
+
+    pub fn drag_insert_bg_color(&self) -> Color {
+        self.blazingjj.drag_insert_bg_color
+    }
+
+    pub fn drag_insert_target_color(&self) -> Color {
+        self.blazingjj.drag_insert_target_color
     }
 
     pub fn bookmark_template(&self) -> String {
