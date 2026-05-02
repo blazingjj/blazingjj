@@ -291,9 +291,42 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
             line.spans.insert(0, span);
         };
 
+        /// `line` with the insertion point ruled under it. The role's
+        /// foreground is the rule rather than the text, which keeps the
+        /// colours jj drew the row in.
+        fn ruled(line: Line<'_>, style: Style) -> Line<'_> {
+            patched(
+                line,
+                Style {
+                    bg: style.bg,
+                    underline_color: style.fg,
+                    ..Style::new().underlined()
+                },
+            )
+        }
+
         let drag_target_item = self.drag.as_ref().and_then(|d| d.target_item.as_ref());
         let drag_source_item =
             log_output.item_at(self.drag.as_ref().map_or(usize::MAX, |d| d.source_line));
+
+        // For Before/After modes, find the item whose last display line gets
+        // an underline to show the insertion point:
+        //   Before (-B): source becomes parent of target → lands below target
+        //                → underline last line of target
+        //   After  (-A): source becomes child of target → lands above target
+        //                → underline last line of the item above target
+        let drag_mode = self
+            .drag
+            .as_ref()
+            .map(|d| decode_drag_modifiers(d.modifiers));
+        let underline_item: Option<&T> = drag_target_item.and_then(|target| match drag_mode? {
+            DragMode::Before => Some(target),
+            DragMode::After => {
+                let idx = log_output.items.iter().position(|item| item == target)?;
+                log_output.items.get(idx.checked_sub(1)?)
+            }
+            _ => None,
+        });
 
         self.log_output_text
             .iter()
@@ -310,12 +343,28 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
                 // unrelated color and only distracts from the drop decision.
                 // Target wins over source if a drag is dropped onto its own
                 // source row (no-op case).
+                // Onto/Squash: target gets a strong "destination" highlight.
+                // Before/After: target gets a muted "reference commit" tint;
+                // the insertion-line separator carries the directional meaning.
                 if drag_target_item.is_some() && item_here == drag_target_item {
-                    line = patched(line, Role::DragTarget.style());
+                    let role = if underline_item.is_some() {
+                        Role::DragInsertTarget
+                    } else {
+                        Role::DragTarget
+                    };
+                    line = patched(line, role.style());
                 } else if drag_source_item.is_some() && item_here == drag_source_item {
                     line = patched(line, Role::DragSource.style());
                 } else if self.drag.is_none() && item_here == Some(&self.selected) {
                     line = patched(line, Role::Highlight.style());
+                }
+
+                // Underline the last display line of the insertion-point item
+                // so the separator appears as a bottom border on that commit.
+                if underline_item.is_some_and(|ul| item_here == Some(ul))
+                    && log_output.item_at(i + 1) != underline_item
+                {
+                    line = ruled(line, Role::DragInsertPoint.style());
                 }
 
                 line
