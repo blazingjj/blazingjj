@@ -301,9 +301,43 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
 
         let config = get_env().jj_config.clone();
 
+        fn add_underline(line: &mut Line, color: Color, bg: Color) {
+            line.style = line
+                .style
+                .add_modifier(Modifier::UNDERLINED)
+                .underline_color(color)
+                .bg(bg);
+            for span in line.spans.iter_mut() {
+                span.style = span
+                    .style
+                    .add_modifier(Modifier::UNDERLINED)
+                    .underline_color(color)
+                    .bg(bg);
+            }
+        }
+
         let drag_target_item = self.drag.as_ref().and_then(|d| d.target_item.as_ref());
         let drag_source_item =
             log_output.item_at(self.drag.as_ref().map_or(usize::MAX, |d| d.source_line));
+
+        // For Before/After modes, find the item whose last display line gets
+        // an underline to show the insertion point:
+        //   Before (-B): source becomes parent of target → lands below target
+        //                → underline last line of target
+        //   After  (-A): source becomes child of target → lands above target
+        //                → underline last line of the item above target
+        let drag_mode = self
+            .drag
+            .as_ref()
+            .map(|d| decode_drag_modifiers(d.modifiers));
+        let underline_item: Option<&T> = drag_target_item.and_then(|target| match drag_mode? {
+            DragMode::Before => Some(target),
+            DragMode::After => {
+                let idx = log_output.items.iter().position(|item| item == target)?;
+                log_output.items.get(idx.checked_sub(1)?)
+            }
+            _ => None,
+        });
 
         self.log_output_text
             .iter()
@@ -320,12 +354,32 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
                 // unrelated color and only distracts from the drop decision.
                 // Target wins over source if a drag is dropped onto its own
                 // source row (no-op case).
+                // Onto/Squash: target gets a strong "destination" highlight.
+                // Before/After: target gets a muted "reference commit" tint;
+                // the insertion-line separator carries the directional meaning.
                 if drag_target_item.is_some() && item_here == drag_target_item {
-                    set_bg(&mut line, config.drag_target_color());
+                    let color = if underline_item.is_some() {
+                        config.drag_insert_target_color()
+                    } else {
+                        config.drag_target_color()
+                    };
+                    set_bg(&mut line, color);
                 } else if drag_source_item.is_some() && item_here == drag_source_item {
                     set_bg(&mut line, config.drag_source_color());
                 } else if self.drag.is_none() && item_here == Some(&self.selected) {
                     set_bg(&mut line, config.highlight_color());
+                }
+
+                // Underline the last display line of the insertion-point item
+                // so the separator appears as a bottom border on that commit.
+                if underline_item.is_some_and(|ul| item_here == Some(ul))
+                    && log_output.item_at(i + 1) != underline_item
+                {
+                    add_underline(
+                        &mut line,
+                        config.drag_insert_color(),
+                        config.drag_insert_bg_color(),
+                    );
                 }
 
                 line

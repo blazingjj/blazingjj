@@ -120,6 +120,9 @@ pub struct JjConfigBlazingjj {
     describe_mode: DescribeMode,
     drag_source_color: Color,
     drag_target_color: Color,
+    drag_insert_color: Color,
+    drag_insert_bg_color: Color,
+    drag_insert_target_color: Color,
     diff_format: Option<ConfiguredDiffFormat>,
     diff_tool: Option<String>,
     diff_pager: Option<DiffPager>,
@@ -147,6 +150,9 @@ impl Default for JjConfigBlazingjj {
             confirm_push: true,
             drag_source_color: Color::Rgb(40, 80, 80),
             drag_target_color: Color::Rgb(120, 100, 30),
+            drag_insert_color: Color::LightCyan,
+            drag_insert_bg_color: Color::Rgb(0, 40, 50),
+            drag_insert_target_color: Color::Rgb(50, 40, 15),
             layout_percent: 50,
             poll_interval: Some(Duration::from_secs(1)),
             // Standard defaults for the rest
@@ -300,6 +306,18 @@ impl JjConfig {
 
     pub fn drag_target_color(&self) -> Color {
         self.blazingjj.drag_target_color
+    }
+
+    pub fn drag_insert_color(&self) -> Color {
+        self.blazingjj.drag_insert_color
+    }
+
+    pub fn drag_insert_bg_color(&self) -> Color {
+        self.blazingjj.drag_insert_bg_color
+    }
+
+    pub fn drag_insert_target_color(&self) -> Color {
+        self.blazingjj.drag_insert_target_color
     }
 
     pub fn bookmark_template(&self) -> String {
