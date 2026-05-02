@@ -82,6 +82,13 @@ impl Commander {
             .context("Failed executing jj squash")
     }
 
+    /// Absorb a change's diff into its mutable ancestors. Maps to `jj absorb --from <revision>`
+    #[instrument(level = "trace", skip(self))]
+    pub fn run_absorb(&mut self, revision: &str) -> Result<()> {
+        self.execute_void_jj_command(vec!["absorb", "--from", revision])
+            .context("Failed executing jj absorb")
+    }
+
     /// Create bookmark. Maps to `jj bookmark create <name>`
     #[instrument(level = "trace", skip(self))]
     pub fn create_bookmark(&self, name: &str) -> Result<Bookmark, CommandError> {

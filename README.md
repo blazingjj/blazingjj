@@ -16,6 +16,7 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Edit changes with `e`/`E`
   - Describe changes with `d`
   - Abandon changes with `a`
+  - Absorb a change's diff into its mutable ancestors with `A`
   - Toggle between color words and git diff with `p`
   - See different revset with `r`
   - Set a bookmark to selected change with `b`
@@ -101,6 +102,7 @@ See all key mappings for the current tab with `?`.
 - Edit highlighted change with `e` (`jj edit`)
   - Edit highlighted change ignoring immutability with `E` (`jj edit --ignore-immutable`)
 - Abandon a change with `a` (`jj abandon`)
+- Absorb the highlighted change's diff into its mutable ancestors with `A` (`jj absorb --from`)
 - Describe the highlighted change with `d` (`jj describe`)
   - Save with `Ctrl+s`
   - Cancel with `Esc`
