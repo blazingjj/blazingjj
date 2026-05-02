@@ -67,6 +67,8 @@ pub enum Role {
     Value,
     DragSource,
     DragTarget,
+    DragInsertTarget,
+    DragInsertPoint,
     DiffHeader,
     DiffFileHeader,
     DiffHunkHeader,
@@ -78,7 +80,7 @@ pub enum Role {
 
 impl Role {
     /// Every role there is, in the order the styles tab lists them.
-    pub const ALL: [Self; 33] = [
+    pub const ALL: [Self; 35] = [
         Self::Default,
         Self::Highlight,
         Self::Hint,
@@ -107,6 +109,8 @@ impl Role {
         Self::Conflict,
         Self::DragSource,
         Self::DragTarget,
+        Self::DragInsertTarget,
+        Self::DragInsertPoint,
         Self::DiffHeader,
         Self::DiffFileHeader,
         Self::DiffHunkHeader,
@@ -153,6 +157,8 @@ impl Role {
             Self::Value => "value",
             Self::DragSource => "drag-source",
             Self::DragTarget => "drag-target",
+            Self::DragInsertTarget => "drag-insert-target",
+            Self::DragInsertPoint => "drag-insert-point",
             Self::DiffHeader => "diff-header",
             Self::DiffFileHeader => "diff-file-header",
             Self::DiffHunkHeader => "diff-hunk-header",
@@ -206,6 +212,12 @@ impl Role {
             }
             Self::DragSource => "The change being dragged.",
             Self::DragTarget => "The change a drag would drop onto.",
+            Self::DragInsertTarget => {
+                "The change a drag would drop next to rather than onto, which the insertion point is read against."
+            }
+            Self::DragInsertPoint => {
+                "Where a drag would insert the change, ruled under the row it would land after. The foreground is the rule."
+            }
             Self::DiffHeader => "The line a diff names a file under, in the color words format.",
             Self::DiffFileHeader => {
                 "The block naming a file and what it was, above its hunks in the git format."
@@ -245,7 +257,10 @@ impl Role {
             | Self::FileCopied
             | Self::FileDeleted
             | Self::Conflict => "Files",
-            Self::DragSource | Self::DragTarget => "Dragging",
+            Self::DragSource
+            | Self::DragTarget
+            | Self::DragInsertTarget
+            | Self::DragInsertPoint => "Dragging",
             Self::DiffHeader
             | Self::DiffFileHeader
             | Self::DiffHunkHeader
@@ -334,6 +349,15 @@ impl Role {
                 bg: Some(ThemeColor::Rgb(120, 100, 30)),
                 ..RoleStyle::default()
             },
+            Self::DragInsertTarget => RoleStyle {
+                bg: Some(ThemeColor::Rgb(50, 40, 15)),
+                ..RoleStyle::default()
+            },
+            Self::DragInsertPoint => RoleStyle {
+                fg: Some(ThemeColor::Ansi(Ansi::BrightCyan)),
+                bg: Some(ThemeColor::Rgb(0, 40, 50)),
+                ..RoleStyle::default()
+            },
             Self::Button => ansi(Ansi::BrightWhite),
             Self::ChangeId | Self::Bookmark => ansi(Ansi::Magenta),
         }
@@ -390,7 +414,7 @@ impl Role {
         matches!(
             (self, channel),
             (
-                Self::Highlight | Self::DragSource | Self::DragTarget,
+                Self::Highlight | Self::DragSource | Self::DragTarget | Self::DragInsertTarget,
                 Channel::Fg
             )
         )
