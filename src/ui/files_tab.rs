@@ -24,6 +24,7 @@ use crate::ui::help_popup::HelpPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
+use crate::ui::utils::PaneDivider;
 use crate::ui::utils::tabs_to_spaces;
 
 /// Files tab. Shows files in selected change in main panel and selected file diff in details panel
@@ -42,6 +43,7 @@ pub struct FilesTab {
     diff_format: DiffFormat,
 
     config: JjConfig,
+    pane_divider: PaneDivider,
 }
 
 fn get_current_file_index(
@@ -88,6 +90,9 @@ impl FilesTab {
             files_output.as_ref(),
         ));
 
+        let config = get_env().jj_config.clone();
+        let pane_divider = PaneDivider::new(config.layout_percent());
+
         Ok(Self {
             head,
             is_current_head,
@@ -103,7 +108,8 @@ impl FilesTab {
             diff_format,
             diff_panel: DetailsPanel::new(),
 
-            config: get_env().jj_config.clone(),
+            config,
+            pane_divider,
         })
     }
 
@@ -201,13 +207,7 @@ impl Component for FilesTab {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = Layout::default()
-            .direction(self.config.layout().into())
-            .constraints([
-                Constraint::Percentage(self.config.layout_percent()),
-                Constraint::Percentage(100 - self.config.layout_percent()),
-            ])
-            .split(area);
+        let chunks = self.pane_divider.split(area, self.config.layout());
 
         // Draw files
         {
@@ -414,6 +414,9 @@ impl Component for FilesTab {
         }
 
         if let Event::Mouse(mouse) = event {
+            if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+                return Ok(ComponentInputResult::Handled);
+            }
             if self.diff_panel.input_mouse(mouse) {
                 return Ok(ComponentInputResult::Handled);
             }
