@@ -9,9 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - ReleaseDate
 
+### Breaking Changes
+
+- The keybinds config section is now kebab-cased: `[blazingjj.keybinds.log_tab]` must be
+  changed to `[blazingjj.keybinds.log-tab]`
+
 ### Added
 
 - Keybinding for jj absorb (`A`)
+- Top-level scroll keybindings (`scroll-down`, `scroll-up`, `scroll-down-half`,
+  `scroll-up-half` under `[blazingjj.keybinds]`) that apply as defaults to all
+  scroll-capable components and can be overridden per-component
+- Message popup now supports scrolling with a scrollbar
+- Command popup output now preserves ANSI color
 - Drag to resize pane divider in all tabs
 
 ## [0.8.0] - 2026-04-19

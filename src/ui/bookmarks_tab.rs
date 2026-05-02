@@ -261,11 +261,7 @@ impl Component for BookmarksTab<'_> {
                             }
                             Err(err) => {
                                 return Ok(Some(ComponentAction::SetPopup(Some(Box::new(
-                                    MessagePopup {
-                                        title: "Delete error".into(),
-                                        messages: err.to_string().into_text()?,
-                                        text_align: None,
-                                    },
+                                    MessagePopup::new("Delete error", err.to_string()),
                                 )))));
                             }
                         }
@@ -285,11 +281,7 @@ impl Component for BookmarksTab<'_> {
                             }
                             Err(err) => {
                                 return Ok(Some(ComponentAction::SetPopup(Some(Box::new(
-                                    MessagePopup {
-                                        title: "Forget error".into(),
-                                        messages: err.to_string().into_text()?,
-                                        text_align: None,
-                                    },
+                                    MessagePopup::new("Forget error", err.to_string()),
                                 )))));
                             }
                         }
@@ -907,15 +899,10 @@ impl Component for BookmarksTab<'_> {
                                 && !ignore_immutable
                             {
                                 return Ok(ComponentInputResult::HandledAction(
-                                    ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                                        title: "Edit".into(),
-                                        messages: vec![
-                                            "The change cannot be edited because it is immutable."
-                                                .into(),
-                                        ]
-                                        .into(),
-                                        text_align: None,
-                                    }))),
+                                    ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                                        "Edit",
+                                        "The change cannot be edited because it is immutable.",
+                                    )))),
                                 ));
                             }
 
