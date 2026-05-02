@@ -3,6 +3,7 @@ use std::str::FromStr;
 use ratatui::crossterm::event::KeyEvent;
 
 use super::Shortcut;
+use super::config::KeybindsConfig;
 use super::config::LogTabKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
 use crate::make_keybinds_help;
@@ -126,7 +127,20 @@ impl LogTabKeybinds {
             LogTabEvent::Unbound
         }
     }
-    pub fn extend_from_config(&mut self, config: &LogTabKeybindsConfig) {
+    pub fn extend_from_config(&mut self, config: &KeybindsConfig) {
+        update_keybinds!(
+            self.keys,
+            LogTabEvent::ScrollDown => config.scroll_down,
+            LogTabEvent::ScrollUp => config.scroll_up,
+            LogTabEvent::ScrollDownHalf => config.scroll_down_half,
+            LogTabEvent::ScrollUpHalf => config.scroll_up_half,
+        );
+        if let Some(ref log_tab) = config.log_tab {
+            self.extend_from_log_tab_config(log_tab);
+        }
+    }
+
+    fn extend_from_log_tab_config(&mut self, config: &LogTabKeybindsConfig) {
         update_keybinds!(
             self.keys,
             LogTabEvent::Save => config.save,

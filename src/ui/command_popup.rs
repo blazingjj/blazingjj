@@ -94,11 +94,10 @@ impl Component for CommandPopup<'_> {
                     let res: Result<String> = split(command_input)
                         .context("Failed to split command input")
                         .and_then(|command| {
-                            // TODO: Support color. PopupMessage (used by MessagePopup) breaks when colored
-                            Ok(new_commander().execute_jj_command(command, false, false)?)
+                            Ok(new_commander().execute_jj_command(command, true, false)?)
                         });
-                    let message = match res {
-                        Ok(str) => str,
+                    let output_str = match res {
+                        Ok(output) => output,
                         Err(err) => [
                             format!("Failed to execute jj command: jj {command_input}"),
                             String::new(),
@@ -107,7 +106,7 @@ impl Component for CommandPopup<'_> {
                         .join("\n"),
                     };
 
-                    if message.trim().is_empty() {
+                    if output_str.trim().is_empty() {
                         return Ok(ComponentInputResult::HandledAction(
                             ComponentAction::Multiple(vec![
                                 ComponentAction::SetPopup(None),
@@ -118,11 +117,10 @@ impl Component for CommandPopup<'_> {
 
                     return Ok(ComponentInputResult::HandledAction(
                         ComponentAction::Multiple(vec![
-                            ComponentAction::SetPopup(Some(Box::new(MessagePopup {
-                                title: format!("jj {command_input}").into(),
-                                messages: message.into(),
-                                text_align: Alignment::Left.into(),
-                            }))),
+                            ComponentAction::SetPopup(Some(Box::new(
+                                MessagePopup::new(format!("jj {command_input}"), output_str)
+                                    .text_align(Alignment::Left),
+                            ))),
                             ComponentAction::RefreshTab(),
                         ]),
                     ));

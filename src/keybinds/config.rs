@@ -1,8 +1,26 @@
 use super::Shortcut;
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
 pub struct KeybindsConfig {
+    pub scroll_down: Option<Keybind>,
+    pub scroll_up: Option<Keybind>,
+    pub scroll_down_half: Option<Keybind>,
+    pub scroll_up_half: Option<Keybind>,
+
     pub log_tab: Option<LogTabKeybindsConfig>,
+    pub message_popup: Option<MessagePopupKeybindsConfig>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct MessagePopupKeybindsConfig {
+    pub scroll_down: Option<Keybind>,
+    pub scroll_up: Option<Keybind>,
+    pub scroll_down_half: Option<Keybind>,
+    pub scroll_up_half: Option<Keybind>,
+    pub scroll_down_page: Option<Keybind>,
+    pub scroll_up_page: Option<Keybind>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
