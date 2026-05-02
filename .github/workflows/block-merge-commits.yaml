@@ -1,0 +1,21 @@
+---
+
+name: Block merge commits in PRs
+
+'on':
+  pull_request:
+
+permissions:
+  pull-requests: read
+
+jobs:
+  merge-commit-check:
+    name: Block Merge Commits
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Block Merge Commits
+        uses: Morishiri/block-merge-commits-action@v1.0.1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
