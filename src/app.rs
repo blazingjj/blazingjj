@@ -181,6 +181,10 @@ impl<'a> App<'a> {
         Ok(())
     }
 
+    pub fn has_background_work(&self) -> bool {
+        self.files.as_ref().is_some_and(|f| f.has_pending_diff())
+    }
+
     #[instrument(level = "trace", skip(self))]
     pub fn update(&mut self) -> Result<()> {
         if let Some(popup) = self.popup.as_mut()
