@@ -13,6 +13,7 @@ use anyhow::Result;
 use anyhow::bail;
 use itertools::Itertools;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use thiserror::Error;
 use tracing::instrument;
 
@@ -35,6 +36,15 @@ pub struct Head {
     pub immutable: bool,
 }
 
+/// A parent of a commit, as [parents_template] describes it.
+#[derive(Clone, PartialEq, Eq, Debug, Deserialize)]
+pub struct Parent {
+    #[serde(flatten)]
+    pub head: Head,
+    /// The first line of the parent's description, empty if it has none.
+    pub description: String,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct LogOutput {
     pub graph: String,
@@ -50,11 +60,11 @@ impl LogOutput {
 }
 
 #[derive(Error, Debug)]
-pub struct HeadParseError(String);
+pub struct RecordParseError(String);
 
-impl Display for HeadParseError {
+impl Display for RecordParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Head parse error: {}", self.0)
+        write!(f, "Record parse error: {}", self.0)
     }
 }
 
@@ -66,13 +76,19 @@ impl Display for HeadParseError {
 /// whose `self` is something else point at the commit it holds, as
 /// `jj bookmark list` does.
 pub(super) fn head_template(commit: &str) -> String {
+    let fields = head_fields(commit);
+    format!(r#"'{{' ++ {fields} ++ '}}'"#)
+}
+
+/// The fields [head_template] writes, without the braces around them, so
+/// that a template describing more than a [Head] can add its own.
+fn head_fields(commit: &str) -> String {
     format!(
         r#"
-    '{{"change_id":' ++ stringify({commit}.change_id()).escape_json()
+    '"change_id":' ++ stringify({commit}.change_id()).escape_json()
     ++ ',"commit_id":' ++ stringify({commit}.commit_id()).escape_json()
     ++ ',"divergent":' ++ {commit}.divergent()
     ++ ',"immutable":' ++ {commit}.immutable()
-    ++ '}}'
 "#
     )
 }
@@ -84,16 +100,31 @@ fn head_template_nl() -> String {
     format!(r#"{head} ++ "\n""#)
 }
 
-/// Parse the [Head] one line of [head_template] output describes.
+/// Template writing one [Parent] per line for the parents of the commit
+/// in context, in the order the commit names them.
+fn parents_template() -> String {
+    let fields = head_fields("parent");
+    format!(
+        r#"
+    self.parents().map(|parent|
+        '{{' ++ {fields}
+        ++ ',"description":' ++ parent.description().first_line().escape_json()
+        ++ '}}'
+    ).join("\n")
+"#
+    )
+}
+
+/// Parse the record one line of template output describes.
 ///
 /// jj draws the graph in front of what the template writes, so the object
 /// starts at the first brace of the line. A line the graph draws for edges
 /// alone carries no template output, and neither does one for an elided
-/// revision, so those have no brace and no head.
-fn parse_head(text: &str) -> Result<Head> {
+/// revision, so those have no brace and no record.
+fn parse_record<T: DeserializeOwned>(text: &str) -> Result<T> {
     text.find('{')
         .and_then(|start| serde_json::from_str(&text[start..]).ok())
-        .ok_or_else(|| HeadParseError(text.to_owned()).into())
+        .ok_or_else(|| RecordParseError(text.to_owned()).into())
 }
 
 impl Commander {
@@ -159,7 +190,7 @@ impl Commander {
             .ignore_working_copy()
             .run()?
             .lines()
-            .map(|line| parse_head(line).ok())
+            .map(|line| parse_record(line).ok())
             .collect();
 
         let heads = graph_heads.clone().into_iter().flatten().unique().collect();
@@ -208,7 +239,7 @@ impl Commander {
     /// Maps to `jj log -r @`
     #[instrument(level = "trace", skip(self))]
     pub fn get_current_head(&self) -> Result<Head> {
-        parse_head(
+        parse_record(
             &self
                 .execute_jj_log_one("@", &head_template_nl())
                 .context("Failed getting current head")?
@@ -232,7 +263,7 @@ impl Commander {
         }
         let latest_heads: Vec<Head> = latest_heads_res
             .lines()
-            .map(parse_head)
+            .map(parse_record)
             .collect::<Result<Vec<Head>>>()?;
 
         // If the current head exist, that means it wasn't updated
@@ -274,16 +305,26 @@ impl Commander {
         );
     }
 
-    /// Get a commit's parent.
-    /// Maps to `jj log -r <revision>-`
+    /// Get a commit's parents, in the order the commit names them. The
+    /// root commit has none.
+    /// Maps to `jj log -r <revision> -T 'self.parents()...'`
+    #[instrument(level = "trace", skip(self))]
+    pub fn get_commit_parents(&self, commit_id: &CommitId) -> Result<Vec<Parent>> {
+        self.execute_jj_log_one(commit_id.as_str(), &parents_template())
+            .with_context(|| format!("Failed getting commit parents: {commit_id}"))?
+            .lines()
+            .map(parse_record)
+            .collect()
+    }
+
+    /// Get a commit's first parent.
     #[instrument(level = "trace", skip(self))]
     pub fn get_commit_parent(&self, commit_id: &CommitId) -> Result<Head> {
-        parse_head(
-            &self
-                .execute_jj_log_one(&format!("{commit_id}-"), &head_template_nl())
-                .with_context(|| format!("Failed getting commit parent: {commit_id}"))?
-                .remove_end_line(),
-        )
+        self.get_commit_parents(commit_id)?
+            .into_iter()
+            .next()
+            .map(|parent| parent.head)
+            .with_context(|| format!("Commit has no parent: {commit_id}"))
     }
 
     /// Get commit's description.
@@ -311,7 +352,7 @@ impl Commander {
     /// Maps to `jj log -r <bookmark>[@<remote>]`
     #[instrument(level = "trace", skip(self))]
     pub fn get_bookmark_head(&self, bookmark: &Bookmark) -> Result<Head> {
-        parse_head(
+        parse_record(
             &self
                 .execute_jj_log_one(&bookmark.to_string(), &head_template_nl())
                 .context("Failed getting bookmark head")?
@@ -339,9 +380,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_head_reads_a_record_of_its_own() -> Result<()> {
+    fn parse_record_reads_a_record_of_its_own() -> Result<()> {
         assert_eq!(
-            parse_head(
+            parse_record::<Head>(
                 r#"{"change_id":"kxq","commit_id":"1f2e","divergent":false,"immutable":true}"#
             )?,
             head("kxq", "1f2e", false, true)
@@ -351,9 +392,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_head_reads_a_record_behind_the_graph() -> Result<()> {
+    fn parse_record_reads_a_record_behind_the_graph() -> Result<()> {
         assert_eq!(
-            parse_head(
+            parse_record::<Head>(
                 r#"│ ├─╮  {"change_id":"kxq","commit_id":"1f2e","divergent":true,"immutable":false}"#
             )?,
             head("kxq", "1f2e", true, false)
@@ -364,14 +405,14 @@ mod tests {
 
     #[test]
     fn a_graph_line_without_a_record_has_no_head() {
-        assert!(parse_head("│ ├─╯").is_err());
-        assert!(parse_head("~  (elided revisions)").is_err());
-        assert!(parse_head("").is_err());
+        assert!(parse_record::<Head>("│ ├─╯").is_err());
+        assert!(parse_record::<Head>("~  (elided revisions)").is_err());
+        assert!(parse_record::<Head>("").is_err());
     }
 
     #[test]
     fn a_record_missing_a_field_is_no_head() {
-        assert!(parse_head(r#"{"change_id":"kxq","commit_id":"1f2e"}"#).is_err());
+        assert!(parse_record::<Head>(r#"{"change_id":"kxq","commit_id":"1f2e"}"#).is_err());
     }
 
     #[test]
@@ -433,6 +474,65 @@ mod tests {
                 divergent: false,
                 immutable: true,
             }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn get_commit_parents_of_a_merge() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        test_repo.commander.jj(["describe", "-m", "left"]).run()?;
+        let left = test_repo.commander.get_current_head()?;
+
+        test_repo
+            .commander
+            .jj(["new", "root()", "-m", "right"])
+            .run()?;
+        let right = test_repo.commander.get_current_head()?;
+
+        test_repo
+            .commander
+            .jj(["new", left.commit_id.as_str(), right.commit_id.as_str()])
+            .run()?;
+        let merge = test_repo.commander.get_current_head()?;
+
+        assert_eq!(
+            test_repo.commander.get_commit_parents(&merge.commit_id)?,
+            vec![
+                Parent {
+                    head: left,
+                    description: "left".to_owned()
+                },
+                Parent {
+                    head: right,
+                    description: "right".to_owned()
+                },
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn the_root_commit_has_no_parent() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        let head = test_repo.commander.get_current_head()?;
+        let root = test_repo.commander.get_commit_parent(&head.commit_id)?;
+
+        assert!(
+            test_repo
+                .commander
+                .get_commit_parents(&root.commit_id)?
+                .is_empty()
+        );
+        assert!(
+            test_repo
+                .commander
+                .get_commit_parent(&root.commit_id)
+                .is_err()
         );
 
         Ok(())

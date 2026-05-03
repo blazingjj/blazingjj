@@ -28,6 +28,8 @@ pub enum LogTabEvent {
 
     ToggleHeadMark,
 
+    GotoParent,
+
     CreateNew {
         describe: bool,
     },
@@ -70,6 +72,7 @@ impl Default for LogTabKeybinds {
             LogTabEvent::ScrollToBottom => "ctrl+end",
             LogTabEvent::ScrollToTop => "ctrl+home",
             LogTabEvent::ToggleHeadMark => "space",
+            LogTabEvent::GotoParent => "-",
             LogTabEvent::Duplicate => "shift+d",
             LogTabEvent::CreateNew { describe: false } => "n",
             LogTabEvent::CreateNew { describe: true } => "shift+n",
@@ -118,6 +121,7 @@ impl LogTabKeybinds {
             LogTabEvent::Save => config.save,
             LogTabEvent::Cancel => config.cancel,
             LogTabEvent::ClosePopup => config.close_popup,
+            LogTabEvent::GotoParent => config.goto_parent,
             LogTabEvent::Duplicate => config.duplicate,
             LogTabEvent::CreateNew { describe: false } => config.create_new,
             LogTabEvent::CreateNew { describe: true } => config.create_new_describe,
@@ -145,6 +149,7 @@ impl LogTabKeybinds {
     pub fn make_main_panel_help(&self) -> Vec<(String, String)> {
         make_keybinds_help!(
             self.keys,
+            LogTabEvent::GotoParent => "go to parent commit",
             LogTabEvent::OpenFiles => "see files",
             LogTabEvent::EditRevset => "set revset",
             LogTabEvent::Describe => "describe change",
