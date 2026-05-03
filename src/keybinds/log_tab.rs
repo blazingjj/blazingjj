@@ -65,6 +65,8 @@ pub enum LogTabEvent {
 
     OpenHelp,
 
+    GotoParent,
+
     Unbound,
 }
 
@@ -113,6 +115,7 @@ impl Default for LogTabKeybinds {
             LogTabEvent::Fetch { all_remotes: false } => "f",
             LogTabEvent::Fetch { all_remotes: true } => "shift+f",
             LogTabEvent::OpenHelp => "?",
+            LogTabEvent::GotoParent => "-",
         );
 
         Self { keys }
@@ -176,6 +179,7 @@ impl LogTabKeybinds {
             LogTabEvent::Fetch { all_remotes: false } => config.fetch,
             LogTabEvent::Fetch { all_remotes: true } => config.fetch_all,
             LogTabEvent::OpenHelp => config.open_help,
+            LogTabEvent::GotoParent => config.goto_parent,
         );
     }
     pub fn make_main_panel_help(&self) -> Vec<(String, String)> {
@@ -208,6 +212,7 @@ impl LogTabKeybinds {
             event_push(false, true) => "git push with new bookmarks",
             event_push(true, false) => "git push all bookmarks, except new",
             event_push(true, true) => "git push all bookmarks",
+            LogTabEvent::GotoParent => "go to parent commit",
         )
     }
 }

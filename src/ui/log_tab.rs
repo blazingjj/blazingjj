@@ -37,6 +37,7 @@ use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::LargeStringContent;
 use crate::ui::panel::LogPanel;
+use crate::ui::parent_select_popup::ParentSelectPopup;
 use crate::ui::rebase_popup::RebasePopup;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::centered_rect_line_height;
@@ -76,6 +77,9 @@ pub struct LogTab<'a> {
 
     bookmark_set_popup_tx: std::sync::mpsc::Sender<bool>,
     bookmark_set_popup_rx: std::sync::mpsc::Receiver<bool>,
+
+    parent_select_popup_tx: std::sync::mpsc::Sender<Option<Head>>,
+    parent_select_popup_rx: std::sync::mpsc::Receiver<Option<Head>>,
 
     describe_after_new: bool,
 
@@ -134,6 +138,7 @@ impl<'a> LogTab<'a> {
 
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (bookmark_set_popup_tx, bookmark_set_popup_rx) = std::sync::mpsc::channel();
+        let (parent_select_popup_tx, parent_select_popup_rx) = std::sync::mpsc::channel();
 
         let mut keybinds = LogTabKeybinds::default();
         if let Some(keybinds_config) = get_env().jj_config.keybinds() {
@@ -162,6 +167,9 @@ impl<'a> LogTab<'a> {
 
             bookmark_set_popup_tx,
             bookmark_set_popup_rx,
+
+            parent_select_popup_tx,
+            parent_select_popup_rx,
 
             describe_after_new: false,
 
@@ -642,6 +650,41 @@ impl<'a> LogTab<'a> {
                     )))),
                 ));
             }
+            LogTabEvent::GotoParent => {
+                match new_commander().get_commit_parents(&self.head.commit_id) {
+                    Err(err) => {
+                        return Ok(ComponentInputResult::HandledAction(
+                            ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                                "Go to parent",
+                                err.to_string(),
+                            )))),
+                        ));
+                    }
+                    Ok(parents) if parents.is_empty() => {}
+                    Ok(mut parents) if parents.len() == 1 => {
+                        self.set_head(parents.remove(0));
+                    }
+                    Ok(parents) => {
+                        let parents_with_desc = parents
+                            .into_iter()
+                            .map(|h| {
+                                let desc = new_commander()
+                                    .get_commit_description(&h.commit_id)
+                                    .unwrap_or_default();
+                                (h, desc)
+                            })
+                            .collect();
+                        return Ok(ComponentInputResult::HandledAction(
+                            ComponentAction::SetPopup(Some(Box::new(ParentSelectPopup::new(
+                                parents_with_desc,
+                                self.config.clone(),
+                                self.parent_select_popup_tx.clone(),
+                            )))),
+                        ));
+                    }
+                }
+            }
+
             LogTabEvent::Save
             | LogTabEvent::Cancel
             | LogTabEvent::ClosePopup
@@ -692,6 +735,10 @@ impl Component for LogTab<'_> {
 
         if let Ok(true) = self.bookmark_set_popup_rx.try_recv() {
             self.refresh_log_output();
+        }
+
+        if let Ok(Some(head)) = self.parent_select_popup_rx.try_recv() {
+            self.set_head(head);
         }
 
         Ok(None)

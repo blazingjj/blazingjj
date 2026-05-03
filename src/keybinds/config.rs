@@ -73,4 +73,6 @@ pub struct LogTabKeybindsConfig {
     pub fetch_all: Option<Keybind>,
 
     pub open_help: Option<Keybind>,
+
+    pub goto_parent: Option<Keybind>,
 }
