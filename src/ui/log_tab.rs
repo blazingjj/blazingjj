@@ -1,6 +1,5 @@
 #![expect(clippy::borrow_interior_mutable_const)]
 
-use std::cmp::max;
 use std::io::Read;
 use std::process::Child;
 use std::sync::mpsc::Sender;
@@ -44,6 +43,7 @@ use crate::ui::commit_show_cache::CommitShowCache;
 use crate::ui::commit_show_cache::CommitShowKey;
 use crate::ui::commit_show_cache::CommitShowValue;
 use crate::ui::dialog::BookmarkSetPopup;
+use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
@@ -53,7 +53,6 @@ use crate::ui::panel::LogPanel;
 use crate::ui::panel::TextContent;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::Timer;
-use crate::ui::utils::centered_rect_fixed;
 use crate::ui::utils::centered_rect_line_height;
 use crate::ui::utils::tabs_to_spaces;
 
@@ -95,7 +94,6 @@ pub struct LogTab<'a> {
     popup_tx: std::sync::mpsc::Sender<Listener>,
     popup_rx: std::sync::mpsc::Receiver<Listener>,
 
-    describe_textarea: Option<TextArea<'a>>,
     describe_after_new: bool,
 
     squash_ignore_immutable: bool,
@@ -196,7 +194,6 @@ impl<'a> LogTab<'a> {
             popup_tx,
             popup_rx,
 
-            describe_textarea: None,
             describe_after_new: false,
 
             squash_ignore_immutable: false,
@@ -460,8 +457,10 @@ impl<'a> LogTab<'a> {
         self.set_head(new_commander().get_current_head()?);
         if self.describe_after_new {
             self.describe_after_new = false;
-            let textarea = TextArea::default();
-            self.describe_textarea = Some(textarea);
+            return Ok(Some(AppAction::Multiple(vec![
+                AppAction::ChangeHead(self.head.clone()),
+                AppAction::SetPopup(Box::new(DescribePopup::new(self.head.clone(), vec![]))),
+            ])));
         }
         Ok(Some(AppAction::ChangeHead(self.head.clone())))
     }
@@ -661,16 +660,14 @@ impl<'a> LogTab<'a> {
                         )),
                     )));
                 } else {
-                    let mut textarea = TextArea::new(
-                        new_commander()
-                            .get_commit_description(&self.head.commit_id)?
-                            .split("\n")
-                            .map(|line| line.to_string())
-                            .collect(),
-                    );
-                    textarea.move_cursor(CursorMove::End);
-                    self.describe_textarea = Some(textarea);
-                    return Ok(ComponentInputResult::Handled);
+                    let lines = new_commander()
+                        .get_commit_description(&self.head.commit_id)?
+                        .split("\n")
+                        .map(|line| line.to_string())
+                        .collect();
+                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                        Box::new(DescribePopup::new(self.head.clone(), lines)),
+                    )));
                 }
             }
             LogTabEvent::EditRevset => {
@@ -884,47 +881,6 @@ impl Component for LogTab<'_> {
             f.render_stateful_widget(popup, area, &mut self.popup);
         }
 
-        // Draw describe textarea
-        {
-            if let Some(describe_textarea) = self.describe_textarea.as_mut() {
-                let block = Block::bordered()
-                    .title(Span::styled(" Describe ", Style::new().bold().cyan()))
-                    .title_alignment(Alignment::Center)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Green));
-                // Text target size
-                const MAX_COMMIT_WIDTH: u16 = 72; // git recommended max width
-                const MIN_COMMIT_HEIGHT: u16 = 5; // heading + blank + 3 lines
-                // Include margin and help text to get size
-                let area = centered_rect_fixed(
-                    area,
-                    /* width */ MAX_COMMIT_WIDTH + 2,
-                    /* height */ max(MIN_COMMIT_HEIGHT + 4, area.height / 2),
-                );
-                f.render_widget(Clear, area);
-                f.render_widget(&block, area);
-
-                let popup_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Fill(1), Constraint::Length(2)])
-                    .split(block.inner(area));
-
-                f.render_widget(&*describe_textarea, popup_chunks[0]);
-
-                let help = Paragraph::new(vec!["Ctrl+s: save | Escape: cancel".into()])
-                    .fg(Color::DarkGray)
-                    .alignment(Alignment::Center)
-                    .block(
-                        Block::default()
-                            .borders(Borders::TOP)
-                            .border_type(BorderType::Rounded)
-                            .border_style(Style::default().fg(Color::DarkGray)),
-                    );
-
-                f.render_widget(help, popup_chunks[1]);
-            }
-        }
-
         // Draw revset textarea
         {
             if let Some(log_revset_textarea) = self.log_revset_textarea.as_mut() {
@@ -962,30 +918,6 @@ impl Component for LogTab<'_> {
     }
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
-        if let Some(describe_textarea) = self.describe_textarea.as_mut() {
-            if let Event::Key(key) = event {
-                match self.keybinds.match_event(key) {
-                    LogTabEvent::Save => {
-                        // TODO: Handle error
-                        new_commander().run_describe(
-                            self.head.commit_id.as_str(),
-                            &describe_textarea.lines().join("\n"),
-                        )?;
-                        self.set_head(new_commander().get_head_latest(&self.head)?);
-                        self.describe_textarea = None;
-                        return Ok(ComponentInputResult::Handled);
-                    }
-                    LogTabEvent::Cancel => {
-                        self.describe_textarea = None;
-                        return Ok(ComponentInputResult::Handled);
-                    }
-                    _ => (),
-                }
-            }
-            describe_textarea.input(event);
-            return Ok(ComponentInputResult::Handled);
-        }
-
         if let Some(log_revset_textarea) = self.log_revset_textarea.as_mut() {
             if let Event::Key(key) = event {
                 match self.keybinds.match_event(key) {
