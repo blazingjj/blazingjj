@@ -60,6 +60,7 @@ impl Display for HeadParseError {
 // commands which supports templating.
 const HEAD_TEMPLATE: &str =
     r#""[" ++ change_id ++ "|" ++ commit_id ++ "|" ++ divergent ++ "|" ++ immutable ++ "]""#;
+const HEAD_TEMPLATE_NL: &str = r#""[" ++ change_id ++ "|" ++ commit_id ++ "|" ++ divergent ++ "|" ++ immutable ++ "]" ++ "\n""#;
 // Regex to parse HEAD_TEMPLATE
 static HEAD_TEMPLATE_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[(.*)\|(.*)\|(.*)\|(.*)\]").unwrap());
@@ -89,6 +90,31 @@ fn parse_head(text: &str) -> Result<Head> {
 }
 
 impl Commander {
+    fn execute_jj_log(&self, revset: &str, template: &str) -> Result<String, CommandError> {
+        self.execute_jj_command(
+            ["log", "--no-graph", "--template", template, "-r", revset],
+            false,
+            true,
+        )
+    }
+
+    fn execute_jj_log_one(&self, revset: &str, template: &str) -> Result<String, CommandError> {
+        self.execute_jj_command(
+            [
+                "log",
+                "--no-graph",
+                "--template",
+                template,
+                "-r",
+                revset,
+                "--limit",
+                "1",
+            ],
+            false,
+            true,
+        )
+    }
+
     /// Get log. Returns human readable log and mapping to log line to head.
     /// Maps to `jj log`
     #[instrument(level = "trace", skip(self))]
@@ -170,20 +196,7 @@ impl Commander {
     pub fn get_current_head(&self) -> Result<Head> {
         parse_head(
             &self
-                .execute_jj_command(
-                    vec![
-                        "log",
-                        "--no-graph",
-                        "--template",
-                        &format!(r#"{HEAD_TEMPLATE} ++ "\n""#),
-                        "-r",
-                        "@",
-                        "--limit",
-                        "1",
-                    ],
-                    false,
-                    true,
-                )
+                .execute_jj_log_one("@", HEAD_TEMPLATE_NL)
                 .context("Failed getting current head")?
                 .remove_end_line(),
         )
@@ -193,17 +206,9 @@ impl Commander {
     #[instrument(level = "trace", skip(self))]
     pub fn get_head_latest(&self, head: &Head) -> Result<Head> {
         // Get all heads which point to the same change ID
-        let latest_heads_res = self.execute_jj_command(
-            vec![
-                "log",
-                "--no-graph",
-                "-r",
-                &format!(r#"change_id({})"#, head.change_id.as_str()),
-                "--template",
-                &format!(r#"{HEAD_TEMPLATE} ++ "\n""#),
-            ],
-            false,
-            true,
+        let latest_heads_res = self.execute_jj_log(
+            &format!(r#"change_id({})"#, head.change_id.as_str()),
+            HEAD_TEMPLATE_NL,
         );
         let Ok(latest_heads_res) = latest_heads_res else {
             return self.get_head_latest(&self.get_current_head()?);
@@ -264,20 +269,7 @@ impl Commander {
     pub fn get_commit_parent(&self, commit_id: &CommitId) -> Result<Head> {
         parse_head(
             &self
-                .execute_jj_command(
-                    vec![
-                        "log",
-                        "--no-graph",
-                        "--template",
-                        &format!(r#"{HEAD_TEMPLATE} ++ "\n""#),
-                        "-r",
-                        &format!("{commit_id}-"),
-                        "--limit",
-                        "1",
-                    ],
-                    false,
-                    true,
-                )
+                .execute_jj_log_one(&format!("{commit_id}-"), HEAD_TEMPLATE_NL)
                 .with_context(|| format!("Failed getting commit parent: {commit_id}"))?
                 .remove_end_line(),
         )
@@ -288,20 +280,7 @@ impl Commander {
     #[instrument(level = "trace", skip(self))]
     pub fn get_commit_description(&self, commit_id: &CommitId) -> Result<String> {
         Ok(self
-            .execute_jj_command(
-                vec![
-                    "log",
-                    "--no-graph",
-                    "--template",
-                    "description",
-                    "-r",
-                    commit_id.as_str(),
-                    "--limit",
-                    "1",
-                ],
-                false,
-                true,
-            )
+            .execute_jj_log_one(commit_id.as_str(), "description")
             .with_context(|| format!("Failed getting commit description: {commit_id}"))?
             .remove_end_line())
     }
@@ -311,20 +290,7 @@ impl Commander {
     #[instrument(level = "trace", skip(self))]
     pub fn check_revision_immutable(&self, revision: &str) -> Result<bool> {
         Ok(self
-            .execute_jj_command(
-                vec![
-                    "log",
-                    "--no-graph",
-                    "--template",
-                    "immutable",
-                    "-r",
-                    revision,
-                    "--limit",
-                    "1",
-                ],
-                false,
-                true,
-            )
+            .execute_jj_log_one(revision, "immutable")
             .with_context(|| format!("Failed checking if revision is immutable: {revision}"))?
             .remove_end_line()
             == "true")
@@ -336,20 +302,7 @@ impl Commander {
     pub fn get_bookmark_head(&self, bookmark: &Bookmark) -> Result<Head> {
         parse_head(
             &self
-                .execute_jj_command(
-                    vec![
-                        "log",
-                        "--no-graph",
-                        "--template",
-                        &format!(r#"{HEAD_TEMPLATE} ++ "\n""#),
-                        "-r",
-                        &bookmark.to_string(),
-                        "--limit",
-                        "1",
-                    ],
-                    false,
-                    true,
-                )
+                .execute_jj_log_one(&bookmark.to_string(), HEAD_TEMPLATE_NL)
                 .context("Failed getting bookmark head")?
                 .remove_end_line(),
         )
