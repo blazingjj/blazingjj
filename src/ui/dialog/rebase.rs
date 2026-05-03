@@ -45,8 +45,10 @@ use crate::commander::new_commander;
 use crate::keybinds::rebase_popup::CutOption;
 use crate::keybinds::rebase_popup::PasteOption;
 use crate::keybinds::rebase_popup::PopupAction;
+use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::dialog::MessagePopup;
 use crate::ui::utils::centered_rect_fixed;
 
 type Keybinds = crate::keybinds::rebase_popup::Keybinds;
@@ -71,14 +73,6 @@ impl RebasePopup {
             source_mode: CutOption::SingleRevision,
             target_mode: PasteOption::NewBranch,
         }
-    }
-
-    /// Collect all the rendering code that would have been in
-    /// log_tab.rs/draw
-    pub fn render_widget(&mut self, frame: &mut Frame) {
-        let area = centered_rect_fixed(frame.area(), 32, 12);
-        self.draw(frame, area)
-            .expect("Expected drawing without failues");
     }
 
     /// Map an event to a popup action
@@ -107,31 +101,12 @@ impl RebasePopup {
         new_commander().run_rebase(src_mode, src_rev, tgt_mode, tgt_rev)?;
         Ok(())
     }
-
-    /// Process the input event. If this function returns Ok(true),
-    /// then the popup should be closed. Either a rebase was executed
-    /// or the operation was cancelled.
-    /// If the result is Ok(false) the function did handle
-    /// the input, but the popup should not be closed yet.
-    /// Err(_) will be returned if the jj command failed.
-    pub fn handle_input(&mut self, event: Event) -> Result<bool> {
-        match self.match_event(event) {
-            PopupAction::Ok => {
-                self.run_command()?;
-                return Ok(true);
-            }
-            PopupAction::Cancel => return Ok(true),
-            PopupAction::SetSourceMode(m) => self.source_mode = m,
-            PopupAction::SetTargetMode(m) => self.target_mode = m,
-            PopupAction::None => (),
-        }
-        Ok(false)
-    }
 }
 
 impl Component for RebasePopup {
     /// Render the dialog into the area.
     fn draw(&mut self, frame: &mut Frame<'_>, area: Rect) -> Result<()> {
+        let area = centered_rect_fixed(area, 32, 12);
         // The border of the dialog
         let block = Block::bordered()
             .title(Span::styled(" Rebase ", Style::new().bold().cyan()))
@@ -211,9 +186,27 @@ impl Component for RebasePopup {
         Ok(())
     }
 
-    fn input(&mut self, _event: Event) -> Result<ComponentInputResult> {
-        unreachable!();
-        //return Ok(ComponentInputResult::Handled);
+    fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
+        match self.match_event(event) {
+            PopupAction::Ok => match self.run_command() {
+                Ok(()) => Ok(ComponentInputResult::HandledAction(AppAction::PopupDone)),
+                Err(e) => Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                    Box::new(MessagePopup::new("Error", e.to_string())),
+                ))),
+            },
+            PopupAction::Cancel => Ok(ComponentInputResult::HandledAction(
+                AppAction::PopupCanceled,
+            )),
+            PopupAction::SetSourceMode(m) => {
+                self.source_mode = m;
+                Ok(ComponentInputResult::Handled)
+            }
+            PopupAction::SetTargetMode(m) => {
+                self.target_mode = m;
+                Ok(ComponentInputResult::Handled)
+            }
+            PopupAction::None => Ok(ComponentInputResult::Handled),
+        }
     }
 }
 
