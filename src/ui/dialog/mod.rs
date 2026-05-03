@@ -8,6 +8,7 @@ until it sends [`AppAction::PopupDone`](crate::ui::AppAction) or
 [`AppAction::PopupCanceled`](crate::ui::AppAction).
 */
 
+mod bookmark_name;
 mod bookmark_set;
 mod command;
 mod describe;
@@ -16,6 +17,7 @@ mod loader;
 mod message;
 mod rebase;
 
+pub use bookmark_name::BookmarkNamePopup;
 pub use bookmark_set::BookmarkSetPopup;
 pub use command::CommandPopup;
 pub use describe::DescribePopup;

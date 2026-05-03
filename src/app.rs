@@ -68,7 +68,7 @@ pub struct App<'a> {
     pub current_tab: TabId,
     pub log: LogTab<'a>,
     pub files: FilesTab,
-    pub bookmarks: BookmarksTab<'a>,
+    pub bookmarks: BookmarksTab,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     global_keybinds: GlobalKeybinds,
