@@ -82,8 +82,6 @@ pub struct LogTab<'a> {
     describe_textarea: Option<TextArea<'a>>,
     describe_after_new: bool,
 
-    rebase_popup: Option<RebasePopup>,
-
     squash_ignore_immutable: bool,
     squash_target: Option<Head>,
 
@@ -170,8 +168,6 @@ impl<'a> LogTab<'a> {
 
             describe_textarea: None,
             describe_after_new: false,
-
-            rebase_popup: None,
 
             squash_ignore_immutable: false,
             squash_target: None,
@@ -434,10 +430,11 @@ impl<'a> LogTab<'a> {
             }
             LogTabEvent::Rebase => {
                 let source_change = new_commander().get_current_head()?;
-                let target_change = &self.head;
-                self.rebase_popup = Some(RebasePopup::new(
-                    source_change.clone(),
-                    target_change.clone(),
+                return Ok(ComponentInputResult::HandledAction(
+                    ComponentAction::SetPopup(Some(Box::new(RebasePopup::new(
+                        source_change,
+                        self.head.clone(),
+                    )))),
                 ));
             }
             LogTabEvent::Squash { ignore_immutable } => {
@@ -804,13 +801,6 @@ impl Component for LogTab<'_> {
             }
         }
 
-        // Draw rebase popup
-        {
-            if let Some(log_rebase_popup) = &mut self.rebase_popup {
-                log_rebase_popup.render_widget(f)
-            }
-        }
-
         Ok(())
     }
 
@@ -861,30 +851,6 @@ impl Component for LogTab<'_> {
                 }
             }
             log_revset_textarea.input(event);
-            return Ok(ComponentInputResult::Handled);
-        }
-
-        if let Some(rebase_popup) = &mut self.rebase_popup {
-            let handled = rebase_popup.handle_input(event.clone());
-            if handled.is_err() {
-                // Close popup and show error message
-                self.rebase_popup = None;
-                let msg = handled.err().unwrap();
-                return Ok(ComponentInputResult::HandledAction(
-                    ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
-                        "Error",
-                        msg.to_string(),
-                    )))),
-                ));
-            }
-            if handled.ok() == Some(true) {
-                // when handle_input returns true,
-                // the popup should be closed
-                self.rebase_popup = None;
-                return Ok(ComponentInputResult::HandledAction(
-                    ComponentAction::RefreshTab(),
-                ));
-            }
             return Ok(ComponentInputResult::Handled);
         }
 
