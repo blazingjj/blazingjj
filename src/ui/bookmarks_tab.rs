@@ -18,7 +18,6 @@ use tui_confirm_dialog::Listener;
 
 use crate::commander::CommandError;
 use crate::commander::bookmarks::BookmarkLine;
-use crate::commander::ids::ChangeId;
 use crate::commander::new_commander;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
@@ -28,11 +27,11 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
+use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
 use crate::ui::utils::PaneDivider;
-use crate::ui::utils::centered_rect;
 use crate::ui::utils::centered_rect_line_height;
 use crate::ui::utils::tabs_to_spaces;
 
@@ -78,9 +77,7 @@ pub struct BookmarksTab<'a> {
     delete: Option<DeleteBookmark>,
     forget: Option<ForgetBookmark>,
 
-    describe_textarea: Option<TextArea<'a>>,
     describe_after_new: bool,
-    describe_after_new_change: Option<ChangeId>,
 
     edit_ignore_immutable: bool,
 
@@ -174,8 +171,6 @@ impl BookmarksTab<'_> {
             forget: None,
 
             describe_after_new: false,
-            describe_textarea: None,
-            describe_after_new_change: None,
 
             edit_ignore_immutable: false,
 
@@ -338,11 +333,11 @@ impl Component for BookmarksTab<'_> {
                         new_commander().run_new([bookmark.to_string().as_str()])?;
                         let head = new_commander().get_current_head()?;
                         if self.describe_after_new {
-                            self.describe_after_new_change = Some(head.change_id);
                             self.describe_after_new = false;
-                            let textarea = TextArea::default();
-                            self.describe_textarea = Some(textarea);
-                            return Ok(None);
+                            return Ok(Some(AppAction::SetPopup(Box::new(DescribePopup::new(
+                                head,
+                                vec![],
+                            )))));
                         } else {
                             return Ok(Some(AppAction::ViewLog(head)));
                         }
@@ -618,39 +613,6 @@ impl Component for BookmarksTab<'_> {
             }
         }
 
-        // Draw describe textarea
-        {
-            if let Some(describe_textarea) = self.describe_textarea.as_mut() {
-                let block = Block::bordered()
-                    .title(Span::styled(" Describe ", Style::new().bold().cyan()))
-                    .title_alignment(Alignment::Center)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Green));
-                let area = centered_rect(area, 50, 50);
-                f.render_widget(Clear, area);
-                f.render_widget(&block, area);
-
-                let popup_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Fill(1), Constraint::Length(2)])
-                    .split(block.inner(area));
-
-                f.render_widget(&*describe_textarea, popup_chunks[0]);
-
-                let help = Paragraph::new(vec!["Ctrl+s: save | Escape: cancel".into()])
-                    .fg(Color::DarkGray)
-                    .alignment(Alignment::Center)
-                    .block(
-                        Block::default()
-                            .borders(Borders::TOP)
-                            .border_type(BorderType::Rounded)
-                            .border_style(Style::default().fg(Color::DarkGray)),
-                    );
-
-                f.render_widget(help, popup_chunks[1]);
-            }
-        }
-
         Ok(())
     }
 
@@ -763,36 +725,6 @@ impl Component for BookmarksTab<'_> {
                 }
             }
             rename.textarea.input(event);
-            return Ok(ComponentInputResult::Handled);
-        }
-
-        if let (Some(describe_textarea), Some(describe_after_new_change)) = (
-            self.describe_textarea.as_mut(),
-            self.describe_after_new_change.as_ref(),
-        ) {
-            if let Event::Key(key) = event {
-                match key.code {
-                    KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        // TODO: Handle error
-                        new_commander().run_describe(
-                            describe_after_new_change.as_str(),
-                            &describe_textarea.lines().join("\n"),
-                        )?;
-                        self.describe_textarea = None;
-                        self.describe_after_new_change = None;
-                        return Ok(ComponentInputResult::HandledAction(AppAction::ViewLog(
-                            new_commander().get_current_head()?,
-                        )));
-                    }
-                    KeyCode::Esc => {
-                        self.describe_textarea = None;
-                        self.describe_after_new_change = None;
-                        return Ok(ComponentInputResult::Handled);
-                    }
-                    _ => {}
-                }
-            }
-            describe_textarea.input(event);
             return Ok(ComponentInputResult::Handled);
         }
 
