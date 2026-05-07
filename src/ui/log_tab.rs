@@ -22,6 +22,7 @@ use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::env::DiffFormat;
+use crate::env::JJLayout;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::LogTabEvent;
@@ -90,6 +91,7 @@ pub struct LogTab<'a> {
     edit_ignore_immutable: bool,
 
     config: JjConfig,
+    layout: JJLayout,
     pane_divider: PaneDivider,
     keybinds: LogTabKeybinds,
 }
@@ -146,6 +148,7 @@ impl<'a> LogTab<'a> {
         }
 
         let config = get_env().jj_config.clone();
+        let layout = config.layout();
         let pane_divider = PaneDivider::new(config.layout_percent());
 
         Ok(Self {
@@ -179,6 +182,7 @@ impl<'a> LogTab<'a> {
             edit_ignore_immutable: false,
 
             config,
+            layout,
             pane_divider,
             keybinds,
         })
@@ -418,6 +422,13 @@ impl<'a> LogTab<'a> {
             LogTabEvent::ToggleDiffFormat => {
                 self.diff_format = self.diff_format.get_next(self.config.diff_tool());
                 self.refresh_head_output();
+            }
+            LogTabEvent::ToggleLayout => {
+                self.layout = match self.layout {
+                    JJLayout::Horizontal => JJLayout::Vertical,
+                    JJLayout::Vertical => JJLayout::Horizontal,
+                };
+                self.pane_divider.reset();
             }
             LogTabEvent::Refresh => {
                 self.mark_cache_as_dirty();
@@ -703,7 +714,7 @@ impl Component for LogTab<'_> {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = self.pane_divider.split(area, self.config.layout());
+        let chunks = self.pane_divider.split(area, self.layout);
 
         // Draw log
         self.log_panel.draw(f, chunks[0])?;
@@ -922,10 +933,7 @@ impl Component for LogTab<'_> {
         }
 
         if let Event::Mouse(mouse_event) = event {
-            if self
-                .pane_divider
-                .handle_mouse(mouse_event, self.config.layout())
-            {
+            if self.pane_divider.handle_mouse(mouse_event, self.layout) {
                 return Ok(ComponentInputResult::Handled);
             }
             let input_result = self.log_panel.input(event.clone())?;

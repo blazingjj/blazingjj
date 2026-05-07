@@ -95,6 +95,7 @@ See all key mappings for the current tab with `?`.
 - Select current change with `@`
 - View change files in files tab with `Enter`
 - Display different revset with `r` (`jj log -r`)
+- Toggle between horizontal and vertical split with `Ctrl+w`
 - Change details panel diff format between color words (default) and Git (and diff tool if set) with `w`
 - Toggle details panel wrapping with `W`
 - Create new change after highlighted change with `n` (`jj new`)

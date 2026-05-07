@@ -5,6 +5,7 @@ use anyhow::Result;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
+use ratatui::crossterm::event::KeyModifiers;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use tracing::instrument;
@@ -16,6 +17,7 @@ use crate::commander::files::File;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::env::DiffFormat;
+use crate::env::JJLayout;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::ui::Component;
@@ -43,6 +45,7 @@ pub struct FilesTab {
     diff_format: DiffFormat,
 
     config: JjConfig,
+    layout: JJLayout,
     pane_divider: PaneDivider,
 }
 
@@ -91,6 +94,7 @@ impl FilesTab {
         ));
 
         let config = get_env().jj_config.clone();
+        let layout = config.layout();
         let pane_divider = PaneDivider::new(config.layout_percent());
 
         Ok(Self {
@@ -109,6 +113,7 @@ impl FilesTab {
             diff_panel: DetailsPanel::new(),
 
             config,
+            layout,
             pane_divider,
         })
     }
@@ -207,7 +212,7 @@ impl Component for FilesTab {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = self.pane_divider.split(area, self.config.layout());
+        let chunks = self.pane_divider.split(area, self.layout);
 
         // Draw files
         {
@@ -334,6 +339,23 @@ impl Component for FilesTab {
                 return Ok(ComponentInputResult::Handled);
             }
 
+            let is_toggle_layout = self
+                .config
+                .keybinds()
+                .and_then(|k| k.toggle_layout.as_ref())
+                .map(|kb| kb.matches(key))
+                .unwrap_or(
+                    key.code == KeyCode::Char('w') && key.modifiers.contains(KeyModifiers::CONTROL),
+                );
+            if is_toggle_layout {
+                self.layout = match self.layout {
+                    JJLayout::Horizontal => JJLayout::Vertical,
+                    JJLayout::Vertical => JJLayout::Horizontal,
+                };
+                self.pane_divider.reset();
+                return Ok(ComponentInputResult::Handled);
+            }
+
             if self.diff_panel.input(key) {
                 return Ok(ComponentInputResult::Handled);
             }
@@ -414,7 +436,7 @@ impl Component for FilesTab {
         }
 
         if let Event::Mouse(mouse) = event {
-            if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+            if self.pane_divider.handle_mouse(mouse, self.layout) {
                 return Ok(ComponentInputResult::Handled);
             }
             if self.diff_panel.input_mouse(mouse) {
