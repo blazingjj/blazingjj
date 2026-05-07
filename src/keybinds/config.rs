@@ -46,6 +46,7 @@ pub struct LogTabKeybindsConfig {
 
     pub focus_current: Option<Keybind>,
     pub toggle_diff_format: Option<Keybind>,
+    pub toggle_layout: Option<Keybind>,
 
     pub refresh: Option<Keybind>,
     pub duplicate: Option<Keybind>,

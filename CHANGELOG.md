@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Message popup now supports scrolling with a scrollbar
 - Command popup output now preserves ANSI color
 - Drag to resize pane divider in all tabs
+- Toggle horizontal/vertical split at runtime with `Ctrl+w` (configurable via `toggle-layout` keybind)
 
 ## [0.8.0] - 2026-04-19
 
