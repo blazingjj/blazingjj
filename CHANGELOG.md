@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Command popup output now preserves ANSI color
 - Drag to resize pane divider in all tabs
 
+### Changed
+
+- Pressing `s` on the working copy now offers to squash into the parent (when there is exactly one)
+
 ## [0.8.0] - 2026-04-19
 
 ### Added

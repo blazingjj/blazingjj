@@ -85,6 +85,7 @@ pub struct LogTab<'a> {
     rebase_popup: Option<RebasePopup>,
 
     squash_ignore_immutable: bool,
+    squash_target: Option<Head>,
 
     edit_ignore_immutable: bool,
 
@@ -173,6 +174,7 @@ impl<'a> LogTab<'a> {
             rebase_popup: None,
 
             squash_ignore_immutable: false,
+            squash_target: None,
 
             edit_ignore_immutable: false,
 
@@ -439,15 +441,28 @@ impl<'a> LogTab<'a> {
                 ));
             }
             LogTabEvent::Squash { ignore_immutable } => {
-                if self.head.change_id == new_commander().get_current_head()?.change_id {
-                    return Ok(ComponentInputResult::HandledAction(
-                        ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
-                            "Squash",
-                            "Cannot squash onto current change",
-                        )))),
-                    ));
-                }
-                if self.head.immutable && !ignore_immutable {
+                let current_head = new_commander().get_current_head()?;
+                let target = if self.head.change_id == current_head.change_id {
+                    match new_commander().get_commit_parent(&current_head.commit_id) {
+                        Ok(parent) => {
+                            self.squash_target = Some(parent.clone());
+                            parent
+                        }
+                        Err(_) => {
+                            return Ok(ComponentInputResult::HandledAction(
+                                ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
+                                    "Squash",
+                                    "Cannot squash onto current change",
+                                )))),
+                            ));
+                        }
+                    }
+                } else {
+                    self.squash_target = None;
+                    self.head.clone()
+                };
+
+                if target.immutable && !ignore_immutable {
                     return Ok(ComponentInputResult::HandledAction(
                         ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
                             "Squash",
@@ -456,9 +471,14 @@ impl<'a> LogTab<'a> {
                     ));
                 }
 
+                let description = if self.squash_target.is_some() {
+                    "Are you sure you want to squash @ into its parent?"
+                } else {
+                    "Are you sure you want to squash @ into this change?"
+                };
                 let mut lines = vec![
-                    Line::from("Are you sure you want to squash @ into this change?"),
-                    Line::from(format!("Squash into {}", self.head.change_id.as_str())),
+                    Line::from(description),
+                    Line::from(format!("Squash into {}", target.change_id.as_str())),
                 ];
                 if ignore_immutable {
                     lines.push(Line::from("This change is immutable."));
@@ -658,8 +678,12 @@ impl Component for LogTab<'_> {
                     return self.execute_abandon();
                 }
                 SQUASH_POPUP_ID => {
-                    new_commander()
-                        .run_squash(self.head.commit_id.as_str(), self.squash_ignore_immutable)?;
+                    let target_id = self
+                        .squash_target
+                        .take()
+                        .unwrap_or_else(|| self.head.clone())
+                        .commit_id;
+                    new_commander().run_squash(target_id.as_str(), self.squash_ignore_immutable)?;
                     self.set_head(new_commander().get_current_head()?);
                     return Ok(Some(ComponentAction::ChangeHead(self.head.clone())));
                 }
