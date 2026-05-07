@@ -15,6 +15,7 @@ use crate::commander::files::File;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::env::DiffFormat;
+use crate::env::JJLayout;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::DetailsPanelEvent;
@@ -47,6 +48,7 @@ pub struct FilesTab {
     config: JjConfig,
     keybinds: FilesTabKeybinds,
     details_keybinds: DetailsPanelKeybinds,
+    layout: JJLayout,
     pane_divider: PaneDivider,
 }
 
@@ -95,6 +97,7 @@ impl FilesTab {
         ));
 
         let config = get_env().jj_config.clone();
+        let layout = config.layout();
         let pane_divider = PaneDivider::new(config.layout_percent());
         let mut keybinds = FilesTabKeybinds::default();
         if let Some(keybinds_config) = config.keybinds() {
@@ -120,8 +123,14 @@ impl FilesTab {
             config,
             keybinds,
             details_keybinds,
+            layout,
             pane_divider,
         })
+    }
+
+    pub fn set_layout(&mut self, layout: JJLayout) {
+        self.layout = layout;
+        self.pane_divider.reset();
     }
 
     pub fn set_head(&mut self, head: &Head) -> Result<()> {
@@ -218,7 +227,7 @@ impl Component for FilesTab {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = self.pane_divider.split(area, self.config.layout());
+        let chunks = self.pane_divider.split(area, self.layout);
 
         // Draw files
         {
@@ -399,12 +408,17 @@ impl Component for FilesTab {
                     let head = &new_commander().get_current_head()?;
                     self.set_head(head)?;
                 }
+                FilesTabEvent::ToggleLayout => {
+                    return Ok(ComponentInputResult::HandledAction(
+                        ComponentAction::ToggleLayout,
+                    ));
+                }
                 FilesTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
             };
         }
 
         if let Event::Mouse(mouse) = event {
-            if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+            if self.pane_divider.handle_mouse(mouse, self.layout) {
                 return Ok(ComponentInputResult::Handled);
             }
             if self.diff_panel.input_mouse(mouse) {

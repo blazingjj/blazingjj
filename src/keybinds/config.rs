@@ -8,6 +8,8 @@ pub struct KeybindsConfig {
     pub scroll_down_half: Option<Keybind>,
     pub scroll_up_half: Option<Keybind>,
 
+    pub toggle_layout: Option<Keybind>,
+
     pub log_tab: Option<LogTabKeybindsConfig>,
     pub message_popup: Option<MessagePopupKeybindsConfig>,
 }

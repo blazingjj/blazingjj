@@ -39,6 +39,7 @@ pub enum ComponentAction {
     SetPopup(Option<Box<dyn Component>>),
     Multiple(Vec<ComponentAction>),
     RefreshTab(),
+    ToggleLayout,
 }
 
 pub trait Component {

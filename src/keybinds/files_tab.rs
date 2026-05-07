@@ -25,6 +25,7 @@ pub enum FilesTabEvent {
     Restore,
     Refresh,
     FocusCurrent,
+    ToggleLayout,
 
     Unbound,
 }
@@ -45,6 +46,7 @@ impl Default for FilesTabKeybinds {
             FilesTabEvent::Refresh => "shift+r",
             FilesTabEvent::Refresh => "f5",
             FilesTabEvent::FocusCurrent => "@",
+            FilesTabEvent::ToggleLayout => "ctrl+w",
         );
         Self { keys }
     }
@@ -64,6 +66,7 @@ impl FilesTabKeybinds {
             FilesTabEvent::ScrollUp => config.scroll_up,
             FilesTabEvent::ScrollDownHalf => config.scroll_down_half,
             FilesTabEvent::ScrollUpHalf => config.scroll_up_half,
+            FilesTabEvent::ToggleLayout => config.toggle_layout,
         );
     }
 
@@ -77,6 +80,7 @@ impl FilesTabKeybinds {
             FilesTabEvent::Untrack => "untrack file",
             FilesTabEvent::Restore => "restore file",
             FilesTabEvent::FocusCurrent => "view current change files",
+            FilesTabEvent::ToggleLayout => "toggle horizontal/vertical split",
         )
     }
 }

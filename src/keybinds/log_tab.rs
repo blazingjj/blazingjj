@@ -32,6 +32,7 @@ pub enum LogTabEvent {
 
     FocusCurrent,
     ToggleHeadMark,
+    ToggleLayout,
 
     Refresh,
     CreateNew {
@@ -83,6 +84,7 @@ impl Default for LogTabKeybinds {
             LogTabEvent::ScrollToTop => "ctrl+home",
             LogTabEvent::FocusCurrent => "@",
             LogTabEvent::ToggleHeadMark => "space",
+            LogTabEvent::ToggleLayout => "ctrl+w",
             LogTabEvent::Refresh => "shift+r",
             LogTabEvent::Refresh => "f5",
             LogTabEvent::Duplicate => "shift+d",
@@ -128,6 +130,7 @@ impl LogTabKeybinds {
             LogTabEvent::ScrollUp => config.scroll_up,
             LogTabEvent::ScrollDownHalf => config.scroll_down_half,
             LogTabEvent::ScrollUpHalf => config.scroll_up_half,
+            LogTabEvent::ToggleLayout => config.toggle_layout,
         );
         if let Some(ref log_tab) = config.log_tab {
             self.extend_from_log_tab_config(log_tab);
@@ -179,6 +182,7 @@ impl LogTabKeybinds {
             LogTabEvent::ScrollUpHalf => "scroll up by ½ page",
             LogTabEvent::OpenFiles => "see files",
             LogTabEvent::FocusCurrent => "current change",
+            LogTabEvent::ToggleLayout => "toggle horizontal/vertical split",
             LogTabEvent::EditRevset => "set revset",
             LogTabEvent::Describe => "describe change",
             LogTabEvent::Duplicate => "duplicate change",

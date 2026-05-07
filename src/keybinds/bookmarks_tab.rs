@@ -32,6 +32,7 @@ pub enum BookmarksTabEvent {
     NewChange { describe: bool },
     EditChange { ignore_immutable: bool },
     ViewInLog,
+    ToggleLayout,
 
     Unbound,
 }
@@ -61,6 +62,7 @@ impl Default for BookmarksTabKeybinds {
             BookmarksTabEvent::EditChange { ignore_immutable: false } => "e",
             BookmarksTabEvent::EditChange { ignore_immutable: true } => "shift+e",
             BookmarksTabEvent::ViewInLog => "enter",
+            BookmarksTabEvent::ToggleLayout => "ctrl+w",
         );
         Self { keys }
     }
@@ -80,6 +82,7 @@ impl BookmarksTabKeybinds {
             BookmarksTabEvent::ScrollUp => config.scroll_up,
             BookmarksTabEvent::ScrollDownHalf => config.scroll_down_half,
             BookmarksTabEvent::ScrollUpHalf => config.scroll_up_half,
+            BookmarksTabEvent::ToggleLayout => config.toggle_layout,
         );
     }
 
@@ -102,6 +105,7 @@ impl BookmarksTabKeybinds {
             BookmarksTabEvent::NewChange { describe: true } => "new and describe",
             BookmarksTabEvent::EditChange { ignore_immutable: false } => "edit bookmark",
             BookmarksTabEvent::EditChange { ignore_immutable: true } => "edit bookmark ignoring immutability",
+            BookmarksTabEvent::ToggleLayout => "toggle horizontal/vertical split",
         )
     }
 }

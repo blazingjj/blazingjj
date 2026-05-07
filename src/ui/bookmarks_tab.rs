@@ -22,6 +22,7 @@ use crate::commander::bookmarks::BookmarkLine;
 use crate::commander::ids::ChangeId;
 use crate::commander::new_commander;
 use crate::env::DiffFormat;
+use crate::env::JJLayout;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::BookmarksTabEvent;
@@ -95,6 +96,7 @@ pub struct BookmarksTab<'a> {
     config: JjConfig,
     keybinds: BookmarksTabKeybinds,
     details_keybinds: DetailsPanelKeybinds,
+    layout: JJLayout,
     pane_divider: PaneDivider,
 }
 
@@ -159,6 +161,7 @@ impl BookmarksTab<'_> {
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
 
         let config = get_env().jj_config.clone();
+        let layout = config.layout();
         let pane_divider = PaneDivider::new(config.layout_percent());
         let mut keybinds = BookmarksTabKeybinds::default();
         if let Some(keybinds_config) = config.keybinds() {
@@ -197,8 +200,14 @@ impl BookmarksTab<'_> {
             config,
             keybinds,
             details_keybinds,
+            layout,
             pane_divider,
         })
+    }
+
+    pub fn set_layout(&mut self, layout: JJLayout) {
+        self.layout = layout;
+        self.pane_divider.reset();
     }
 
     pub fn get_current_bookmark_index(&self) -> Option<usize> {
@@ -334,7 +343,7 @@ impl Component for BookmarksTab<'_> {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = self.pane_divider.split(area, self.config.layout());
+        let chunks = self.pane_divider.split(area, self.layout);
 
         // Draw bookmarks
         {
@@ -948,12 +957,17 @@ impl Component for BookmarksTab<'_> {
                         ));
                     }
                 }
+                BookmarksTabEvent::ToggleLayout => {
+                    return Ok(ComponentInputResult::HandledAction(
+                        ComponentAction::ToggleLayout,
+                    ));
+                }
                 BookmarksTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
             };
         }
 
         if let Event::Mouse(mouse) = event {
-            if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+            if self.pane_divider.handle_mouse(mouse, self.layout) {
                 return Ok(ComponentInputResult::Handled);
             }
             if self.bookmark_panel.input_mouse(mouse) {

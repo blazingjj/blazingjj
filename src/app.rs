@@ -102,7 +102,9 @@ impl<'a> App<'a> {
 
     pub fn get_log_tab(&mut self) -> Result<&mut LogTab<'a>> {
         if self.log.is_none() {
-            self.log = Some(LogTab::new()?);
+            let mut tab = LogTab::new()?;
+            tab.set_layout(self.layout);
+            self.log = Some(tab);
         }
 
         self.log
@@ -113,7 +115,9 @@ impl<'a> App<'a> {
     pub fn get_files_tab(&mut self) -> Result<&mut FilesTab> {
         if self.files.is_none() {
             let current_head = new_commander().get_current_head()?;
-            self.files = Some(FilesTab::new(&current_head)?);
+            let mut tab = FilesTab::new(&current_head)?;
+            tab.set_layout(self.layout);
+            self.files = Some(tab);
         }
 
         self.files
@@ -123,7 +127,9 @@ impl<'a> App<'a> {
 
     pub fn get_bookmarks_tab(&mut self) -> Result<&mut BookmarksTab<'a>> {
         if self.bookmarks.is_none() {
-            self.bookmarks = Some(BookmarksTab::new()?);
+            let mut tab = BookmarksTab::new()?;
+            tab.set_layout(self.layout);
+            self.bookmarks = Some(tab);
         }
 
         self.bookmarks
@@ -183,6 +189,18 @@ impl<'a> App<'a> {
                     let head = new_commander().get_current_head()?.clone();
                     self.get_log_tab()?.set_head(head);
                 };
+            }
+            ComponentAction::ToggleLayout => {
+                self.layout = self.layout.toggle();
+                if let Some(tab) = self.log.as_mut() {
+                    tab.set_layout(self.layout);
+                }
+                if let Some(tab) = self.files.as_mut() {
+                    tab.set_layout(self.layout);
+                }
+                if let Some(tab) = self.bookmarks.as_mut() {
+                    tab.set_layout(self.layout);
+                }
             }
         }
 
