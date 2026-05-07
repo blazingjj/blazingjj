@@ -95,6 +95,12 @@ impl PaneDivider {
         }
     }
 
+    /// Reset the cached split size so the next `split` call recalculates from
+    /// `init_percent`. Call this when the layout direction changes.
+    pub fn reset(&mut self) {
+        self.size = None;
+    }
+
     fn update_size(&mut self, col: u16, row: u16, layout: JJLayout) {
         let [r0, r1] = self.rects;
         let (pos, total) = match layout {

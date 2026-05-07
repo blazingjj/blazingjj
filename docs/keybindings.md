@@ -55,6 +55,7 @@ scroll-up-half = "shift+k"
 
 focus-current = "@"
 toggle-diff-format = "w"
+toggle-layout = "ctrl+w"
 
 refresh = ["shift+r", "f5"]
 create-new = "n"
