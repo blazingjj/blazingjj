@@ -360,6 +360,10 @@ impl Tab for KeybindingsTab {
         self.keybinds = KeybindingsTabKeybinds::new();
     }
 
+    fn toggle_layout(&mut self) {
+        self.pane_divider.toggle_layout();
+    }
+
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
         self.scroll_bindings(scroll.distance(self.bindings_pane.visible_items()));
 

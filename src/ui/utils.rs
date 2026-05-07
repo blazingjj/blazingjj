@@ -27,13 +27,15 @@ use crate::keybinds::Shortcut;
 /// Tracks the split position between two panes and handles drag-to-resize mouse events.
 #[derive(Default)]
 pub struct PaneDivider {
-    /// The share of the area the first pane takes as configured, which
-    /// the divider goes back to whenever the configuration changes.
-    percent: u16,
-    /// Which way round the panes sat when the divider was last placed.
-    /// Its position counts cells along the axis they are divided on, so
-    /// it says nothing about the panes once they turn.
-    layout: JJLayout,
+    /// Which way round the panes sit and what share of the area the
+    /// first one takes, as the configuration read when the divider was
+    /// last placed; it is placed afresh whenever either changes. Its
+    /// position counts cells along the axis the panes are divided on,
+    /// so it says nothing about them once they turn.
+    configured: Option<(JJLayout, u16)>,
+    /// The way round the panes have been turned at runtime, which the
+    /// configured layout takes back over from when it changes.
+    turned_to: Option<JJLayout>,
     size: Option<u16>,
     dragging: bool,
     rects: [Rect; 2],
@@ -44,20 +46,28 @@ impl PaneDivider {
     /// the resulting rects for hit-testing in `handle_mouse`.
     pub fn split(&mut self, area: Rect) -> [Rect; 2] {
         let config = &get_env().jj_config;
-        let (layout, percent) = (config.layout(), config.layout_percent());
-        if percent != self.percent || layout != self.layout {
-            self.percent = percent;
-            self.layout = layout;
+        let configured = (config.layout(), config.layout_percent());
+        // Reading the configuration for the first time is not a change
+        // to it, so a tab drawn only now still shows what it was told
+        // to while it was not.
+        if self
+            .configured
+            .replace(configured)
+            .is_some_and(|was| was != configured)
+        {
+            self.turned_to = None;
             self.size = None;
         }
+        let (_, percent) = configured;
 
+        let layout = self.layout();
         let total = match layout {
             JJLayout::Horizontal => area.width,
             JJLayout::Vertical => area.height,
         };
         let size = match self.size {
             None => {
-                let s = ((total as u32 * self.percent as u32) / 100) as u16;
+                let s = ((total as u32 * percent as u32) / 100) as u16;
                 self.size = Some(s);
                 s
             }
@@ -76,19 +86,20 @@ impl PaneDivider {
     /// Handle a mouse event. Returns true if the event was consumed.
     pub fn handle_mouse(&mut self, mouse: Mouse) -> bool {
         let position = mouse.position();
+        let layout = self.layout();
         match mouse.kind() {
             MouseEventKind::Down(MouseButton::Left) => {
                 self.dragging = false;
-                if self.on_border(position, self.layout) {
+                if self.on_border(position, layout) {
                     self.dragging = true;
-                    self.update_size(position, self.layout);
+                    self.update_size(position, layout);
                     true
                 } else {
                     false
                 }
             }
             MouseEventKind::Drag(MouseButton::Left) if self.dragging => {
-                self.update_size(position, self.layout);
+                self.update_size(position, layout);
                 true
             }
             MouseEventKind::Up(MouseButton::Left) if self.dragging => {
@@ -114,6 +125,20 @@ impl PaneDivider {
                 in_col && on_row
             }
         }
+    }
+
+    /// Which way round the panes sit, going by what they have been
+    /// turned to at runtime over what the configuration says.
+    fn layout(&self) -> JJLayout {
+        self.turned_to
+            .unwrap_or_else(|| get_env().jj_config.layout())
+    }
+
+    /// Turn the panes the other way round, until the configuration
+    /// says otherwise, placing the divider afresh as it does.
+    pub fn toggle_layout(&mut self) {
+        self.turned_to = Some(self.layout().toggle());
+        self.size = None;
     }
 
     fn update_size(&mut self, position: Position, layout: JJLayout) {
@@ -434,7 +459,7 @@ mod tests {
 
         // What the divider remembers is what the configuration said
         // when it was last placed, so it stands in for a change of it.
-        divider.percent = 80;
+        divider.configured = Some((JJLayout::Horizontal, 80));
         let [main, _] = divider.split(area);
         assert_eq!(main.width, 50);
     }
@@ -448,10 +473,25 @@ mod tests {
 
         divider.split(area);
         divider.update_size(Position::new(20, 0), JJLayout::Horizontal);
-        divider.layout = JJLayout::Vertical;
+        divider.configured = Some((JJLayout::Vertical, 50));
 
         let [main, _] = divider.split(area);
         assert_eq!(main.width, 50);
+    }
+
+    /// A divider that has not been placed yet still turns, so that a
+    /// tab drawn only after the panes were turned shows them that way
+    /// round as well.
+    #[test]
+    fn test_a_divider_turns_before_it_is_placed() {
+        set_test_env();
+        let area = Rect::new(0, 0, 100, 10);
+        let mut divider = PaneDivider::default();
+
+        divider.toggle_layout();
+        let [main, _] = divider.split(area);
+
+        assert_eq!(main.width, 100);
     }
 
     /// A label marks the key that picks it in place where the key is one

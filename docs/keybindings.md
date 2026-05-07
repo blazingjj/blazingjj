@@ -36,6 +36,8 @@ scroll-to-bottom = "ctrl+end"
 
 focus-current = "@"
 refresh = ["shift+r", "f5"]
+# toggle-layout comes unbound, so this is an example rather than a default
+toggle-layout = "ctrl+w"
 open-help = "?"
 
 next-tab = "l"

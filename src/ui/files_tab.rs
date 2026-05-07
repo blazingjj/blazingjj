@@ -303,6 +303,10 @@ impl Tab for FilesTab {
         self.details_keybinds = DetailsPanelKeybinds::new();
     }
 
+    fn toggle_layout(&mut self) {
+        self.pane_divider.toggle_layout();
+    }
+
     fn is_stale(&self) -> bool {
         self.stale
     }

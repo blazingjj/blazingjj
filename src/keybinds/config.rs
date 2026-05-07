@@ -12,6 +12,7 @@ pub struct KeybindsConfig {
 
     pub focus_current: Option<Keybind>,
     pub refresh: Option<Keybind>,
+    pub toggle_layout: Option<Keybind>,
     pub open_help: Option<Keybind>,
 
     pub next_tab: Option<Keybind>,

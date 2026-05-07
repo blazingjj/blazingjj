@@ -30,6 +30,8 @@ pub enum GlobalEvent {
 
     FocusCurrent,
     Refresh,
+    /// Comes unbound, so the key it answers to is the user's to pick.
+    ToggleLayout,
 
     NextTab,
     PrevTab,
@@ -115,6 +117,7 @@ impl GlobalKeybinds {
             GlobalEvent::ScrollToBottom => config.scroll_to_bottom,
             GlobalEvent::FocusCurrent => config.focus_current,
             GlobalEvent::Refresh => config.refresh,
+            GlobalEvent::ToggleLayout => config.toggle_layout,
             GlobalEvent::OpenHelp => config.open_help,
             GlobalEvent::NextTab => config.next_tab,
             GlobalEvent::PrevTab => config.prev_tab,
@@ -138,6 +141,7 @@ impl GlobalKeybinds {
             GlobalEvent::OpenContextMenu => "open-context-menu", Some(Section::Navigation), "open the context menu",
 
             GlobalEvent::Refresh => "refresh", Some(Section::App), "refresh",
+            GlobalEvent::ToggleLayout => "toggle-layout", Some(Section::App), "toggle horizontal/vertical split",
             GlobalEvent::NextTab => "next-tab", Some(Section::App), "next tab",
             GlobalEvent::PrevTab => "prev-tab", Some(Section::App), "previous tab",
             GlobalEvent::LogTab => _, Some(Section::App), "log tab",
@@ -161,6 +165,10 @@ mod tests {
 
     use super::*;
     use crate::keybinds::Keybind;
+
+    /// What toggling the layout says it does, it being the one action
+    /// that comes unbound.
+    const TOGGLE_LAYOUT: &str = "toggle horizontal/vertical split";
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::empty())
@@ -316,9 +324,17 @@ mod tests {
             keybinds
                 .bindings()
                 .iter()
+                .filter(|binding| binding.description != TOGGLE_LAYOUT)
                 .all(|binding| binding.keys_text() != "[disabled]")
         );
         assert_eq!(binding(&keybinds, "refresh").keys_text(), "Shift+r/F5");
+    }
+
+    #[test]
+    fn test_toggling_the_layout_comes_unbound() {
+        let keybinds = GlobalKeybinds::default();
+
+        assert_eq!(binding(&keybinds, TOGGLE_LAYOUT).keys_text(), "[disabled]");
     }
 
     /// The binding for the action `description` says it does.

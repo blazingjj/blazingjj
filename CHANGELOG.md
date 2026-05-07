@@ -138,6 +138,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outside also goes on to the tab underneath, which may act on what was hit
 - Context menu popup (right-click or `Menu` key) with the common operations for
   whatever the tab has selected: a change, a file, a version or a bookmark
+- Toggle horizontal/vertical split at runtime with the `toggle-layout` keybind,
+  which comes unbound
 - `blazingjj.describe-mode` to set what describing a change puts up, the
   built-in editor or an interactive `jj describe`
 - `!` opens the command popup with the terminal handed to what is run, so
