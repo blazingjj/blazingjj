@@ -1,4 +1,5 @@
 use ratatui::Frame;
+use ratatui::crossterm::event::MouseButton;
 use ratatui::crossterm::event::MouseEvent;
 use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Margin;
@@ -31,6 +32,9 @@ pub struct ListPane {
 
     /// Number of items the list held when it was drawn.
     item_count: usize,
+
+    /// Index of the first item drawn, as chosen by the list itself.
+    offset: usize,
 }
 
 impl ListPane {
@@ -54,6 +58,9 @@ impl ListPane {
         self.content_rect = block.inner(area);
         self.item_count = widget.len();
         f.render_stateful_widget(&widget.block(block), area, list_state);
+        // The list picks the offset it needs to keep the selection on
+        // screen, so it is only known once it has been drawn.
+        self.offset = list_state.offset();
         if self.item_count > self.content_rect.height as usize {
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
             let mut scrollbar_state = ScrollbarState::default()
@@ -68,19 +75,31 @@ impl ListPane {
             f.render_stateful_widget(scrollbar, scrollbar_rect, &mut scrollbar_state);
         }
     }
+
+    /// Index of the item drawn at `pos`, if any.
+    fn item_at(&self, pos: Position) -> Option<usize> {
+        if !self.content_rect.contains(pos) {
+            return None;
+        }
+        let index = self.offset + (pos.y - self.content_rect.y) as usize;
+        (index < self.item_count).then_some(index)
+    }
 }
 
 impl PanelMouseInput for ListPane {
     fn input_mouse(&mut self, mouse: MouseEvent) -> MouseInput {
-        if !self
-            .panel_rect
-            .contains(Position::new(mouse.column, mouse.row))
-        {
+        let pos = Position::new(mouse.column, mouse.row);
+        if !self.panel_rect.contains(pos) {
             return MouseInput::NotHandled;
         }
         match mouse.kind {
             MouseEventKind::ScrollDown => MouseInput::Scroll(1),
             MouseEventKind::ScrollUp => MouseInput::Scroll(-1),
+            MouseEventKind::Down(MouseButton::Left) => match self.item_at(pos) {
+                Some(index) => MouseInput::Select(index),
+                // A click in the pane is ours even when it hits no item.
+                None => MouseInput::Handled,
+            },
             _ => MouseInput::NotHandled,
         }
     }

@@ -6,12 +6,11 @@ use std::collections::HashSet;
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::MouseEvent;
-use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
-use ratatui::text::ToText;
 use ratatui::widgets::*;
 
+use super::ListPane;
 use super::MouseInput;
 use super::PanelMouseInput;
 use crate::commander::CommandError;
@@ -52,9 +51,6 @@ pub struct LogPanel<'a> {
     /// Scroll offset and cursor position
     log_list_state: ListState,
 
-    /// Area were log content was drawn. This excludes the border.
-    pub log_rect: Rect,
-
     /// The revision filter used for the log
     pub log_revset: Option<String>,
 
@@ -64,8 +60,7 @@ pub struct LogPanel<'a> {
     /// Currently marked commits
     pub marked_heads: HashSet<CommitId>,
 
-    /// Area where panel was drawn. This includes the border.
-    panel_rect: Rect,
+    list_pane: ListPane,
 
     /// Configuration of colours
     config: JjConfig,
@@ -118,14 +113,12 @@ impl<'a> LogPanel<'a> {
             log_output_text: Text::default(),
             log_output: Ok(LogOutput::default()),
             log_list_state: ListState::default(),
-            log_rect: Rect::ZERO,
-
             log_revset: new_commander().env.default_revset.clone(),
 
             head,
             marked_heads: HashSet::new(),
 
-            panel_rect: Rect::ZERO,
+            list_pane: ListPane::default(),
 
             config: get_env().jj_config.clone(),
         }
@@ -225,7 +218,7 @@ impl<'a> LogPanel<'a> {
     }
 
     /// Find head of the provided log_output line
-    fn head_at_log_line(&self, log_line: usize) -> Option<Head> {
+    pub fn head_at_log_line(&self, log_line: usize) -> Option<Head> {
         self.log_output.as_ref().ok()?.head_at(log_line).cloned()
     }
 
@@ -234,13 +227,13 @@ impl<'a> LogPanel<'a> {
         get_head_index(&self.head, &self.log_output)
     }
 
-    /// Number of log list items that fit on screen. Think of this as
-    /// in unit head-index. Moving the head-index this much causes a
-    /// full page scroll.
-    pub fn visible_heads(&self) -> u16 {
-        // Every item in the log list is 2 lines high, so divide screen rows
-        // by 2 to get the number of log items that fit in it.
-        self.log_rect.height / 2
+    /// Number of heads that fit on screen. Think of this as in unit
+    /// head-index. Moving the head-index this much causes a full page
+    /// scroll.
+    pub fn visible_heads(&self) -> isize {
+        // Every item in the log list is one line and every head spans two
+        // of them.
+        self.list_pane.visible_items() / 2
     }
 
     /// Move selection to a specific head. This may cause the next draw to
@@ -333,40 +326,19 @@ impl Component for LogPanel<'_> {
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        self.panel_rect = area;
-
         let title = match &self.log_revset {
             Some(log_revset) => &format!(" Log for: {log_revset} "),
             None => " Log ",
         };
 
         let log_lines = self.log_lines();
-        let log_length: usize = log_lines.len();
         let log_block = Block::bordered()
             .title(title)
             .border_type(BorderType::Rounded);
-        self.log_rect = log_block.inner(area);
         self.log_list_state.select(self.selected_log_line());
-        let log = List::new(log_lines).block(log_block).scroll_padding(7);
-        f.render_stateful_widget(log, area, &mut self.log_list_state);
-
-        // Show scrollbar if lines don't fit the screen height
-        if log_length > self.log_rect.height.into() {
-            let index = self.log_list_state.selected().unwrap_or(0);
-            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-            let mut scrollbar_state = ScrollbarState::default()
-                .content_length(log_length)
-                .position(index);
-
-            f.render_stateful_widget(
-                scrollbar,
-                area.inner(Margin {
-                    vertical: 1,
-                    horizontal: 0,
-                }),
-                &mut scrollbar_state,
-            );
-        }
+        let log = List::new(log_lines).scroll_padding(7);
+        self.list_pane
+            .render(f, area, log_block, log, &mut self.log_list_state);
 
         Ok(())
     }
@@ -374,61 +346,6 @@ impl Component for LogPanel<'_> {
 
 impl PanelMouseInput for LogPanel<'_> {
     fn input_mouse(&mut self, mouse: MouseEvent) -> MouseInput {
-        if !self
-            .panel_rect
-            .contains(Position::new(mouse.column, mouse.row))
-        {
-            return MouseInput::NotHandled;
-        }
-        match mouse.kind {
-            MouseEventKind::ScrollUp => MouseInput::Scroll(-1),
-            MouseEventKind::ScrollDown => MouseInput::Scroll(1),
-            MouseEventKind::Up(_) => {
-                // Check all items in list
-
-                // TODO make a function that constructs the log list
-                let log_lines = self.log_lines();
-                let log_items: Vec<ListItem> = log_lines
-                    .iter()
-                    .map(|line| ListItem::from(line.to_text()))
-                    .collect();
-
-                // Select the clicked change
-                if let Some(inx) = list_item_from_mouse_event(
-                    &log_items,
-                    self.log_rect,
-                    &self.log_list_state,
-                    &mouse,
-                ) && let Some(head) = self.head_at_log_line(inx)
-                {
-                    self.set_head(head);
-                    return MouseInput::Handled;
-                }
-                MouseInput::NotHandled
-            }
-            _ => MouseInput::NotHandled,
-        }
+        self.list_pane.input_mouse(mouse)
     }
-}
-
-// Determine which list item a mouse event is related to
-fn list_item_from_mouse_event(
-    list: &[ListItem],
-    list_rect: Rect,
-    list_state: &ListState,
-    mouse_event: &MouseEvent,
-) -> Option<usize> {
-    let mouse_pos = Position::new(mouse_event.column, mouse_event.row);
-    if !list_rect.contains(mouse_pos) {
-        return None;
-    }
-
-    // Assume that each item is exactly one line.
-    // This is not true in the general case, but it is in this module.
-    let mouse_offset = mouse_pos.y - list_rect.y;
-    let item_index = list_state.offset() + mouse_offset as usize;
-    if item_index >= list.len() {
-        return None;
-    }
-    Some(item_index)
 }

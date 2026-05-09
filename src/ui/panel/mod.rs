@@ -16,6 +16,10 @@ pub(crate) enum MouseInput {
     /// The panel wants to be scrolled by this many items, negative
     /// meaning towards the top.
     Scroll(isize),
+    /// The item at this index was clicked. A panel has no knowledge of
+    /// what its items represent, so it is up to the caller to map the
+    /// index onto its own domain type.
+    Select(usize),
 }
 
 pub(crate) trait PanelMouseInput {
