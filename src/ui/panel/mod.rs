@@ -13,6 +13,7 @@ pub(crate) enum MouseInput {
     NotHandled,
     Handled,
     Scroll(isize),
+    Select(usize),
 }
 
 pub(crate) trait PanelMouseInput {

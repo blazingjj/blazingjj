@@ -938,6 +938,12 @@ impl Component for LogTab<'_> {
                     self.log_panel.scroll_relative(delta);
                     self.sync_head_output();
                 }
+                MouseInput::Select(index) => {
+                    if let Some(head) = self.log_panel.head_at_log_line(index) {
+                        self.log_panel.set_head(head);
+                        self.sync_head_output();
+                    }
+                }
                 MouseInput::Handled => {}
                 MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }

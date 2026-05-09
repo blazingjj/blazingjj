@@ -965,6 +965,13 @@ impl Component for BookmarksTab<'_> {
                 &mut [&mut self.bookmarks_pane, &mut self.bookmark_panel],
             ) {
                 MouseInput::Scroll(delta) => self.scroll_bookmarks(delta),
+                MouseInput::Select(index) => {
+                    let bookmarks = self.bookmarks_output.as_deref().unwrap_or_default();
+                    if let Some(bookmark) = bookmarks.get(index).cloned() {
+                        self.bookmark = Some(bookmark);
+                        self.refresh_bookmark();
+                    }
+                }
                 MouseInput::Handled => {}
                 MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }

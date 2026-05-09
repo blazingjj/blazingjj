@@ -405,6 +405,14 @@ impl Component for FilesTab {
             }
             match route_mouse(mouse, &mut [&mut self.files_pane, &mut self.diff_panel]) {
                 MouseInput::Scroll(delta) => self.scroll_files(delta)?,
+                MouseInput::Select(index) => {
+                    if let Ok(files) = self.files_output.as_ref()
+                        && let Some(file) = files.get(index).cloned()
+                    {
+                        self.file = Some(file);
+                        self.refresh_diff()?;
+                    }
+                }
                 MouseInput::Handled => {}
                 MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }

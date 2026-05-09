@@ -6,11 +6,11 @@ use std::collections::HashSet;
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::MouseEvent;
-use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
+use super::ListPane;
 use super::PanelMouseInput;
 use crate::commander::CommandError;
 use crate::commander::ids::CommitId;
@@ -50,9 +50,6 @@ pub struct LogPanel<'a> {
     /// Scroll offset and cursor position
     log_list_state: ListState,
 
-    /// Area were log content was drawn. This excludes the border.
-    pub log_rect: Rect,
-
     /// The revision filter used for the log
     pub log_revset: Option<String>,
 
@@ -62,8 +59,7 @@ pub struct LogPanel<'a> {
     /// Currently marked commits
     pub marked_heads: HashSet<CommitId>,
 
-    /// Area where panel was drawn. This includes the border.
-    panel_rect: Rect,
+    list_pane: ListPane,
 
     /// Configuration of colours
     config: JjConfig,
@@ -129,14 +125,12 @@ impl<'a> LogPanel<'a> {
             log_output_text,
             log_output,
             log_list_state,
-            log_rect: Rect::ZERO,
-
             log_revset,
 
             head,
             marked_heads: HashSet::new(),
 
-            panel_rect: Rect::ZERO,
+            list_pane: ListPane::default(),
 
             config: get_env().jj_config.clone(),
         })
@@ -245,13 +239,10 @@ impl<'a> LogPanel<'a> {
         get_head_index(&self.head, &self.log_output)
     }
 
-    /// Number of log list items that fit on screen. Think of this as
-    /// in unit head-index. Moving the head-index this much causes a
-    /// full page scroll.
-    fn visible_heads(&self) -> u16 {
-        // Every item in the log list is 2 lines high, so divide screen rows
-        // by 2 to get the number of log items that fit in it.
-        self.log_rect.height / 2
+    /// Number of log list items that fit on screen.
+    /// Each head spans 2 lines, so this is content height / 2.
+    fn visible_heads(&self) -> isize {
+        self.list_pane.half_page_delta()
     }
 
     /// Move selection to a specific head. This may cause the next draw to
@@ -328,10 +319,10 @@ impl<'a> LogPanel<'a> {
                 self.scroll_relative(-1);
             }
             LogTabEvent::ScrollDownHalf => {
-                self.scroll_relative(self.visible_heads() as isize / 2);
+                self.scroll_relative(self.visible_heads() / 2);
             }
             LogTabEvent::ScrollUpHalf => {
-                self.scroll_relative((self.visible_heads() as isize / 2).saturating_neg());
+                self.scroll_relative((self.visible_heads() / 2).saturating_neg());
             }
             LogTabEvent::ScrollToBottom => {
                 self.scroll_relative(isize::MAX);
@@ -361,40 +352,19 @@ impl Component for LogPanel<'_> {
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        self.panel_rect = area;
-
         let title = match &self.log_revset {
             Some(log_revset) => &format!(" Log for: {log_revset} "),
             None => " Log ",
         };
 
         let log_lines = self.log_lines();
-        let log_length: usize = log_lines.len();
         let log_block = Block::bordered()
             .title(title)
             .border_type(BorderType::Rounded);
-        self.log_rect = log_block.inner(area);
         self.log_list_state.select(self.selected_log_line());
         let log = List::new(log_lines).block(log_block).scroll_padding(7);
-        f.render_stateful_widget(log, area, &mut self.log_list_state);
-
-        // Show scrollbar if lines don't fit the screen height
-        if log_length > self.log_rect.height.into() {
-            let index = self.log_list_state.selected().unwrap_or(0);
-            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-            let mut scrollbar_state = ScrollbarState::default()
-                .content_length(log_length)
-                .position(index);
-
-            f.render_stateful_widget(
-                scrollbar,
-                area.inner(Margin {
-                    vertical: 1,
-                    horizontal: 0,
-                }),
-                &mut scrollbar_state,
-            );
-        }
+        self.list_pane
+            .render(f, area, log, &mut self.log_list_state);
 
         Ok(())
     }
@@ -402,16 +372,6 @@ impl Component for LogPanel<'_> {
 
 impl PanelMouseInput for LogPanel<'_> {
     fn input_mouse(&mut self, mouse: MouseEvent) -> super::MouseInput {
-        if !self
-            .panel_rect
-            .contains(Position::new(mouse.column, mouse.row))
-        {
-            return super::MouseInput::NotHandled;
-        }
-        match mouse.kind {
-            MouseEventKind::ScrollUp => super::MouseInput::Scroll(-1),
-            MouseEventKind::ScrollDown => super::MouseInput::Scroll(1),
-            _ => super::MouseInput::NotHandled,
-        }
+        self.list_pane.input_mouse(mouse)
     }
 }
