@@ -25,6 +25,7 @@ use crate::keybinds::LogTabKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
 use crate::ui::ComponentInputResult;
+use crate::ui::utils::ScrollbarDrag;
 
 /**
     A panel that displays the output of jj log.
@@ -65,6 +66,9 @@ pub struct LogPanel<'a> {
 
     /// Area where panel was drawn. This includes the border.
     panel_rect: Rect,
+
+    scrollbar_drag: ScrollbarDrag,
+    log_length: usize,
 
     /// Configuration of colours
     config: JjConfig,
@@ -138,6 +142,9 @@ impl<'a> LogPanel<'a> {
             marked_heads: HashSet::new(),
 
             panel_rect: Rect::ZERO,
+
+            scrollbar_drag: ScrollbarDrag::new(),
+            log_length: 0,
 
             config: get_env().jj_config.clone(),
         })
@@ -305,6 +312,24 @@ impl<'a> LogPanel<'a> {
         self.marked_heads.contains(&head.commit_id)
     }
 
+    /// Find the head closest to `target` in the graph, searching outward.
+    fn nearest_head_to_line(&self, target: usize) -> Option<Head> {
+        let graph = &self.log_output.as_ref().ok()?.graph_heads;
+        for delta in 0..=graph.len() {
+            if target >= delta {
+                if let Some(Some(h)) = graph.get(target - delta) {
+                    return Some(h.clone());
+                }
+            }
+            if delta > 0 {
+                if let Some(Some(h)) = graph.get(target + delta) {
+                    return Some(h.clone());
+                }
+            }
+        }
+        None
+    }
+
     /// LogTabEvent: Toggle mark on the current head
     pub fn toggle_head_mark(&mut self) {
         let was_marked = self.is_head_marked(&self.head);
@@ -379,6 +404,8 @@ impl Component for LogPanel<'_> {
         let log = List::new(log_lines).block(log_block).scroll_padding(7);
         f.render_stateful_widget(log, area, &mut self.log_list_state);
 
+        self.log_length = log_length;
+
         // Show scrollbar if lines don't fit the screen height
         if log_length > self.log_rect.height.into() {
             let index = self.log_list_state.selected().unwrap_or(0);
@@ -386,15 +413,15 @@ impl Component for LogPanel<'_> {
             let mut scrollbar_state = ScrollbarState::default()
                 .content_length(log_length)
                 .position(index);
+            let scrollbar_rect = area.inner(Margin {
+                vertical: 1,
+                horizontal: 0,
+            });
 
-            f.render_stateful_widget(
-                scrollbar,
-                area.inner(Margin {
-                    vertical: 1,
-                    horizontal: 0,
-                }),
-                &mut scrollbar_state,
-            );
+            f.render_stateful_widget(scrollbar, scrollbar_rect, &mut scrollbar_state);
+            self.scrollbar_drag.set_rect(scrollbar_rect);
+        } else {
+            self.scrollbar_drag.set_rect(Rect::ZERO);
         }
 
         Ok(())
@@ -402,6 +429,19 @@ impl Component for LogPanel<'_> {
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
         if let Event::Mouse(mouse_event) = event {
+            // Check scrollbar drag before panel bounds; drag events can fall outside.
+            let (consumed, new_pos) = self
+                .scrollbar_drag
+                .handle_mouse(mouse_event, self.log_length);
+            if consumed {
+                if let Some(line) = new_pos
+                    && let Some(head) = self.nearest_head_to_line(line)
+                {
+                    self.set_head(head);
+                }
+                return Ok(ComponentInputResult::Handled);
+            }
+
             // Determine if mouse event is inside log-view
             let mouse_pos = Position::new(mouse_event.column, mouse_event.row);
             if !self.panel_rect.contains(mouse_pos) {

@@ -119,6 +119,82 @@ impl PaneDivider {
     }
 }
 
+/// Handles drag-to-scroll mouse interaction for a `VerticalRight` scrollbar.
+/// Call `set_rect` every draw frame with the same rect passed to
+/// `render_stateful_widget`, then call `handle_mouse` in the input handler.
+pub struct ScrollbarDrag {
+    dragging: bool,
+    scrollbar_rect: Rect,
+}
+
+impl ScrollbarDrag {
+    pub fn new() -> Self {
+        Self {
+            dragging: false,
+            scrollbar_rect: Rect::ZERO,
+        }
+    }
+
+    /// Record the rect used to render the scrollbar this frame.
+    /// Pass `Rect::ZERO` when no scrollbar is visible.
+    pub fn set_rect(&mut self, rect: Rect) {
+        self.scrollbar_rect = rect;
+    }
+
+    /// Handle a mouse event. Returns `(consumed, new_position)`.
+    ///
+    /// `consumed` — the event should not be processed further.
+    /// `new_position` — `Some(pos)` when the scroll position should be updated;
+    /// `None` on drag-end (still consumed).
+    ///
+    /// `content_length` must match the value passed to `ScrollbarState::new()`.
+    pub fn handle_mouse(
+        &mut self,
+        mouse: MouseEvent,
+        content_length: usize,
+    ) -> (bool, Option<usize>) {
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.dragging = false;
+                if self.on_scrollbar(mouse.column, mouse.row) {
+                    self.dragging = true;
+                    (true, Some(self.pos_from_row(mouse.row, content_length)))
+                } else {
+                    (false, None)
+                }
+            }
+            MouseEventKind::Drag(MouseButton::Left) if self.dragging => {
+                (true, Some(self.pos_from_row(mouse.row, content_length)))
+            }
+            MouseEventKind::Up(MouseButton::Left) if self.dragging => {
+                self.dragging = false;
+                (true, None)
+            }
+            _ => (false, None),
+        }
+    }
+
+    fn on_scrollbar(&self, col: u16, row: u16) -> bool {
+        let r = self.scrollbar_rect;
+        r.height > 0 && col == r.right().saturating_sub(1) && row >= r.top() && row < r.bottom()
+    }
+
+    fn pos_from_row(&self, row: u16, content_length: usize) -> usize {
+        if content_length == 0 || self.scrollbar_rect.height < 3 {
+            return 0;
+        }
+        // Skip the begin/end arrow rows; map mouse position within the track.
+        let track_start = self.scrollbar_rect.y + 1;
+        let track_len = (self.scrollbar_rect.height - 2) as usize;
+        let offset = row.saturating_sub(track_start) as usize;
+        let t = offset.min(track_len - 1);
+        if track_len <= 1 {
+            return 0;
+        }
+        t * (content_length - 1) / (track_len - 1)
+    }
+}
+
 pub fn centered_rect(r: Rect, percent_x: u16, percent_y: u16) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)

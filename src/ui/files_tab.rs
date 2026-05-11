@@ -25,6 +25,7 @@ use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
 use crate::ui::utils::PaneDivider;
+use crate::ui::utils::ScrollbarDrag;
 use crate::ui::utils::tabs_to_spaces;
 
 /// Files tab. Shows files in selected change in main panel and selected file diff in details panel
@@ -44,6 +45,8 @@ pub struct FilesTab {
 
     config: JjConfig,
     pane_divider: PaneDivider,
+    files_scrollbar_drag: ScrollbarDrag,
+    files_count: usize,
 }
 
 fn get_current_file_index(
@@ -110,6 +113,8 @@ impl FilesTab {
 
             config,
             pane_divider,
+            files_scrollbar_drag: ScrollbarDrag::new(),
+            files_count: 0,
         })
     }
 
@@ -292,6 +297,7 @@ impl Component for FilesTab {
             *self.files_list_state.selected_mut() = current_file_index;
             f.render_stateful_widget(&files, chunks[0], &mut self.files_list_state);
             self.files_height = chunks[0].height - 2;
+            self.files_count = files.len();
 
             if let Some(index) = current_file_index
                 && files.len() > self.files_height as usize
@@ -300,15 +306,15 @@ impl Component for FilesTab {
                 let mut scrollbar_state = ScrollbarState::default()
                     .content_length(files.len())
                     .position(index);
+                let scrollbar_rect = chunks[0].inner(Margin {
+                    vertical: 1,
+                    horizontal: 0,
+                });
 
-                f.render_stateful_widget(
-                    scrollbar,
-                    chunks[0].inner(Margin {
-                        vertical: 1,
-                        horizontal: 0,
-                    }),
-                    &mut scrollbar_state,
-                );
+                f.render_stateful_widget(scrollbar, scrollbar_rect, &mut scrollbar_state);
+                self.files_scrollbar_drag.set_rect(scrollbar_rect);
+            } else {
+                self.files_scrollbar_drag.set_rect(Rect::ZERO);
             }
         }
 
@@ -415,6 +421,18 @@ impl Component for FilesTab {
 
         if let Event::Mouse(mouse) = event {
             if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+                return Ok(ComponentInputResult::Handled);
+            }
+            let (consumed, new_pos) = self
+                .files_scrollbar_drag
+                .handle_mouse(mouse, self.files_count);
+            if consumed {
+                if let Some(pos) = new_pos {
+                    let current =
+                        get_current_file_index(self.file.as_ref(), self.files_output.as_ref())
+                            .unwrap_or(0);
+                    self.scroll_files(pos as isize - current as isize)?;
+                }
                 return Ok(ComponentInputResult::Handled);
             }
             if self.diff_panel.input_mouse(mouse) {

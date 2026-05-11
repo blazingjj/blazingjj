@@ -31,6 +31,7 @@ use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
 use crate::ui::utils::PaneDivider;
+use crate::ui::utils::ScrollbarDrag;
 use crate::ui::utils::centered_rect;
 use crate::ui::utils::centered_rect_line_height;
 use crate::ui::utils::tabs_to_spaces;
@@ -91,6 +92,8 @@ pub struct BookmarksTab<'a> {
 
     config: JjConfig,
     pane_divider: PaneDivider,
+    bookmarks_scrollbar_drag: ScrollbarDrag,
+    bookmark_count: usize,
 }
 
 fn get_current_bookmark_index(
@@ -186,6 +189,8 @@ impl BookmarksTab<'_> {
 
             config,
             pane_divider,
+            bookmarks_scrollbar_drag: ScrollbarDrag::new(),
+            bookmark_count: 0,
         })
     }
 
@@ -396,6 +401,7 @@ impl Component for BookmarksTab<'_> {
                 .border_type(BorderType::Rounded);
             self.bookmarks_height = bookmarks_block.inner(chunks[0]).height;
             let bookmark_count = lines.len();
+            self.bookmark_count = bookmark_count;
             let bookmarks = List::new(lines).block(bookmarks_block).scroll_padding(3);
             *self.bookmarks_list_state.selected_mut() = current_bookmark_index;
             f.render_stateful_widget(bookmarks, chunks[0], &mut self.bookmarks_list_state);
@@ -407,15 +413,15 @@ impl Component for BookmarksTab<'_> {
                 let mut scrollbar_state = ScrollbarState::default()
                     .content_length(bookmark_count)
                     .position(index);
+                let scrollbar_rect = chunks[0].inner(Margin {
+                    vertical: 1,
+                    horizontal: 0,
+                });
 
-                f.render_stateful_widget(
-                    scrollbar,
-                    chunks[0].inner(Margin {
-                        vertical: 1,
-                        horizontal: 0,
-                    }),
-                    &mut scrollbar_state,
-                );
+                f.render_stateful_widget(scrollbar, scrollbar_rect, &mut scrollbar_state);
+                self.bookmarks_scrollbar_drag.set_rect(scrollbar_rect);
+            } else {
+                self.bookmarks_scrollbar_drag.set_rect(Rect::ZERO);
             }
         }
 
@@ -970,6 +976,16 @@ impl Component for BookmarksTab<'_> {
 
         if let Event::Mouse(mouse) = event {
             if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+                return Ok(ComponentInputResult::Handled);
+            }
+            let (consumed, new_pos) = self
+                .bookmarks_scrollbar_drag
+                .handle_mouse(mouse, self.bookmark_count);
+            if consumed {
+                if let Some(pos) = new_pos {
+                    let current = self.get_current_bookmark_index().unwrap_or(0);
+                    self.scroll_bookmarks(pos as isize - current as isize);
+                }
                 return Ok(ComponentInputResult::Handled);
             }
             if self.bookmark_panel.input_mouse(mouse) {
