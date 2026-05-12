@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Message popup now supports scrolling with a scrollbar
 - Command popup output now preserves ANSI color
 - Drag to resize pane divider in all tabs
+- Mouse scrolling in the file and bookmark list panes
+- Left-click to select items in all list panes; log tab click now fires on press rather than release
 
 ### Changed
 

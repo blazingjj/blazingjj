@@ -5,14 +5,13 @@ use std::collections::HashSet;
 
 use ansi_to_tui::IntoText;
 use anyhow::Result;
-use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::MouseEvent;
-use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
-use ratatui::text::ToText;
 use ratatui::widgets::*;
 
+use super::ListPane;
+use super::PanelMouseInput;
 use crate::commander::CommandError;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
@@ -51,9 +50,6 @@ pub struct LogPanel<'a> {
     /// Scroll offset and cursor position
     log_list_state: ListState,
 
-    /// Area were log content was drawn. This excludes the border.
-    pub log_rect: Rect,
-
     /// The revision filter used for the log
     pub log_revset: Option<String>,
 
@@ -63,8 +59,7 @@ pub struct LogPanel<'a> {
     /// Currently marked commits
     pub marked_heads: HashSet<CommitId>,
 
-    /// Area where panel was drawn. This includes the border.
-    panel_rect: Rect,
+    list_pane: ListPane,
 
     /// Configuration of colours
     config: JjConfig,
@@ -130,14 +125,12 @@ impl<'a> LogPanel<'a> {
             log_output_text,
             log_output,
             log_list_state,
-            log_rect: Rect::ZERO,
-
             log_revset,
 
             head,
             marked_heads: HashSet::new(),
 
-            panel_rect: Rect::ZERO,
+            list_pane: ListPane::default(),
 
             config: get_env().jj_config.clone(),
         })
@@ -237,7 +230,7 @@ impl<'a> LogPanel<'a> {
     }
 
     /// Find head of the provided log_output line
-    fn head_at_log_line(&mut self, log_line: usize) -> Option<Head> {
+    pub fn head_at_log_line(&self, log_line: usize) -> Option<Head> {
         self.log_output.as_ref().ok()?.head_at(log_line).cloned()
     }
 
@@ -246,13 +239,10 @@ impl<'a> LogPanel<'a> {
         get_head_index(&self.head, &self.log_output)
     }
 
-    /// Number of log list items that fit on screen. Think of this as
-    /// in unit head-index. Moving the head-index this much causes a
-    /// full page scroll.
-    fn visible_heads(&self) -> u16 {
-        // Every item in the log list is 2 lines high, so divide screen rows
-        // by 2 to get the number of log items that fit in it.
-        self.log_rect.height / 2
+    /// Number of log list items that fit on screen.
+    /// Each head spans 2 lines, so this is content height / 2.
+    fn visible_heads(&self) -> isize {
+        self.list_pane.half_page_delta()
     }
 
     /// Move selection to a specific head. This may cause the next draw to
@@ -264,7 +254,7 @@ impl<'a> LogPanel<'a> {
     /// Move selection relative to the current position.
     /// The scroll is relative to head-index, not line-index.
     /// This will update self.head
-    fn scroll_relative(&mut self, scroll: isize) {
+    pub fn scroll_relative(&mut self, scroll: isize) {
         let log_output = match self.log_output.as_ref() {
             Ok(log_output) => log_output,
             Err(_) => return,
@@ -329,10 +319,10 @@ impl<'a> LogPanel<'a> {
                 self.scroll_relative(-1);
             }
             LogTabEvent::ScrollDownHalf => {
-                self.scroll_relative(self.visible_heads() as isize / 2);
+                self.scroll_relative(self.visible_heads() / 2);
             }
             LogTabEvent::ScrollUpHalf => {
-                self.scroll_relative((self.visible_heads() as isize / 2).saturating_neg());
+                self.scroll_relative((self.visible_heads() / 2).saturating_neg());
             }
             LogTabEvent::ScrollToBottom => {
                 self.scroll_relative(isize::MAX);
@@ -362,110 +352,26 @@ impl Component for LogPanel<'_> {
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        self.panel_rect = area;
-
         let title = match &self.log_revset {
             Some(log_revset) => &format!(" Log for: {log_revset} "),
             None => " Log ",
         };
 
         let log_lines = self.log_lines();
-        let log_length: usize = log_lines.len();
         let log_block = Block::bordered()
             .title(title)
             .border_type(BorderType::Rounded);
-        self.log_rect = log_block.inner(area);
         self.log_list_state.select(self.selected_log_line());
         let log = List::new(log_lines).block(log_block).scroll_padding(7);
-        f.render_stateful_widget(log, area, &mut self.log_list_state);
-
-        // Show scrollbar if lines don't fit the screen height
-        if log_length > self.log_rect.height.into() {
-            let index = self.log_list_state.selected().unwrap_or(0);
-            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-            let mut scrollbar_state = ScrollbarState::default()
-                .content_length(log_length)
-                .position(index);
-
-            f.render_stateful_widget(
-                scrollbar,
-                area.inner(Margin {
-                    vertical: 1,
-                    horizontal: 0,
-                }),
-                &mut scrollbar_state,
-            );
-        }
+        self.list_pane
+            .render(f, area, log, &mut self.log_list_state);
 
         Ok(())
     }
-
-    fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
-        if let Event::Mouse(mouse_event) = event {
-            // Determine if mouse event is inside log-view
-            let mouse_pos = Position::new(mouse_event.column, mouse_event.row);
-            if !self.panel_rect.contains(mouse_pos) {
-                return Ok(ComponentInputResult::NotHandled);
-            }
-
-            // Execute command dependent on panel and event kind
-            match mouse_event.kind {
-                MouseEventKind::ScrollUp => {
-                    self.handle_event(LogTabEvent::ScrollUp)?;
-                    return Ok(ComponentInputResult::Handled);
-                }
-                MouseEventKind::ScrollDown => {
-                    self.handle_event(LogTabEvent::ScrollDown)?;
-                    return Ok(ComponentInputResult::Handled);
-                }
-                MouseEventKind::Up(_) => {
-                    // Check all items in list
-
-                    // TODO make a function that constructs the log list
-                    let log_lines = self.log_lines();
-                    let log_items: Vec<ListItem> = log_lines
-                        .iter()
-                        .map(|line| ListItem::from(line.to_text()))
-                        .collect();
-
-                    // Select the clicked change
-                    if let Some(inx) = list_item_from_mouse_event(
-                        &log_items,
-                        self.log_rect,
-                        &self.log_list_state,
-                        &mouse_event,
-                    ) && let Some(head) = self.head_at_log_line(inx)
-                    {
-                        self.set_head(head);
-                        return Ok(ComponentInputResult::Handled);
-                    }
-                }
-                _ => {} // Handle other mouse events if necessary
-            }
-        }
-
-        Ok(ComponentInputResult::NotHandled)
-    }
 }
 
-// Determine which list item a mouse event is related to
-fn list_item_from_mouse_event(
-    list: &[ListItem],
-    list_rect: Rect,
-    list_state: &ListState,
-    mouse_event: &MouseEvent,
-) -> Option<usize> {
-    let mouse_pos = Position::new(mouse_event.column, mouse_event.row);
-    if !list_rect.contains(mouse_pos) {
-        return None;
+impl PanelMouseInput for LogPanel<'_> {
+    fn input_mouse(&mut self, mouse: MouseEvent) -> super::MouseInput {
+        self.list_pane.input_mouse(mouse)
     }
-
-    // Assume that each item is exactly one line.
-    // This is not true in the general case, but it is in this module.
-    let mouse_offset = mouse_pos.y - list_rect.y;
-    let item_index = list_state.offset() + mouse_offset as usize;
-    if item_index >= list.len() {
-        return None;
-    }
-    Some(item_index)
 }
