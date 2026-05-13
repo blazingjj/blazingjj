@@ -23,7 +23,6 @@ use crate::keybinds::FilesTabEvent;
 use crate::keybinds::FilesTabKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
-use crate::ui::help_popup::HelpPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
@@ -400,14 +399,6 @@ impl Component for FilesTab {
                     let head = &new_commander().get_current_head()?;
                     self.set_head(head)?;
                 }
-                FilesTabEvent::OpenHelp => {
-                    return Ok(ComponentInputResult::HandledAction(
-                        ComponentAction::SetPopup(Some(Box::new(HelpPopup::new(
-                            self.keybinds.make_help(),
-                            self.details_keybinds.make_help(),
-                        )))),
-                    ));
-                }
                 FilesTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
             };
         }
@@ -423,5 +414,13 @@ impl Component for FilesTab {
         }
 
         Ok(ComponentInputResult::Handled)
+    }
+
+    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+        self.keybinds.make_help()
+    }
+
+    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+        self.details_keybinds.make_help()
     }
 }

@@ -34,7 +34,6 @@ use crate::ui::bookmark_set_popup::BookmarkSetPopup;
 use crate::ui::commit_show_cache::CommitShowCache;
 use crate::ui::commit_show_cache::CommitShowKey;
 use crate::ui::commit_show_cache::CommitShowValue;
-use crate::ui::help_popup::HelpPopup;
 use crate::ui::loader_popup::LoaderPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
@@ -630,14 +629,6 @@ impl<'a> LogTab<'a> {
                     ComponentAction::SetPopup(Some(Box::new(loader))),
                 ));
             }
-            LogTabEvent::OpenHelp => {
-                return Ok(ComponentInputResult::HandledAction(
-                    ComponentAction::SetPopup(Some(Box::new(HelpPopup::new(
-                        self.keybinds.make_main_panel_help(),
-                        self.details_keybinds.make_help(),
-                    )))),
-                ));
-            }
             LogTabEvent::Save
             | LogTabEvent::Cancel
             | LogTabEvent::ClosePopup
@@ -944,5 +935,13 @@ impl Component for LogTab<'_> {
         }
 
         Ok(ComponentInputResult::Handled)
+    }
+
+    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+        self.keybinds.make_main_panel_help()
+    }
+
+    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+        self.details_keybinds.make_help()
     }
 }

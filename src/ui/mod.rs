@@ -54,6 +54,14 @@ pub trait Component {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()>;
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult>;
+
+    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+
+    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+        vec![]
+    }
 }
 
 #[instrument(level = "trace", name = "draw", skip(f, app))]

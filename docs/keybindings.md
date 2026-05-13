@@ -79,6 +79,4 @@ push-all = "shift+p"
 push-all-new = "ctrl+shift+p"
 fetch = "f"
 fetch-all = "shift+f"
-
-open-help = "?"
 ```

@@ -26,8 +26,6 @@ pub enum FilesTabEvent {
     Refresh,
     FocusCurrent,
 
-    OpenHelp,
-
     Unbound,
 }
 
@@ -47,7 +45,6 @@ impl Default for FilesTabKeybinds {
             FilesTabEvent::Refresh => "shift+r",
             FilesTabEvent::Refresh => "f5",
             FilesTabEvent::FocusCurrent => "@",
-            FilesTabEvent::OpenHelp => "?",
         );
         Self { keys }
     }

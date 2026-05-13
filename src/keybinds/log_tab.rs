@@ -62,8 +62,6 @@ pub enum LogTabEvent {
         all_remotes: bool,
     },
 
-    OpenHelp,
-
     Unbound,
 }
 
@@ -109,7 +107,6 @@ impl Default for LogTabKeybinds {
             event_push(true, true) => "ctrl+shift+p",
             LogTabEvent::Fetch { all_remotes: false } => "f",
             LogTabEvent::Fetch { all_remotes: true } => "shift+f",
-            LogTabEvent::OpenHelp => "?",
         );
 
         Self { keys }
@@ -171,7 +168,6 @@ impl LogTabKeybinds {
             event_push(true, true) => config.push_all_new,
             LogTabEvent::Fetch { all_remotes: false } => config.fetch,
             LogTabEvent::Fetch { all_remotes: true } => config.fetch_all,
-            LogTabEvent::OpenHelp => config.open_help,
         );
     }
     pub fn make_main_panel_help(&self) -> Vec<(String, String)> {

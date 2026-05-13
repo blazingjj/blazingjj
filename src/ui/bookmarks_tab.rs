@@ -30,7 +30,6 @@ use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
-use crate::ui::help_popup::HelpPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
@@ -949,14 +948,6 @@ impl Component for BookmarksTab<'_> {
                         ));
                     }
                 }
-                BookmarksTabEvent::OpenHelp => {
-                    return Ok(ComponentInputResult::HandledAction(
-                        ComponentAction::SetPopup(Some(Box::new(HelpPopup::new(
-                            self.keybinds.make_help(),
-                            self.details_keybinds.make_help(),
-                        )))),
-                    ));
-                }
                 BookmarksTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
             };
         }
@@ -972,5 +963,13 @@ impl Component for BookmarksTab<'_> {
         }
 
         Ok(ComponentInputResult::Handled)
+    }
+
+    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+        self.keybinds.make_help()
+    }
+
+    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+        self.details_keybinds.make_help()
     }
 }
