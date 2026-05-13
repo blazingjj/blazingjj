@@ -21,7 +21,6 @@ pub enum FilesTabEvent {
     ScrollDownHalf,
     ScrollUpHalf,
 
-    ToggleDiffFormat,
     Untrack,
     Restore,
     Refresh,
@@ -43,7 +42,6 @@ impl Default for FilesTabKeybinds {
             FilesTabEvent::ScrollUp => "up",
             FilesTabEvent::ScrollDownHalf => "shift+j",
             FilesTabEvent::ScrollUpHalf => "shift+k",
-            FilesTabEvent::ToggleDiffFormat => "w",
             FilesTabEvent::Untrack => "x",
             FilesTabEvent::Restore => "r",
             FilesTabEvent::Refresh => "shift+r",

@@ -21,7 +21,6 @@ pub enum BookmarksTabEvent {
     ScrollDownHalf,
     ScrollUpHalf,
 
-    ToggleDiffFormat,
     Refresh,
     ToggleShowAll,
     CreateBookmark,
@@ -50,7 +49,6 @@ impl Default for BookmarksTabKeybinds {
             BookmarksTabEvent::ScrollUp => "up",
             BookmarksTabEvent::ScrollDownHalf => "shift+j",
             BookmarksTabEvent::ScrollUpHalf => "shift+k",
-            BookmarksTabEvent::ToggleDiffFormat => "w",
             BookmarksTabEvent::Refresh => "shift+r",
             BookmarksTabEvent::Refresh => "f5",
             BookmarksTabEvent::ToggleShowAll => "a",

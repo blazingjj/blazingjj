@@ -17,6 +17,8 @@ use crate::commander::new_commander;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::keybinds::DetailsPanelEvent;
+use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::FilesTabEvent;
 use crate::keybinds::FilesTabKeybinds;
 use crate::ui::Component;
@@ -45,6 +47,7 @@ pub struct FilesTab {
 
     config: JjConfig,
     keybinds: FilesTabKeybinds,
+    details_keybinds: DetailsPanelKeybinds,
     pane_divider: PaneDivider,
 }
 
@@ -98,6 +101,7 @@ impl FilesTab {
         if let Some(keybinds_config) = config.keybinds() {
             keybinds.extend_from_config(keybinds_config);
         }
+        let details_keybinds = DetailsPanelKeybinds::default();
 
         Ok(Self {
             head,
@@ -116,6 +120,7 @@ impl FilesTab {
 
             config,
             keybinds,
+            details_keybinds,
             pane_divider,
         })
     }
@@ -341,8 +346,17 @@ impl Component for FilesTab {
                 return Ok(ComponentInputResult::Handled);
             }
 
-            if self.diff_panel.input(key) {
-                return Ok(ComponentInputResult::Handled);
+            match self.details_keybinds.match_event(key) {
+                DetailsPanelEvent::Unbound => {}
+                DetailsPanelEvent::ToggleDiffFormat => {
+                    self.diff_format = self.diff_format.get_next(self.config.diff_tool());
+                    self.refresh_diff()?;
+                    return Ok(ComponentInputResult::Handled);
+                }
+                ev => {
+                    self.diff_panel.handle_event(ev);
+                    return Ok(ComponentInputResult::Handled);
+                }
             }
 
             match self.keybinds.match_event(key) {
@@ -353,10 +367,6 @@ impl Component for FilesTab {
                 }
                 FilesTabEvent::ScrollUpHalf => {
                     self.scroll_files((self.files_height as isize / 2).saturating_neg())?;
-                }
-                FilesTabEvent::ToggleDiffFormat => {
-                    self.diff_format = self.diff_format.get_next(self.config.diff_tool());
-                    self.refresh_diff()?;
                 }
                 FilesTabEvent::Untrack => {
                     // this works even for deleted files because jj doesn't return error in that case
@@ -394,19 +404,7 @@ impl Component for FilesTab {
                     return Ok(ComponentInputResult::HandledAction(
                         ComponentAction::SetPopup(Some(Box::new(HelpPopup::new(
                             self.keybinds.make_help(),
-                            vec![
-                                ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
-                                (
-                                    "Ctrl+d/Ctrl+u".to_owned(),
-                                    "scroll down/up by ½ page".to_owned(),
-                                ),
-                                (
-                                    "Ctrl+f/Ctrl+b".to_owned(),
-                                    "scroll down/up by page".to_owned(),
-                                ),
-                                ("w".to_owned(), "toggle diff format".to_owned()),
-                                ("W".to_owned(), "toggle wrapping".to_owned()),
-                            ],
+                            self.details_keybinds.make_help(),
                         )))),
                     ));
                 }

@@ -26,6 +26,8 @@ use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::BookmarksTabEvent;
 use crate::keybinds::BookmarksTabKeybinds;
+use crate::keybinds::DetailsPanelEvent;
+use crate::keybinds::DetailsPanelKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
 use crate::ui::help_popup::HelpPopup;
@@ -93,6 +95,7 @@ pub struct BookmarksTab<'a> {
 
     config: JjConfig,
     keybinds: BookmarksTabKeybinds,
+    details_keybinds: DetailsPanelKeybinds,
     pane_divider: PaneDivider,
 }
 
@@ -162,6 +165,7 @@ impl BookmarksTab<'_> {
         if let Some(keybinds_config) = config.keybinds() {
             keybinds.extend_from_config(keybinds_config);
         }
+        let details_keybinds = DetailsPanelKeybinds::default();
 
         Ok(Self {
             bookmarks_output,
@@ -193,6 +197,7 @@ impl BookmarksTab<'_> {
 
             config,
             keybinds,
+            details_keybinds,
             pane_divider,
         })
     }
@@ -772,8 +777,17 @@ impl Component for BookmarksTab<'_> {
                 return Ok(ComponentInputResult::Handled);
             }
 
-            if self.bookmark_panel.input(key) {
-                return Ok(ComponentInputResult::Handled);
+            match self.details_keybinds.match_event(key) {
+                DetailsPanelEvent::Unbound => {}
+                DetailsPanelEvent::ToggleDiffFormat => {
+                    self.diff_format = self.diff_format.get_next(self.config.diff_tool());
+                    self.refresh_bookmark();
+                    return Ok(ComponentInputResult::Handled);
+                }
+                ev => {
+                    self.bookmark_panel.handle_event(ev);
+                    return Ok(ComponentInputResult::Handled);
+                }
             }
 
             match self.keybinds.match_event(key) {
@@ -784,10 +798,6 @@ impl Component for BookmarksTab<'_> {
                 }
                 BookmarksTabEvent::ScrollUpHalf => {
                     self.scroll_bookmarks((self.bookmarks_height as isize / 2).saturating_neg());
-                }
-                BookmarksTabEvent::ToggleDiffFormat => {
-                    self.diff_format = self.diff_format.get_next(self.config.diff_tool());
-                    self.refresh_bookmark();
                 }
                 BookmarksTabEvent::Refresh => {
                     self.refresh_bookmarks();
@@ -943,19 +953,7 @@ impl Component for BookmarksTab<'_> {
                     return Ok(ComponentInputResult::HandledAction(
                         ComponentAction::SetPopup(Some(Box::new(HelpPopup::new(
                             self.keybinds.make_help(),
-                            vec![
-                                ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
-                                (
-                                    "Ctrl+d/Ctrl+u".to_owned(),
-                                    "scroll down/up by ½ page".to_owned(),
-                                ),
-                                (
-                                    "Ctrl+f/Ctrl+b".to_owned(),
-                                    "scroll down/up by page".to_owned(),
-                                ),
-                                ("w".to_owned(), "toggle diff format".to_owned()),
-                                ("W".to_owned(), "toggle wrapping".to_owned()),
-                            ],
+                            self.details_keybinds.make_help(),
                         )))),
                     ));
                 }

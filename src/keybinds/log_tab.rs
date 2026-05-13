@@ -32,7 +32,6 @@ pub enum LogTabEvent {
 
     FocusCurrent,
     ToggleHeadMark,
-    ToggleDiffFormat,
 
     Refresh,
     CreateNew {
@@ -86,8 +85,6 @@ impl Default for LogTabKeybinds {
             LogTabEvent::ScrollToTop => "ctrl+home",
             LogTabEvent::FocusCurrent => "@",
             LogTabEvent::ToggleHeadMark => "space",
-            // todo: move to DetailsKeybindings
-            LogTabEvent::ToggleDiffFormat => "w",
             LogTabEvent::Refresh => "shift+r",
             LogTabEvent::Refresh => "f5",
             LogTabEvent::Duplicate => "shift+d",
@@ -151,7 +148,6 @@ impl LogTabKeybinds {
             LogTabEvent::ScrollDownHalf => config.scroll_down_half,
             LogTabEvent::ScrollUpHalf => config.scroll_up_half,
             LogTabEvent::FocusCurrent => config.focus_current,
-            LogTabEvent::ToggleDiffFormat => config.toggle_diff_format,
             LogTabEvent::Refresh => config.refresh,
             LogTabEvent::Duplicate => config.duplicate,
             LogTabEvent::CreateNew { describe: false } => config.create_new,
