@@ -32,6 +32,8 @@ use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::event::AppEvent;
+use crate::keybinds::DetailsPanelEvent;
+use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::LogTabEvent;
 use crate::keybinds::LogTabKeybinds;
 use crate::ui::AppAction;
@@ -114,6 +116,7 @@ pub struct LogTab<'a> {
     config: JjConfig,
     pane_divider: PaneDivider,
     keybinds: LogTabKeybinds,
+    details_keybinds: DetailsPanelKeybinds,
 
     stale: bool,
 }
@@ -178,8 +181,15 @@ impl<'a> LogTab<'a> {
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
 
         let mut keybinds = LogTabKeybinds::default();
+        let mut details_keybinds = DetailsPanelKeybinds::default();
         if let Some(keybinds_config) = get_env().jj_config.keybinds() {
             keybinds.extend_from_config(keybinds_config);
+            details_keybinds.extend_from_config(
+                keybinds_config
+                    .log_tab
+                    .as_ref()
+                    .and_then(|c| c.toggle_diff_format.as_ref()),
+            );
         }
 
         let config = get_env().jj_config.clone();
@@ -216,6 +226,7 @@ impl<'a> LogTab<'a> {
             config,
             pane_divider,
             keybinds,
+            details_keybinds,
 
             stale: true,
         }
@@ -574,10 +585,6 @@ impl<'a> LogTab<'a> {
                 self.log_panel.handle_event(log_tab_event)?;
                 self.sync_head_output();
             }
-            LogTabEvent::ToggleDiffFormat => {
-                self.diff_format = self.diff_format.get_next(self.config.diff_tool());
-                self.refresh_head_output();
-            }
             LogTabEvent::Duplicate => {
                 let _ = new_commander().run_duplicate(&self.head.change_id.to_string());
                 return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
@@ -833,19 +840,7 @@ impl Tab for LogTab<'_> {
     }
 
     fn make_details_panel_help(&self) -> Vec<(String, String)> {
-        vec![
-            ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
-            (
-                "Ctrl+d/Ctrl+u".to_owned(),
-                "scroll down/up by ½ page".to_owned(),
-            ),
-            (
-                "Ctrl+f/Ctrl+b".to_owned(),
-                "scroll down/up by page".to_owned(),
-            ),
-            ("w".to_owned(), "toggle diff format".to_owned()),
-            ("W".to_owned(), "toggle wrapping".to_owned()),
-        ]
+        self.details_keybinds.make_help()
     }
 }
 
@@ -1030,8 +1025,17 @@ impl Component for LogTab<'_> {
                 return Ok(ComponentInputResult::Handled);
             }
 
-            if self.head_panel.input(key) {
-                return Ok(ComponentInputResult::Handled);
+            match self.details_keybinds.match_event(key) {
+                DetailsPanelEvent::Unbound => {}
+                DetailsPanelEvent::ToggleDiffFormat => {
+                    self.diff_format = self.diff_format.get_next(self.config.diff_tool());
+                    self.refresh_head_output();
+                    return Ok(ComponentInputResult::Handled);
+                }
+                ev => {
+                    self.head_panel.handle_event(ev);
+                    return Ok(ComponentInputResult::Handled);
+                }
             }
 
             let input_result = self.log_panel.input(event)?;

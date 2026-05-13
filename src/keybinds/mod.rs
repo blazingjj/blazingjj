@@ -5,6 +5,8 @@ pub use bookmarks_tab::BookmarksTabEvent;
 pub use bookmarks_tab::BookmarksTabKeybinds;
 pub use config::Keybind;
 pub use config::KeybindsConfig;
+pub use details_panel::DetailsPanelEvent;
+pub use details_panel::DetailsPanelKeybinds;
 pub use files_tab::FilesTabEvent;
 pub use files_tab::FilesTabKeybinds;
 pub use global::GlobalEvent;
@@ -19,6 +21,7 @@ use ratatui::crossterm::event::KeyModifiers;
 
 mod bookmarks_tab;
 mod config;
+mod details_panel;
 mod files_tab;
 mod global;
 mod keybinds_store;

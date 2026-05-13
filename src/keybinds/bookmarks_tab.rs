@@ -14,7 +14,6 @@ pub struct BookmarksTabKeybinds {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum BookmarksTabEvent {
-    ToggleDiffFormat,
     ToggleShowAll,
     CreateBookmark,
     RenameBookmark,
@@ -34,7 +33,6 @@ impl Default for BookmarksTabKeybinds {
         let mut keys = KeybindsStore::<BookmarksTabEvent>::default();
         set_keybinds!(
             keys,
-            BookmarksTabEvent::ToggleDiffFormat => "w",
             BookmarksTabEvent::ToggleShowAll => "a",
             BookmarksTabEvent::CreateBookmark => "c",
             BookmarksTabEvent::RenameBookmark => "r",

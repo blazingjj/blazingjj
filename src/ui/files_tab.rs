@@ -16,6 +16,8 @@ use crate::commander::new_commander;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::keybinds::DetailsPanelEvent;
+use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::FilesTabEvent;
 use crate::keybinds::FilesTabKeybinds;
 use crate::ui::AppAction;
@@ -46,6 +48,7 @@ pub struct FilesTab {
 
     config: JjConfig,
     keybinds: FilesTabKeybinds,
+    details_keybinds: DetailsPanelKeybinds,
     pane_divider: PaneDivider,
 
     stale: bool,
@@ -73,6 +76,7 @@ impl FilesTab {
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
         let keybinds = FilesTabKeybinds::default();
+        let details_keybinds = DetailsPanelKeybinds::default();
 
         Self {
             head: current_head.clone(),
@@ -91,6 +95,7 @@ impl FilesTab {
 
             config,
             keybinds,
+            details_keybinds,
             pane_divider,
 
             stale: true,
@@ -233,19 +238,7 @@ impl Tab for FilesTab {
     }
 
     fn make_details_panel_help(&self) -> Vec<(String, String)> {
-        vec![
-            ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
-            (
-                "Ctrl+d/Ctrl+u".to_owned(),
-                "scroll down/up by ½ page".to_owned(),
-            ),
-            (
-                "Ctrl+f/Ctrl+b".to_owned(),
-                "scroll down/up by page".to_owned(),
-            ),
-            ("w".to_owned(), "toggle diff format".to_owned()),
-            ("W".to_owned(), "toggle wrapping".to_owned()),
-        ]
+        self.details_keybinds.make_help()
     }
 }
 
@@ -382,15 +375,20 @@ impl Component for FilesTab {
                 return Ok(ComponentInputResult::Handled);
             }
 
-            if self.diff_panel.input(key) {
-                return Ok(ComponentInputResult::Handled);
+            match self.details_keybinds.match_event(key) {
+                DetailsPanelEvent::Unbound => {}
+                DetailsPanelEvent::ToggleDiffFormat => {
+                    self.diff_format = self.diff_format.get_next(self.config.diff_tool());
+                    self.refresh_diff()?;
+                    return Ok(ComponentInputResult::Handled);
+                }
+                ev => {
+                    self.diff_panel.handle_event(ev);
+                    return Ok(ComponentInputResult::Handled);
+                }
             }
 
             match self.keybinds.match_event(key) {
-                FilesTabEvent::ToggleDiffFormat => {
-                    self.diff_format = self.diff_format.get_next(self.config.diff_tool());
-                    self.refresh_diff()?;
-                }
                 FilesTabEvent::Untrack => {
                     // this works even for deleted files because jj doesn't return error in that case
                     if self.untrack_file().is_err() {
