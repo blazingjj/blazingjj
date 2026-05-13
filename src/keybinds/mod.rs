@@ -3,6 +3,8 @@ use std::str::FromStr;
 
 pub use config::Keybind;
 pub use config::KeybindsConfig;
+pub use files_tab::FilesTabEvent;
+pub use files_tab::FilesTabKeybinds;
 pub use global::GlobalEvent;
 pub use global::GlobalKeybinds;
 pub use log_tab::LogTabEvent;
@@ -14,6 +16,7 @@ use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyModifiers;
 
 mod config;
+mod files_tab;
 mod global;
 mod keybinds_store;
 mod log_tab;
