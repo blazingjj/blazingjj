@@ -1,6 +1,7 @@
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::{self};
+use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
@@ -52,10 +53,14 @@ impl HelpPopup {
         let items: Vec<&(String, String)> = items.iter().skip(scroll).collect();
         let rows: Vec<Row> = items
             .iter()
-            .map(|row| Row::new([row.0.clone(), row.1.clone()]))
+            .map(|row| Row::new([row.1.clone(), row.0.clone()]))
             .collect();
-        let widths = [Constraint::Length(key_col_width), Constraint::Fill(1)];
-        Table::new(rows, widths).block(Block::new().title(Span::from(title).bold()))
+        let widths = [Constraint::Fill(1), Constraint::Length(key_col_width)];
+        Table::new(rows, widths).column_spacing(4).block(
+            Block::new()
+                .title(Span::from(title).bold().underlined())
+                .title_alignment(Alignment::Center),
+        )
     }
 }
 
