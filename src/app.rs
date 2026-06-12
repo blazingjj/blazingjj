@@ -5,18 +5,22 @@ use anyhow::Result;
 use anyhow::anyhow;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyCode;
-use ratatui::crossterm::event::KeyModifiers;
 use ratatui::crossterm::event::{self};
 use tracing::info;
 use tracing::instrument;
 
 use crate::ComponentInputResult;
 use crate::commander::new_commander;
+use crate::env::JJLayout;
+use crate::env::get_env;
+use crate::keybinds::GlobalEvent;
+use crate::keybinds::GlobalKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
 use crate::ui::bookmarks_tab::BookmarksTab;
 use crate::ui::command_popup::CommandPopup;
 use crate::ui::files_tab::FilesTab;
+use crate::ui::help_popup::HelpPopup;
 use crate::ui::log_tab::LogTab;
 
 #[derive(PartialEq, Copy, Clone)]
@@ -51,6 +55,8 @@ pub struct App<'a> {
     pub bookmarks: Option<BookmarksTab<'a>>,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
+    layout: JJLayout,
+    global_keybinds: GlobalKeybinds,
 }
 
 impl<'a> App<'a> {
@@ -64,6 +70,8 @@ impl<'a> App<'a> {
             stats: Stats {
                 start_time: Instant::now(),
             },
+            layout: get_env().jj_config.layout(),
+            global_keybinds: GlobalKeybinds::default(),
         })
     }
 
@@ -94,7 +102,9 @@ impl<'a> App<'a> {
 
     pub fn get_log_tab(&mut self) -> Result<&mut LogTab<'a>> {
         if self.log.is_none() {
-            self.log = Some(LogTab::new()?);
+            let mut tab = LogTab::new()?;
+            tab.set_layout(self.layout);
+            self.log = Some(tab);
         }
 
         self.log
@@ -105,7 +115,9 @@ impl<'a> App<'a> {
     pub fn get_files_tab(&mut self) -> Result<&mut FilesTab> {
         if self.files.is_none() {
             let current_head = new_commander().get_current_head()?;
-            self.files = Some(FilesTab::new(&current_head)?);
+            let mut tab = FilesTab::new(&current_head)?;
+            tab.set_layout(self.layout);
+            self.files = Some(tab);
         }
 
         self.files
@@ -115,7 +127,9 @@ impl<'a> App<'a> {
 
     pub fn get_bookmarks_tab(&mut self) -> Result<&mut BookmarksTab<'a>> {
         if self.bookmarks.is_none() {
-            self.bookmarks = Some(BookmarksTab::new()?);
+            let mut tab = BookmarksTab::new()?;
+            tab.set_layout(self.layout);
+            self.bookmarks = Some(tab);
         }
 
         self.bookmarks
@@ -176,6 +190,18 @@ impl<'a> App<'a> {
                     self.get_log_tab()?.set_head(head);
                 };
             }
+            ComponentAction::ToggleLayout => {
+                self.layout = self.layout.toggle();
+                if let Some(tab) = self.log.as_mut() {
+                    tab.set_layout(self.layout);
+                }
+                if let Some(tab) = self.files.as_mut() {
+                    tab.set_layout(self.layout);
+                }
+                if let Some(tab) = self.bookmarks.as_mut() {
+                    tab.set_layout(self.layout);
+                }
+            }
         }
 
         Ok(())
@@ -235,34 +261,29 @@ impl<'a> App<'a> {
                     if let Event::Key(key) = event
                         && key.kind == event::KeyEventKind::Press
                     {
-                        // Close
-                        if key.code == KeyCode::Char('q')
-                            || (key.modifiers.contains(KeyModifiers::CONTROL)
-                                && (key.code == KeyCode::Char('c')))
-                            || key.code == KeyCode::Esc
-                        {
-                            return Ok(true);
-                        }
-                        //
-                        // Tab switching
-                        else if key.code == KeyCode::Char('l') {
-                            self.set_next_tab_with_offset(1)?;
-                        } else if key.code == KeyCode::Char('h') {
-                            self.set_next_tab_with_offset(-1)?;
-                        } else if let Some((_, tab)) =
-                            Tab::VALUES.iter().enumerate().find(|(i, _)| {
-                                key.code
-                                    == KeyCode::Char(
-                                        char::from_digit((*i as u32) + 1u32, 10)
-                                            .expect("Tab index could not be converted to digit"),
-                                    )
-                            })
-                        {
-                            self.set_tab(*tab)?;
-                        }
-                        // General jj command runner
-                        else if key.code == KeyCode::Char(':') {
-                            self.popup = Some(Box::new(CommandPopup::new()));
+                        match self.global_keybinds.match_event(key) {
+                            GlobalEvent::Quit => return Ok(true),
+                            GlobalEvent::NextTab => self.set_next_tab_with_offset(1)?,
+                            GlobalEvent::PrevTab => self.set_next_tab_with_offset(-1)?,
+                            GlobalEvent::Tab1 => self.set_tab(Tab::Log)?,
+                            GlobalEvent::Tab2 => self.set_tab(Tab::Files)?,
+                            GlobalEvent::Tab3 => self.set_tab(Tab::Bookmarks)?,
+                            GlobalEvent::CommandPopup => {
+                                self.popup = Some(Box::new(CommandPopup::new()));
+                            }
+                            GlobalEvent::OpenHelp => {
+                                let (main_help, details_help) = {
+                                    let tab = self.get_or_init_current_tab()?;
+                                    (tab.make_main_panel_help(), tab.make_details_panel_help())
+                                };
+                                let global_help = self.global_keybinds.make_help();
+                                self.popup = Some(Box::new(HelpPopup::new(
+                                    main_help,
+                                    details_help,
+                                    global_help,
+                                )));
+                            }
+                            GlobalEvent::Unbound => {}
                         }
                     }
                 }

@@ -22,11 +22,15 @@ use crate::commander::bookmarks::BookmarkLine;
 use crate::commander::ids::ChangeId;
 use crate::commander::new_commander;
 use crate::env::DiffFormat;
+use crate::env::JJLayout;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::keybinds::BookmarksTabEvent;
+use crate::keybinds::BookmarksTabKeybinds;
+use crate::keybinds::DetailsPanelEvent;
+use crate::keybinds::DetailsPanelKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
-use crate::ui::help_popup::HelpPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
@@ -90,6 +94,9 @@ pub struct BookmarksTab<'a> {
     diff_format: DiffFormat,
 
     config: JjConfig,
+    keybinds: BookmarksTabKeybinds,
+    details_keybinds: DetailsPanelKeybinds,
+    layout: JJLayout,
     pane_divider: PaneDivider,
 }
 
@@ -154,7 +161,13 @@ impl BookmarksTab<'_> {
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
 
         let config = get_env().jj_config.clone();
+        let layout = config.layout();
         let pane_divider = PaneDivider::new(config.layout_percent());
+        let mut keybinds = BookmarksTabKeybinds::default();
+        if let Some(keybinds_config) = config.keybinds() {
+            keybinds.extend_from_config(keybinds_config);
+        }
+        let details_keybinds = DetailsPanelKeybinds::default();
 
         Ok(Self {
             bookmarks_output,
@@ -185,8 +198,16 @@ impl BookmarksTab<'_> {
             diff_format,
 
             config,
+            keybinds,
+            details_keybinds,
+            layout,
             pane_divider,
         })
+    }
+
+    pub fn set_layout(&mut self, layout: JJLayout) {
+        self.layout = layout;
+        self.pane_divider.reset();
     }
 
     pub fn get_current_bookmark_index(&self) -> Option<usize> {
@@ -322,7 +343,7 @@ impl Component for BookmarksTab<'_> {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = self.pane_divider.split(area, self.config.layout());
+        let chunks = self.pane_divider.split(area, self.layout);
 
         // Draw bookmarks
         {
@@ -764,32 +785,37 @@ impl Component for BookmarksTab<'_> {
                 return Ok(ComponentInputResult::Handled);
             }
 
-            if self.bookmark_panel.input(key) {
-                return Ok(ComponentInputResult::Handled);
-            }
-
-            match key.code {
-                KeyCode::Char('j') | KeyCode::Down => self.scroll_bookmarks(1),
-                KeyCode::Char('k') | KeyCode::Up => self.scroll_bookmarks(-1),
-                KeyCode::Char('J') => {
-                    self.scroll_bookmarks(self.bookmarks_height as isize / 2);
-                }
-                KeyCode::Char('K') => {
-                    self.scroll_bookmarks((self.bookmarks_height as isize / 2).saturating_neg());
-                }
-                KeyCode::Char('w') => {
+            match self.details_keybinds.match_event(key) {
+                DetailsPanelEvent::Unbound => {}
+                DetailsPanelEvent::ToggleDiffFormat => {
                     self.diff_format = self.diff_format.get_next(self.config.diff_tool());
                     self.refresh_bookmark();
+                    return Ok(ComponentInputResult::Handled);
                 }
-                KeyCode::Char('R') | KeyCode::F(5) => {
+                ev => {
+                    self.bookmark_panel.handle_event(ev);
+                    return Ok(ComponentInputResult::Handled);
+                }
+            }
+
+            match self.keybinds.match_event(key) {
+                BookmarksTabEvent::ScrollDown => self.scroll_bookmarks(1),
+                BookmarksTabEvent::ScrollUp => self.scroll_bookmarks(-1),
+                BookmarksTabEvent::ScrollDownHalf => {
+                    self.scroll_bookmarks(self.bookmarks_height as isize / 2);
+                }
+                BookmarksTabEvent::ScrollUpHalf => {
+                    self.scroll_bookmarks((self.bookmarks_height as isize / 2).saturating_neg());
+                }
+                BookmarksTabEvent::Refresh => {
                     self.refresh_bookmarks();
                     self.refresh_bookmark();
                 }
-                KeyCode::Char('a') => {
+                BookmarksTabEvent::ToggleShowAll => {
                     self.show_all = !self.show_all;
                     self.refresh_bookmarks();
                 }
-                KeyCode::Char('c') => {
+                BookmarksTabEvent::CreateBookmark => {
                     let textarea = TextArea::default();
                     self.create = Some(CreateBookmark {
                         textarea,
@@ -797,7 +823,7 @@ impl Component for BookmarksTab<'_> {
                     });
                     return Ok(ComponentInputResult::Handled);
                 }
-                KeyCode::Char('r') => {
+                BookmarksTabEvent::RenameBookmark => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
                         let mut textarea = TextArea::new(vec![bookmark.name.clone()]);
                         textarea.move_cursor(CursorMove::End);
@@ -809,7 +835,7 @@ impl Component for BookmarksTab<'_> {
                         return Ok(ComponentInputResult::Handled);
                     }
                 }
-                KeyCode::Char('d') => {
+                BookmarksTabEvent::DeleteBookmark => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
                         self.delete = Some(DeleteBookmark {
                             name: bookmark.name.clone(),
@@ -829,7 +855,7 @@ impl Component for BookmarksTab<'_> {
                             .open();
                     }
                 }
-                KeyCode::Char('f') => {
+                BookmarksTabEvent::ForgetBookmark => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
                         self.forget = Some(ForgetBookmark {
                             name: bookmark.name.clone(),
@@ -850,7 +876,7 @@ impl Component for BookmarksTab<'_> {
                     }
                 }
                 // TODO: Ask for confirmation?
-                KeyCode::Char('t') => {
+                BookmarksTabEvent::TrackBookmark => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
                         && bookmark.remote.is_some()
                         && bookmark.present
@@ -860,7 +886,7 @@ impl Component for BookmarksTab<'_> {
                         self.refresh_bookmark();
                     }
                 }
-                KeyCode::Char('T') => {
+                BookmarksTabEvent::UntrackBookmark => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
                         && bookmark.remote.is_some()
                         && bookmark.present
@@ -870,7 +896,7 @@ impl Component for BookmarksTab<'_> {
                         self.refresh_bookmark();
                     }
                 }
-                KeyCode::Char('n') | KeyCode::Char('N') => {
+                BookmarksTabEvent::NewChange { describe } => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
                         && bookmark.present
                     {
@@ -888,12 +914,11 @@ impl Component for BookmarksTab<'_> {
                             .with_listener(Some(self.popup_tx.clone()))
                             .open();
 
-                        self.describe_after_new = key.code == KeyCode::Char('N');
+                        self.describe_after_new = describe;
                     }
                 }
-                KeyCode::Char('e') | KeyCode::Char('E') => {
+                BookmarksTabEvent::EditChange { ignore_immutable } => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
-                        let ignore_immutable = key.code == KeyCode::Char('E');
                         if bookmark.present {
                             if new_commander().check_revision_immutable(&bookmark.to_string())?
                                 && !ignore_immutable
@@ -923,7 +948,7 @@ impl Component for BookmarksTab<'_> {
                         }
                     }
                 }
-                KeyCode::Enter => {
+                BookmarksTabEvent::ViewInLog => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
                         && bookmark.present
                     {
@@ -932,44 +957,17 @@ impl Component for BookmarksTab<'_> {
                         ));
                     }
                 }
-                KeyCode::Char('?') => {
+                BookmarksTabEvent::ToggleLayout => {
                     return Ok(ComponentInputResult::HandledAction(
-                        ComponentAction::SetPopup(Some(Box::new(HelpPopup::new(
-                            vec![
-                                ("j/k".to_owned(), "scroll down/up".to_owned()),
-                                ("J/K".to_owned(), "scroll down by ½ page".to_owned()),
-                                ("a".to_owned(), "show all remotes".to_owned()),
-                                ("c".to_owned(), "create bookmark".to_owned()),
-                                ("r".to_owned(), "rename bookmark".to_owned()),
-                                ("d/f".to_owned(), "delete/forget bookmark".to_owned()),
-                                ("t/T".to_owned(), "track/untrack bookmark".to_owned()),
-                                ("Enter".to_owned(), "view in log".to_owned()),
-                                ("n".to_owned(), "new from bookmark".to_owned()),
-                                ("N".to_owned(), "new and describe".to_owned()),
-                                ("e".to_owned(), "edit bookmark".to_owned()),
-                            ],
-                            vec![
-                                ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
-                                (
-                                    "Ctrl+d/Ctrl+u".to_owned(),
-                                    "scroll down/up by ½ page".to_owned(),
-                                ),
-                                (
-                                    "Ctrl+f/Ctrl+b".to_owned(),
-                                    "scroll down/up by page".to_owned(),
-                                ),
-                                ("w".to_owned(), "toggle diff format".to_owned()),
-                                ("W".to_owned(), "toggle wrapping".to_owned()),
-                            ],
-                        )))),
+                        ComponentAction::ToggleLayout,
                     ));
                 }
-                _ => return Ok(ComponentInputResult::NotHandled),
+                BookmarksTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
             };
         }
 
         if let Event::Mouse(mouse) = event {
-            if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+            if self.pane_divider.handle_mouse(mouse, self.layout) {
                 return Ok(ComponentInputResult::Handled);
             }
             if self.bookmark_panel.input_mouse(mouse) {
@@ -979,5 +977,13 @@ impl Component for BookmarksTab<'_> {
         }
 
         Ok(ComponentInputResult::Handled)
+    }
+
+    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+        self.keybinds.make_help()
+    }
+
+    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+        self.details_keybinds.make_help()
     }
 }

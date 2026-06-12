@@ -205,6 +205,15 @@ pub enum JJLayout {
     Vertical,
 }
 
+impl JJLayout {
+    pub fn toggle(self) -> Self {
+        match self {
+            JJLayout::Horizontal => JJLayout::Vertical,
+            JJLayout::Vertical => JJLayout::Horizontal,
+        }
+    }
+}
+
 // Impl into for JJLayout to ratatui's Direction
 impl From<JJLayout> for ratatui::layout::Direction {
     fn from(layout: JJLayout) -> Self {

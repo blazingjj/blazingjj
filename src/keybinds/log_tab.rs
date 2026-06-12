@@ -32,7 +32,7 @@ pub enum LogTabEvent {
 
     FocusCurrent,
     ToggleHeadMark,
-    ToggleDiffFormat,
+    ToggleLayout,
 
     Refresh,
     CreateNew {
@@ -63,8 +63,6 @@ pub enum LogTabEvent {
         all_remotes: bool,
     },
 
-    OpenHelp,
-
     Unbound,
 }
 
@@ -86,8 +84,7 @@ impl Default for LogTabKeybinds {
             LogTabEvent::ScrollToTop => "ctrl+home",
             LogTabEvent::FocusCurrent => "@",
             LogTabEvent::ToggleHeadMark => "space",
-            // todo: move to DetailsKeybindings
-            LogTabEvent::ToggleDiffFormat => "w",
+            LogTabEvent::ToggleLayout => "ctrl+w",
             LogTabEvent::Refresh => "shift+r",
             LogTabEvent::Refresh => "f5",
             LogTabEvent::Duplicate => "shift+d",
@@ -112,7 +109,6 @@ impl Default for LogTabKeybinds {
             event_push(true, true) => "ctrl+shift+p",
             LogTabEvent::Fetch { all_remotes: false } => "f",
             LogTabEvent::Fetch { all_remotes: true } => "shift+f",
-            LogTabEvent::OpenHelp => "?",
         );
 
         Self { keys }
@@ -134,6 +130,7 @@ impl LogTabKeybinds {
             LogTabEvent::ScrollUp => config.scroll_up,
             LogTabEvent::ScrollDownHalf => config.scroll_down_half,
             LogTabEvent::ScrollUpHalf => config.scroll_up_half,
+            LogTabEvent::ToggleLayout => config.toggle_layout,
         );
         if let Some(ref log_tab) = config.log_tab {
             self.extend_from_log_tab_config(log_tab);
@@ -151,7 +148,6 @@ impl LogTabKeybinds {
             LogTabEvent::ScrollDownHalf => config.scroll_down_half,
             LogTabEvent::ScrollUpHalf => config.scroll_up_half,
             LogTabEvent::FocusCurrent => config.focus_current,
-            LogTabEvent::ToggleDiffFormat => config.toggle_diff_format,
             LogTabEvent::Refresh => config.refresh,
             LogTabEvent::Duplicate => config.duplicate,
             LogTabEvent::CreateNew { describe: false } => config.create_new,
@@ -175,7 +171,6 @@ impl LogTabKeybinds {
             event_push(true, true) => config.push_all_new,
             LogTabEvent::Fetch { all_remotes: false } => config.fetch,
             LogTabEvent::Fetch { all_remotes: true } => config.fetch_all,
-            LogTabEvent::OpenHelp => config.open_help,
         );
     }
     pub fn make_main_panel_help(&self) -> Vec<(String, String)> {
@@ -187,6 +182,7 @@ impl LogTabKeybinds {
             LogTabEvent::ScrollUpHalf => "scroll up by ½ page",
             LogTabEvent::OpenFiles => "see files",
             LogTabEvent::FocusCurrent => "current change",
+            LogTabEvent::ToggleLayout => "toggle horizontal/vertical split",
             LogTabEvent::EditRevset => "set revset",
             LogTabEvent::Describe => "describe change",
             LogTabEvent::Duplicate => "duplicate change",

@@ -1,8 +1,16 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
+pub use bookmarks_tab::BookmarksTabEvent;
+pub use bookmarks_tab::BookmarksTabKeybinds;
 pub use config::Keybind;
 pub use config::KeybindsConfig;
+pub use details_panel::DetailsPanelEvent;
+pub use details_panel::DetailsPanelKeybinds;
+pub use files_tab::FilesTabEvent;
+pub use files_tab::FilesTabKeybinds;
+pub use global::GlobalEvent;
+pub use global::GlobalKeybinds;
 pub use log_tab::LogTabEvent;
 pub use log_tab::LogTabKeybinds;
 pub use message_popup::MessagePopupEvent;
@@ -11,7 +19,11 @@ use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyModifiers;
 
+mod bookmarks_tab;
 mod config;
+mod details_panel;
+mod files_tab;
+mod global;
 mod keybinds_store;
 mod log_tab;
 mod message_popup;

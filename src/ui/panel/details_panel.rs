@@ -11,9 +11,6 @@ To make this effcicient there are two ways to provide content.
 
 */
 
-use ratatui::crossterm::event::KeyCode;
-use ratatui::crossterm::event::KeyEvent;
-use ratatui::crossterm::event::KeyModifiers;
 use ratatui::crossterm::event::MouseEvent;
 use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Margin;
@@ -31,6 +28,7 @@ use ratatui::widgets::ScrollbarState;
 use ratatui::widgets::Wrap;
 use tracing::trace;
 
+use crate::keybinds::DetailsPanelEvent;
 use crate::ui::utils::LargeString;
 
 /// Details panel used for the right side of each tab.
@@ -72,17 +70,6 @@ where
     panel: &'a mut DetailsPanel,
     title: Option<Line<'a>>,
     content: Content,
-}
-
-/// Commands that can be handled by the details panel
-pub enum DetailsPanelEvent {
-    ScrollDown,
-    ScrollUp,
-    ScrollDownHalfPage,
-    ScrollUpHalfPage,
-    ScrollDownPage,
-    ScrollUpPage,
-    ToggleWrap,
 }
 
 //
@@ -239,8 +226,8 @@ impl DetailsPanel {
         self.scroll_to(self.scroll.saturating_add_signed(scroll as i16))
     }
 
-    pub fn handle_event(&mut self, details_panel_event: DetailsPanelEvent) {
-        match details_panel_event {
+    pub fn handle_event(&mut self, event: DetailsPanelEvent) {
+        match event {
             DetailsPanelEvent::ScrollDown => self.scroll(1),
             DetailsPanelEvent::ScrollUp => self.scroll(-1),
             DetailsPanelEvent::ScrollDownHalfPage => self.scroll(self.rows() as isize / 2),
@@ -250,35 +237,8 @@ impl DetailsPanel {
             DetailsPanelEvent::ScrollDownPage => self.scroll(self.rows() as isize),
             DetailsPanelEvent::ScrollUpPage => self.scroll((self.rows() as isize).saturating_neg()),
             DetailsPanelEvent::ToggleWrap => self.wrap = !self.wrap,
+            DetailsPanelEvent::ToggleDiffFormat | DetailsPanelEvent::Unbound => {}
         }
-    }
-
-    /// Handle input. Returns bool of if event was handled
-    pub fn input(&mut self, key: KeyEvent) -> bool {
-        match key.code {
-            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.handle_event(DetailsPanelEvent::ScrollDown)
-            }
-            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.handle_event(DetailsPanelEvent::ScrollUp)
-            }
-            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.handle_event(DetailsPanelEvent::ScrollDownHalfPage)
-            }
-            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.handle_event(DetailsPanelEvent::ScrollUpHalfPage)
-            }
-            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.handle_event(DetailsPanelEvent::ScrollDownPage)
-            }
-            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.handle_event(DetailsPanelEvent::ScrollUpPage)
-            }
-            KeyCode::Char('W') => self.handle_event(DetailsPanelEvent::ToggleWrap),
-            _ => return false,
-        };
-
-        true
     }
 
     /// Handle input. Returns bool of if event was handled

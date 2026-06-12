@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Message popup now supports scrolling with a scrollbar
 - Command popup output now preserves ANSI color
 - Drag to resize pane divider in all tabs
+- Toggle horizontal/vertical split at runtime with `Ctrl+w` (configurable via `toggle-layout` keybind)
+- Global keybindings (`q`/`Ctrl+c`/`Esc` to quit, `h`/`l` and `1`/`2`/`3` to switch tabs, `:`
+  for the command popup) are now tracked in a dedicated event layer; `?` opens a
+  three-column help popup (main panel, details panel, global shortcuts)
 
 ### Changed
 

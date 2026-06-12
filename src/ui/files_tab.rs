@@ -3,7 +3,6 @@ use std::vec;
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
-use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -16,11 +15,15 @@ use crate::commander::files::File;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::env::DiffFormat;
+use crate::env::JJLayout;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::keybinds::DetailsPanelEvent;
+use crate::keybinds::DetailsPanelKeybinds;
+use crate::keybinds::FilesTabEvent;
+use crate::keybinds::FilesTabKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentAction;
-use crate::ui::help_popup::HelpPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
@@ -43,6 +46,9 @@ pub struct FilesTab {
     diff_format: DiffFormat,
 
     config: JjConfig,
+    keybinds: FilesTabKeybinds,
+    details_keybinds: DetailsPanelKeybinds,
+    layout: JJLayout,
     pane_divider: PaneDivider,
 }
 
@@ -91,7 +97,13 @@ impl FilesTab {
         ));
 
         let config = get_env().jj_config.clone();
+        let layout = config.layout();
         let pane_divider = PaneDivider::new(config.layout_percent());
+        let mut keybinds = FilesTabKeybinds::default();
+        if let Some(keybinds_config) = config.keybinds() {
+            keybinds.extend_from_config(keybinds_config);
+        }
+        let details_keybinds = DetailsPanelKeybinds::default();
 
         Ok(Self {
             head,
@@ -109,8 +121,16 @@ impl FilesTab {
             diff_panel: DetailsPanel::new(),
 
             config,
+            keybinds,
+            details_keybinds,
+            layout,
             pane_divider,
         })
+    }
+
+    pub fn set_layout(&mut self, layout: JJLayout) {
+        self.layout = layout;
+        self.pane_divider.reset();
     }
 
     pub fn set_head(&mut self, head: &Head) -> Result<()> {
@@ -207,7 +227,7 @@ impl Component for FilesTab {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = self.pane_divider.split(area, self.config.layout());
+        let chunks = self.pane_divider.split(area, self.layout);
 
         // Draw files
         {
@@ -334,24 +354,29 @@ impl Component for FilesTab {
                 return Ok(ComponentInputResult::Handled);
             }
 
-            if self.diff_panel.input(key) {
-                return Ok(ComponentInputResult::Handled);
-            }
-
-            match key.code {
-                KeyCode::Char('j') | KeyCode::Down => self.scroll_files(1)?,
-                KeyCode::Char('k') | KeyCode::Up => self.scroll_files(-1)?,
-                KeyCode::Char('J') => {
-                    self.scroll_files(self.files_height as isize / 2)?;
-                }
-                KeyCode::Char('K') => {
-                    self.scroll_files((self.files_height as isize / 2).saturating_neg())?;
-                }
-                KeyCode::Char('w') => {
+            match self.details_keybinds.match_event(key) {
+                DetailsPanelEvent::Unbound => {}
+                DetailsPanelEvent::ToggleDiffFormat => {
                     self.diff_format = self.diff_format.get_next(self.config.diff_tool());
                     self.refresh_diff()?;
+                    return Ok(ComponentInputResult::Handled);
                 }
-                KeyCode::Char('x') => {
+                ev => {
+                    self.diff_panel.handle_event(ev);
+                    return Ok(ComponentInputResult::Handled);
+                }
+            }
+
+            match self.keybinds.match_event(key) {
+                FilesTabEvent::ScrollDown => self.scroll_files(1)?,
+                FilesTabEvent::ScrollUp => self.scroll_files(-1)?,
+                FilesTabEvent::ScrollDownHalf => {
+                    self.scroll_files(self.files_height as isize / 2)?;
+                }
+                FilesTabEvent::ScrollUpHalf => {
+                    self.scroll_files((self.files_height as isize / 2).saturating_neg())?;
+                }
+                FilesTabEvent::Untrack => {
                     // this works even for deleted files because jj doesn't return error in that case
                     if self.untrack_file().is_err() {
                         return Ok(ComponentInputResult::HandledAction(
@@ -363,7 +388,7 @@ impl Component for FilesTab {
                     }
                     self.set_head(&new_commander().get_current_head()?)?;
                 }
-                KeyCode::Char('r') => {
+                FilesTabEvent::Restore => {
                     if let Err(err) = self.restore_file() {
                         return Ok(ComponentInputResult::HandledAction(
                             ComponentAction::SetPopup(Some(Box::new(MessagePopup::new(
@@ -374,47 +399,26 @@ impl Component for FilesTab {
                     }
                     self.set_head(&new_commander().get_current_head()?)?;
                 }
-                KeyCode::Char('R') | KeyCode::F(5) => {
+                FilesTabEvent::Refresh => {
                     self.head = new_commander().get_head_latest(&self.head)?;
                     self.refresh_files()?;
                     self.refresh_diff()?;
                 }
-                KeyCode::Char('@') => {
+                FilesTabEvent::FocusCurrent => {
                     let head = &new_commander().get_current_head()?;
                     self.set_head(head)?;
                 }
-                KeyCode::Char('?') => {
+                FilesTabEvent::ToggleLayout => {
                     return Ok(ComponentInputResult::HandledAction(
-                        ComponentAction::SetPopup(Some(Box::new(HelpPopup::new(
-                            vec![
-                                ("j/k".to_owned(), "scroll down/up".to_owned()),
-                                ("J/K".to_owned(), "scroll down by ½ page".to_owned()),
-                                ("x".to_owned(), "untrack file".to_owned()),
-                                ("r".to_owned(), "restore file".to_owned()),
-                                ("@".to_owned(), "view current change files".to_owned()),
-                            ],
-                            vec![
-                                ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
-                                (
-                                    "Ctrl+d/Ctrl+u".to_owned(),
-                                    "scroll down/up by ½ page".to_owned(),
-                                ),
-                                (
-                                    "Ctrl+f/Ctrl+b".to_owned(),
-                                    "scroll down/up by page".to_owned(),
-                                ),
-                                ("w".to_owned(), "toggle diff format".to_owned()),
-                                ("W".to_owned(), "toggle wrapping".to_owned()),
-                            ],
-                        )))),
+                        ComponentAction::ToggleLayout,
                     ));
                 }
-                _ => return Ok(ComponentInputResult::NotHandled),
+                FilesTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
             };
         }
 
         if let Event::Mouse(mouse) = event {
-            if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+            if self.pane_divider.handle_mouse(mouse, self.layout) {
                 return Ok(ComponentInputResult::Handled);
             }
             if self.diff_panel.input_mouse(mouse) {
@@ -424,5 +428,13 @@ impl Component for FilesTab {
         }
 
         Ok(ComponentInputResult::Handled)
+    }
+
+    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+        self.keybinds.make_help()
+    }
+
+    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+        self.details_keybinds.make_help()
     }
 }

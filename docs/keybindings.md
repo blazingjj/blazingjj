@@ -22,6 +22,8 @@ scroll-down = ["j", "down"]
 scroll-up = ["k", "up"]
 scroll-down-half = "shift+j"
 scroll-up-half = "shift+k"
+
+toggle-layout = "ctrl+w"
 ```
 
 ### Message popup
@@ -79,6 +81,4 @@ push-all = "shift+p"
 push-all-new = "ctrl+shift+p"
 fetch = "f"
 fetch-all = "shift+f"
-
-open-help = "?"
 ```
