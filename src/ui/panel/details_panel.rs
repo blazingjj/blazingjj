@@ -280,15 +280,16 @@ impl DetailsPanel {
 
         true
     }
+}
 
-    /// Handle input. Returns bool of if event was handled
-    pub fn input_mouse(&mut self, mouse: MouseEvent) -> bool {
-        if !self.panel_rect.contains(Position {
-            y: mouse.row,
-            x: mouse.column,
-        }) {
+impl super::PanelMouseInput for DetailsPanel {
+    fn input_mouse(&mut self, mouse: MouseEvent) -> super::MouseInput {
+        if !self
+            .panel_rect
+            .contains(Position::new(mouse.column, mouse.row))
+        {
             trace!("mouse {:?} not in rect {:?}", &mouse, &self.panel_rect);
-            return false;
+            return super::MouseInput::NotHandled;
         }
         trace!("mouse {:?} inside  rect {:?}", &mouse, &self.panel_rect);
         match mouse.kind {
@@ -302,8 +303,8 @@ impl DetailsPanel {
                 self.handle_event(DetailsPanelEvent::ScrollDown);
                 self.handle_event(DetailsPanelEvent::ScrollDown);
             }
-            _ => return false,
+            _ => return super::MouseInput::NotHandled,
         }
-        true
+        super::MouseInput::Handled
     }
 }

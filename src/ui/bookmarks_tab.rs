@@ -29,7 +29,10 @@ use crate::ui::ComponentAction;
 use crate::ui::help_popup::HelpPopup;
 use crate::ui::message_popup::MessagePopup;
 use crate::ui::panel::DetailsPanel;
+use crate::ui::panel::ListPane;
+use crate::ui::panel::MouseInput;
 use crate::ui::panel::TextContent;
+use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::centered_rect;
 use crate::ui::utils::centered_rect_line_height;
@@ -62,8 +65,8 @@ const EDIT_POPUP_ID: u16 = 4;
 /// Bookmarks tab. Shows bookmarks in main panel and selected bookmark current change in details panel.
 pub struct BookmarksTab<'a> {
     bookmarks_output: Result<Vec<BookmarkLine>, CommandError>,
+    bookmarks_pane: ListPane,
     bookmarks_list_state: ListState,
-    bookmarks_height: u16,
 
     show_all: bool,
 
@@ -141,6 +144,7 @@ impl BookmarksTab<'_> {
             bookmark.as_ref(),
             &bookmarks_output,
         ));
+        let bookmarks_pane = ListPane::default();
 
         let bookmark_output = bookmark.as_ref().and_then(|bookmark| match bookmark {
             BookmarkLine::Parsed { bookmark, .. } => Some(
@@ -159,8 +163,8 @@ impl BookmarksTab<'_> {
         Ok(Self {
             bookmarks_output,
             bookmark,
+            bookmarks_pane,
             bookmarks_list_state,
-            bookmarks_height: 0,
 
             show_all,
 
@@ -391,32 +395,16 @@ impl Component for BookmarksTab<'_> {
                 bookmark_lines
             };
 
-            let bookmarks_block = Block::bordered()
-                .title(" Bookmarks ")
-                .border_type(BorderType::Rounded);
-            self.bookmarks_height = bookmarks_block.inner(chunks[0]).height;
-            let bookmark_count = lines.len();
-            let bookmarks = List::new(lines).block(bookmarks_block).scroll_padding(3);
+            let bookmarks = List::new(lines)
+                .block(
+                    Block::bordered()
+                        .title(" Bookmarks ")
+                        .border_type(BorderType::Rounded),
+                )
+                .scroll_padding(3);
             *self.bookmarks_list_state.selected_mut() = current_bookmark_index;
-            f.render_stateful_widget(bookmarks, chunks[0], &mut self.bookmarks_list_state);
-
-            // Draw scrollbar on left panel
-            if bookmark_count > self.bookmarks_height.into() {
-                let index = current_bookmark_index.unwrap_or(0);
-                let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-                let mut scrollbar_state = ScrollbarState::default()
-                    .content_length(bookmark_count)
-                    .position(index);
-
-                f.render_stateful_widget(
-                    scrollbar,
-                    chunks[0].inner(Margin {
-                        vertical: 1,
-                        horizontal: 0,
-                    }),
-                    &mut scrollbar_state,
-                );
-            }
+            self.bookmarks_pane
+                .render(f, chunks[0], bookmarks, &mut self.bookmarks_list_state);
         }
 
         // Draw bookmark
@@ -772,10 +760,10 @@ impl Component for BookmarksTab<'_> {
                 KeyCode::Char('j') | KeyCode::Down => self.scroll_bookmarks(1),
                 KeyCode::Char('k') | KeyCode::Up => self.scroll_bookmarks(-1),
                 KeyCode::Char('J') => {
-                    self.scroll_bookmarks(self.bookmarks_height as isize / 2);
+                    self.scroll_bookmarks(self.bookmarks_pane.half_page_delta());
                 }
                 KeyCode::Char('K') => {
-                    self.scroll_bookmarks((self.bookmarks_height as isize / 2).saturating_neg());
+                    self.scroll_bookmarks(self.bookmarks_pane.half_page_delta().saturating_neg());
                 }
                 KeyCode::Char('w') => {
                     self.diff_format = self.diff_format.get_next(self.config.diff_tool());
@@ -972,10 +960,22 @@ impl Component for BookmarksTab<'_> {
             if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
                 return Ok(ComponentInputResult::Handled);
             }
-            if self.bookmark_panel.input_mouse(mouse) {
-                return Ok(ComponentInputResult::Handled);
+            match route_mouse(
+                mouse,
+                &mut [&mut self.bookmarks_pane, &mut self.bookmark_panel],
+            ) {
+                MouseInput::Scroll(delta) => self.scroll_bookmarks(delta),
+                MouseInput::Select(index) => {
+                    let bookmarks = self.bookmarks_output.as_deref().unwrap_or_default();
+                    if let Some(bookmark) = bookmarks.get(index).cloned() {
+                        self.bookmark = Some(bookmark);
+                        self.refresh_bookmark();
+                    }
+                }
+                MouseInput::Handled => {}
+                MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }
-            return Ok(ComponentInputResult::NotHandled);
+            return Ok(ComponentInputResult::Handled);
         }
 
         Ok(ComponentInputResult::Handled)

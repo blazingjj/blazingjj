@@ -53,7 +53,9 @@ pub trait Component {
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()>;
 
-    fn input(&mut self, event: Event) -> Result<ComponentInputResult>;
+    fn input(&mut self, _event: Event) -> Result<ComponentInputResult> {
+        Ok(ComponentInputResult::NotHandled)
+    }
 }
 
 #[instrument(level = "trace", name = "draw", skip(f, app))]
