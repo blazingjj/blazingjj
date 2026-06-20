@@ -1,6 +1,7 @@
 #![expect(clippy::borrow_interior_mutable_const)]
 
 use std::cmp::max;
+use std::process::Child;
 
 use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
@@ -11,6 +12,8 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
+use tracing::debug;
+use tracing::error;
 use tracing::instrument;
 use tui_confirm_dialog::ButtonLabel;
 use tui_confirm_dialog::ConfirmDialog;
@@ -65,6 +68,9 @@ pub struct LogTab<'a> {
 
     /// Cached change content
     commit_show_cache: CommitShowCache,
+
+    /// Child process for computing 'jj show'
+    pending_jj_show: Option<(CommitShowKey, Child)>,
 
     /// The currently selected change. It is a copy of `self.log_panel.head`,
     /// so if these differ, we need to update `self.head`
@@ -158,6 +164,7 @@ impl<'a> LogTab<'a> {
             head_key,
 
             commit_show_cache,
+            pending_jj_show: None,
 
             diff_format,
 
@@ -248,6 +255,77 @@ impl<'a> LogTab<'a> {
         );
         let active_heads = self.log_panel.log_heads();
         self.commit_show_cache.set_active(active_heads, &key);
+    }
+
+    /// Force launch of a child process for 'jj show'
+    fn launch_jj_show(&mut self, inner_width: usize, head: &Head, diff_format: &DiffFormat) {
+        let launch_key = CommitShowKey::new(head.clone(), diff_format.clone(), inner_width);
+
+        // Handle current child process
+        let pending_jj_show = self.pending_jj_show.take();
+        if let Some((key, mut child)) = pending_jj_show {
+            if key == launch_key {
+                // Ignore request for already running child
+                self.pending_jj_show = Some((key, child));
+                return;
+            }
+            // TODO implement std::fmt::Display for CommitShowKey
+            //debug!("Kill 'jj show' that was too slow. key={}", &key);
+            if let Err(err) = child.kill() {
+                error!("Kill failed on 'jj show' child process: {err}");
+            }
+            self.pending_jj_show = None;
+        };
+
+        // Lanuch new child process that runs 'jj show'
+        let commit_id = &head.commit_id;
+        let mut commander = new_commander();
+        commander.limit_width(inner_width);
+        let launch_child = commander.spawn_commit_show(commit_id, diff_format, true);
+        if let Err(err) = launch_child {
+            error!("Unable to spawn 'jj show': {}", err);
+            return;
+        }
+        let launch_child = launch_child.unwrap();
+
+        self.pending_jj_show = Some((launch_key, launch_child));
+    }
+
+    /// Update the cache with data from the child process, if it is
+    /// ready.
+    fn try_read_jj_show_output(&mut self) {
+        let pending_jj_show = self.pending_jj_show.take();
+        let Some((key, mut child)) = pending_jj_show else {
+            return;
+        };
+
+        let wait_result = child.try_wait();
+        if let Err(err) = wait_result {
+            // Abort on error, but log what happended
+            error!(
+                "Unable to get result from 'jj show'. try_wait on child failed with message: {err}"
+            );
+            // TODO: Maybe we want to kill the child process here?
+            self.pending_jj_show = Some((key, child));
+            return;
+        }
+
+        let Some(status) = wait_result.unwrap() else {
+            // Child not done yet
+            self.pending_jj_show = Some((key, child));
+            return;
+        };
+        debug!("jj show child process exited with status {status}");
+
+        // Read data from child process into cache
+        let output = child.wait_with_output().expect("Failed to wait on child");
+        let text = String::from_utf8_lossy(&output.stdout);
+        let text = tabs_to_spaces(&text);
+        let value = CommitShowValue::new(key.clone(), text);
+        self.commit_show_cache.insert_document(value);
+
+        // Note: self.pending_jj_show.take() has already cleared the
+        // child handle, which indicates room for the next child process
     }
 
     /// Extract head content from commander.get_commit_show
