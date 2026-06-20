@@ -116,7 +116,7 @@ pub struct Commander {
     pub force_no_color: bool,
 }
 
-/// Initialize a new [Commander] using [ENV]
+/// Initialize a new [Commander] using [get_env]
 /// Panics if ENV is not yet initialized
 pub fn new_commander() -> Commander {
     Commander::new(get_env())
