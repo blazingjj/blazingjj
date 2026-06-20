@@ -6,6 +6,7 @@ It is mostly used in the [log_tab][crate::ui::log_tab] module.
 */
 
 use std::fmt::Display;
+use std::process::Child;
 use std::sync::LazyLock;
 
 use anyhow::Context;
@@ -19,6 +20,7 @@ use tracing::instrument;
 
 use crate::commander::CommandError;
 use crate::commander::Commander;
+use crate::commander::JjCommand;
 use crate::commander::RemoveEndLine;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::ids::ChangeId;
@@ -169,13 +171,42 @@ impl Commander {
         diff_format: &DiffFormat,
         ignore_working_copy: bool,
     ) -> Result<String, CommandError> {
+        Ok(self
+            .build_jj_commit_show(commit_id, diff_format, ignore_working_copy)
+            .color()
+            .run()?
+            .remove_end_line())
+    }
+
+    /// Spawn child process to get commit details.
+    /// Maps to `jj show <commit>`
+    #[instrument(level = "trace", skip(self))]
+    pub fn spawn_commit_show(
+        &self,
+        commit_id: &CommitId,
+        diff_format: &DiffFormat,
+        ignore_working_copy: bool,
+    ) -> Result<Child, CommandError> {
+        self.build_jj_commit_show(commit_id, diff_format, ignore_working_copy)
+            .color()
+            .spawn()
+    }
+
+    /// Create the JjCommmand for `jj show <commit>`
+    #[instrument(level = "trace", skip(self))]
+    pub fn build_jj_commit_show(
+        &self,
+        commit_id: &CommitId,
+        diff_format: &DiffFormat,
+        ignore_working_copy: bool,
+    ) -> JjCommand<'_> {
         let mut args = vec!["show", commit_id.as_str()];
         args.append(&mut diff_format.get_args());
         if ignore_working_copy {
             args.push("--ignore-working-copy");
         }
 
-        Ok(self.jj(args).color().run()?.remove_end_line())
+        self.jj(args)
     }
 
     /// Get the current head.
