@@ -32,6 +32,7 @@ use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::io;
 use std::io::Write;
+use std::process::Child;
 use std::process::Command;
 use std::process::Stdio;
 use std::string::FromUtf8Error;
@@ -74,6 +75,8 @@ impl DiffFormat {
 
 #[derive(Debug, Error)]
 pub enum CommandError {
+    #[error("Error spawning child: {0}")]
+    Spawn(io::Error),
     #[error("Error getting output: {0}")]
     Output(#[from] io::Error),
     #[error("{0}")]
@@ -267,27 +270,24 @@ impl JjCommand<'_> {
         Ok(())
     }
 
+    /// Spawn a child process to run the command
+    pub fn spawn(self) -> Result<Child, CommandError> {
+        let mut command = self.build_command();
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(CommandError::Spawn)
+    }
+
     /// Configure and run the command, returning the captured standard output.
     ///
     /// `stdout` selects how the child's standard output is handled: piped to
     /// be captured and returned, or null to be discarded. Standard error is
     /// always captured so it can be surfaced on failure.
     fn execute(self, stdout: Stdio) -> Result<Vec<u8>, CommandError> {
-        let mut command = Command::new(&self.commander.env.jj_bin);
-        command.args(&self.args);
-        command.args(get_output_args(
-            !self.commander.force_no_color && self.color,
-            self.quiet,
-        ));
-
-        if let Some(jj_config_toml) = &self.commander.jj_config_toml {
-            for cfg in jj_config_toml {
-                command.args(["--config", cfg]);
-            }
-        }
-
-        command.current_dir(&self.commander.env.root);
-        command.envs(self.env_var.iter().cloned());
+        let mut command = self.build_command();
         command.stdout(stdout);
         command.stderr(Stdio::piped());
 
@@ -324,6 +324,26 @@ impl JjCommand<'_> {
         }
 
         Ok(output.stdout)
+    }
+
+    /// Construct a Command ready for execution
+    fn build_command(&self) -> Command {
+        let mut command = Command::new(&self.commander.env.jj_bin);
+        command.args(&self.args);
+        command.args(get_output_args(
+            !self.commander.force_no_color && self.color,
+            self.quiet,
+        ));
+
+        if let Some(jj_config_toml) = &self.commander.jj_config_toml {
+            for cfg in jj_config_toml {
+                command.args(["--config", cfg]);
+            }
+        }
+
+        command.current_dir(&self.commander.env.root);
+        command.envs(self.env_var.iter().cloned());
+        command
     }
 }
 
