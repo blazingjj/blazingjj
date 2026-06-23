@@ -1,5 +1,6 @@
 mod large_string;
 pub use large_string::LargeString;
+mod timer;
 use ratatui::crossterm::event::MouseButton;
 use ratatui::crossterm::event::MouseEvent;
 use ratatui::crossterm::event::MouseEventKind;
@@ -7,6 +8,7 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
+pub use timer::Timer;
 
 use crate::env::JJLayout;
 
