@@ -70,11 +70,8 @@ impl Commander {
     #[instrument(level = "trace", skip(self))]
     pub fn get_files(&self, head: &Head) -> Result<Vec<File>, CommandError> {
         Ok(self
-            .execute_jj_command(
-                vec!["diff", "-r", head.commit_id.as_str(), "--summary"],
-                false,
-                true,
-            )?
+            .jj(["diff", "-r", head.commit_id.as_str(), "--summary"])
+            .run()?
             .lines()
             .map(|line| {
                 let captured = FILES_REGEX.captures(line);
@@ -100,11 +97,9 @@ impl Commander {
     /// Maps to `jj diff --summary -r <revision>`
     #[instrument(level = "trace", skip(self))]
     pub fn get_conflicts(&self, commit_id: &CommitId) -> Result<Vec<Conflict>> {
-        let output = self.execute_jj_command(
-            vec!["resolve", "--list", "-r", commit_id.as_str()],
-            false,
-            true,
-        );
+        let output = self
+            .jj(["resolve", "--list", "-r", commit_id.as_str()])
+            .run();
 
         match output {
             Ok(output) => Ok(output
@@ -160,7 +155,7 @@ impl Commander {
             args.push("--ignore-working-copy");
         }
 
-        self.execute_jj_command(args, true, true).map(Some)
+        self.jj(args).color().run().map(Some)
     }
 
     #[instrument(level = "trace", skip(self))]
@@ -181,11 +176,7 @@ impl Commander {
         };
 
         let fileset = Self::get_file_revset(path);
-        Ok(Some(self.execute_jj_command(
-            vec!["file", "untrack", &fileset],
-            false,
-            true,
-        )?))
+        Ok(Some(self.jj(["file", "untrack", &fileset]).run()?))
     }
 
     #[instrument(level = "trace", skip(self))]
@@ -206,11 +197,7 @@ impl Commander {
         };
 
         let fileset = Self::get_file_revset(path);
-        Ok(Some(self.execute_jj_command(
-            vec!["restore", &fileset],
-            false,
-            true,
-        )?))
+        Ok(Some(self.jj(["restore", &fileset]).run()?))
     }
 
     fn get_file_revset(path: &str) -> String {
@@ -259,7 +246,7 @@ mod tests {
         }
 
         // Commit
-        test_repo.commander.execute_void_jj_command(vec!["new"])?;
+        test_repo.commander.jj(["new"]).run_void()?;
 
         // Modify file
         {
@@ -327,7 +314,7 @@ mod tests {
         }
 
         // Commit
-        test_repo.commander.execute_void_jj_command(vec!["new"])?;
+        test_repo.commander.jj(["new"]).run_void()?;
 
         // Modify file
         {
@@ -354,7 +341,7 @@ mod tests {
         }
 
         // Commit
-        test_repo.commander.execute_void_jj_command(vec!["new"])?;
+        test_repo.commander.jj(["new"]).run_void()?;
 
         // Rename file
         {
@@ -384,7 +371,7 @@ mod tests {
         }
 
         // Commit
-        test_repo.commander.execute_void_jj_command(vec!["new"])?;
+        test_repo.commander.jj(["new"]).run_void()?;
 
         // Delete file
         {
@@ -430,13 +417,16 @@ mod tests {
         let head2 = test_repo.commander.get_current_head()?;
         fs::write(&file_path, b"BBB")?;
 
-        test_repo.commander.execute_void_jj_command([
-            "rebase",
-            "-s",
-            head2.change_id.as_str(),
-            "-d",
-            head1.change_id.as_str(),
-        ])?;
+        test_repo
+            .commander
+            .jj([
+                "rebase",
+                "-s",
+                head2.change_id.as_str(),
+                "-d",
+                head1.change_id.as_str(),
+            ])
+            .run_void()?;
 
         let head = test_repo.commander.get_current_head()?;
 

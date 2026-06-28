@@ -91,28 +91,22 @@ fn parse_head(text: &str) -> Result<Head> {
 
 impl Commander {
     fn execute_jj_log(&self, revset: &str, template: &str) -> Result<String, CommandError> {
-        self.execute_jj_command(
-            ["log", "--no-graph", "--template", template, "-r", revset],
-            false,
-            true,
-        )
+        self.jj(["log", "--no-graph", "--template", template, "-r", revset])
+            .run()
     }
 
     fn execute_jj_log_one(&self, revset: &str, template: &str) -> Result<String, CommandError> {
-        self.execute_jj_command(
-            [
-                "log",
-                "--no-graph",
-                "--template",
-                template,
-                "-r",
-                revset,
-                "--limit",
-                "1",
-            ],
-            false,
-            true,
-        )
+        self.jj([
+            "log",
+            "--no-graph",
+            "--template",
+            template,
+            "-r",
+            revset,
+            "--limit",
+            "1",
+        ])
+        .run()
     }
 
     /// Get log. Returns human readable log and mapping to log line to head.
@@ -127,15 +121,14 @@ impl Commander {
         }
 
         // Force builtin_log_compact which uses 2 lines per change
-        let graph = self.execute_jj_command(
-            [
+        let graph = self
+            .jj([
                 vec!["log", "--template", "builtin_log_compact"],
                 args.clone(),
             ]
-            .concat(),
-            true,
-            true,
-        )?;
+            .concat())
+            .color()
+            .run()?;
 
         // Extract the log one more time, but this time use a template
         // where each line begins with Head information. Since jj has
@@ -143,22 +136,17 @@ impl Commander {
         // The number of lines in graph and the number of items in graph_heads
         // should be identical.
         let graph_heads: Vec<Option<Head>> = self
-            .execute_jj_command(
-                [
-                    vec![
-                        "log",
-                        "--template",
-                        // Match builtin_log_compact with 2 lines per change
-                        &format!(
-                            r#"{HEAD_TEMPLATE} ++ " " ++ bookmarks ++"\n" ++ {HEAD_TEMPLATE}"#
-                        ),
-                    ],
-                    args,
-                ]
-                .concat(),
-                false,
-                true,
-            )?
+            .jj([
+                vec![
+                    "log",
+                    "--template",
+                    // Match builtin_log_compact with 2 lines per change
+                    &format!(r#"{HEAD_TEMPLATE} ++ " " ++ bookmarks ++"\n" ++ {HEAD_TEMPLATE}"#),
+                ],
+                args,
+            ]
+            .concat())
+            .run()?
             .lines()
             .map(|line| parse_head(line).ok())
             .collect();
@@ -187,7 +175,7 @@ impl Commander {
             args.push("--ignore-working-copy");
         }
 
-        Ok(self.execute_jj_command(args, true, true)?.remove_end_line())
+        Ok(self.jj(args).color().run()?.remove_end_line())
     }
 
     /// Get the current head.
@@ -230,18 +218,15 @@ impl Commander {
         // there's a new commit for the head
         for latest_head in latest_heads.iter() {
             let parent_commits: Vec<ChangeId> = self
-                .execute_jj_command(
-                    vec![
-                        "obslog",
-                        "--no-graph",
-                        "--template",
-                        r#"commit.change_id() ++ "\n""#,
-                        "-r",
-                        latest_head.commit_id.as_str(),
-                    ],
-                    false,
-                    true,
-                )
+                .jj([
+                    "obslog",
+                    "--no-graph",
+                    "--template",
+                    r#"commit.change_id() ++ "\n""#,
+                    "-r",
+                    latest_head.commit_id.as_str(),
+                ])
+                .run()
                 .context("Failed getting latest head parent commits")?
                 .lines()
                 .map(|line| ChangeId(line.to_owned()))

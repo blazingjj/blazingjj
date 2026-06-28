@@ -100,8 +100,8 @@ impl Commander {
         }
         args.push("--sort");
         args.push("committer-date-");
-        let bookmarks_colored = self.execute_jj_command(
-            [
+        let bookmarks_colored = self
+            .jj([
                 vec![
                     "bookmark",
                     "list",
@@ -116,26 +116,22 @@ impl Commander {
                 ],
                 args.clone(),
             ]
-            .concat(),
-            true,
-            true,
-        )?;
+            .concat())
+            .color()
+            .run()?;
 
         let bookmarks: Vec<BookmarkLine> = self
-            .execute_jj_command(
-                [
-                    vec![
-                        "bookmark",
-                        "list",
-                        "-T",
-                        &format!(r#"{BRANCH_TEMPLATE} ++ "\n""#),
-                    ],
-                    args,
-                ]
-                .concat(),
-                false,
-                true,
-            )?
+            .jj([
+                vec![
+                    "bookmark",
+                    "list",
+                    "-T",
+                    &format!(r#"{BRANCH_TEMPLATE} ++ "\n""#),
+                ],
+                args,
+            ]
+            .concat())
+            .run()?
             .lines()
             .zip(bookmarks_colored.lines())
             .map(|(line, line_colored)| match parse_bookmark(line) {
@@ -163,7 +159,8 @@ impl Commander {
         }
 
         let bookmarks: Vec<Bookmark> = self
-            .execute_jj_command(args, false, true)?
+            .jj(args)
+            .run()?
             .lines()
             .filter_map(parse_bookmark)
             .sorted_by(|a, b| b.timestamp.cmp(&a.timestamp))
@@ -188,23 +185,21 @@ impl Commander {
             args.push("--ignore-working-copy");
         }
 
-        Ok(self.execute_jj_command(args, true, true)?.remove_end_line())
+        Ok(self.jj(args).color().run()?.remove_end_line())
     }
 
     #[instrument(level = "trace", skip(self))]
     pub fn generate_bookmark_name(&self, change_id: &ChangeId) -> Result<String, CommandError> {
-        self.execute_jj_command(
-            [
-                "show",
-                "--no-patch",
-                "--template",
-                self.env.jj_config.bookmark_template().as_str(),
-                "-r",
-                change_id.as_str(),
-            ],
-            false,
-            false,
-        )
+        self.jj([
+            "show",
+            "--no-patch",
+            "--template",
+            self.env.jj_config.bookmark_template().as_str(),
+            "-r",
+            change_id.as_str(),
+        ])
+        .verbose()
+        .run()
     }
 }
 

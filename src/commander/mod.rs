@@ -9,14 +9,16 @@ Since the number of jj commands are quite high and some are quite complex,
 the implementation is found in multiple source files. This is why you
 will find multiple "impl Commander" sections in Commander, one for each source file.
 
-This module implements the low level functions used by the
-command implementation functions:
+A [Commander] is a reusable handle to a repository: it carries the
+ambient context (the repo root, the jj binary, test overrides) and
+exposes one method per jj operation. Each operation builds a single
+invocation with [Commander::jj], which returns a [JjCommand] builder:
 
 * [Commander::new] - Create a new instance
 * [Commander::check_jj_version] - Check jj works with blazingjj
-* [Commander::execute_command] - Execute any command and log the result
-* [Commander::execute_jj_command] - Execute a jj command.
-* [Commander::execute_void_jj_command] - Execute a jj command and discard the output.
+* [Commander::jj] - Start building a single jj invocation
+* [JjCommand::run] - Execute the command and return its output
+* [JjCommand::run_void] - Execute the command and discard the output
 
 */
 
@@ -27,11 +29,12 @@ pub mod jj;
 pub mod log;
 
 use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::io;
+use std::io::Write;
 use std::process::Command;
+use std::process::Stdio;
 use std::string::FromUtf8Error;
-use std::sync::Arc;
-use std::sync::Mutex;
 
 use ansi_to_tui::IntoText;
 use anyhow::Context;
@@ -93,14 +96,20 @@ impl CommandError {
     }
 }
 
-/// Struct used to interact with the jj cli using commanders.
+/// Reusable handle to a repository.
 ///
-/// Handles arguments and recording of history.
-#[derive(Debug)]
+/// Holds the ambient context shared by every jj invocation (the repo
+/// root, the jj binary, test overrides) and exposes one method per
+/// operation. A commander can be reused for any number of commands;
+/// per-command options (color, quiet, stdin, ...) live on the
+/// [JjCommand] returned by [Commander::jj], not here.
+#[derive(Clone, Debug)]
 pub struct Commander {
     pub env: Env,
-    /// Environment variables.
-    env_var: Arc<Mutex<Vec<(String, String)>>>,
+    /// Terminal width passed to jj as `COLUMNS`, if set. Applies to every
+    /// command this commander runs, since it describes the output device
+    /// rather than any single command.
+    columns: Option<usize>,
 
     // Used for testing
     pub jj_config_toml: Option<Vec<String>>,
@@ -117,90 +126,45 @@ impl Commander {
     pub fn new(env: &Env) -> Self {
         Self {
             env: env.clone(),
-            env_var: Arc::new(Mutex::new(Vec::new())),
+            columns: None,
             jj_config_toml: None,
             force_no_color: false,
         }
     }
 
-    /// Tell jj to limit the with of output of secondary programs, like diff tools
-    /// Will ignore too narrow width requests.
-    /// You should call this before calling a jj command.
+    /// Tell jj to limit the width of output of secondary programs, like diff
+    /// tools, by setting `COLUMNS` on every command this commander runs.
+    /// Too narrow width requests are ignored, as they produce garbage output.
     pub fn limit_width(&mut self, columns: usize) {
-        // A request for too few columns is ignored.
-        // It will produce garbage output.
         const MIN_SETTABLE_WIDTH: usize = 20;
         if columns >= MIN_SETTABLE_WIDTH {
-            self.set_env("COLUMNS", &format!("{columns}"));
+            self.columns = Some(columns);
         }
     }
 
-    /// Set an environment variable for the next execute_command.
-    pub fn set_env(&mut self, var: &str, value: &str) {
-        self.env_var
-            .lock()
-            .unwrap()
-            .push((var.into(), value.into()))
-    }
-
-    /// Execute a command and record to history.
-    /// Environment variables can be set with set_env.
-    /// They are cleared after execution.
-    fn execute_command(&self, command: &mut Command) -> Result<String, CommandError> {
-        // Set current directory to root
-        command.current_dir(&self.env.root);
-
-        // Set environment variables and clear them for the next command
-        command.envs(self.env_var.lock().unwrap().iter().cloned());
-        self.env_var.lock().unwrap().clear();
-
-        let output = command.output();
-        let output = output?;
-
-        if !output.status.success() {
-            // Return JjError if non-zero status code
-            return Err(CommandError::Status(
-                String::from_utf8_lossy(&output.stderr).to_string(),
-                output.status.code(),
-            ));
-        }
-
-        Ok(String::from_utf8(output.stdout)?)
-    }
-
-    /// Execute a jj command with color/quiet arguments.
-    pub fn execute_jj_command<I, S>(
-        &self,
-        args: I,
-        color: bool,
-        quiet: bool,
-    ) -> Result<String, CommandError>
+    /// Start building a single jj invocation with the given arguments.
+    ///
+    /// The returned [JjCommand] carries the per-command options (color,
+    /// quiet, ...) and is executed with [JjCommand::run] or
+    /// [JjCommand::run_void].
+    pub fn jj<I, S>(&self, args: I) -> JjCommand<'_>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        let mut command = Command::new(&self.env.jj_bin);
-        command.args(args);
-        command.args(get_output_args(!self.force_no_color && color, quiet));
-
-        if let Some(jj_config_toml) = &self.jj_config_toml {
-            for cfg in jj_config_toml {
-                command.args(["--config", cfg]);
-            }
+        let mut env_var = Vec::new();
+        if let Some(columns) = self.columns {
+            env_var.push(("COLUMNS".to_owned(), columns.to_string()));
         }
 
-        self.execute_command(&mut command)
-    }
-
-    /// Execute a jj command without using the output.
-    pub fn execute_void_jj_command<I, S>(&self, args: I) -> Result<(), CommandError>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
-    {
-        // Since no result is used, enable color for command log
-        self.execute_jj_command(args, true, true)?;
-        Ok(())
+        JjCommand {
+            commander: self,
+            args: args.into_iter().map(|s| s.as_ref().to_owned()).collect(),
+            color: false,
+            quiet: true,
+            stdin: None,
+            env_var,
+        }
     }
 
     /// Check that the version of jj is recent enough to work with blazingjj
@@ -209,9 +173,10 @@ impl Commander {
     #[instrument(level = "trace", skip(self))]
     pub fn check_jj_version(&self) -> Result<()> {
         // Ask jj about its version
-        let (color, quiet) = (false, false);
         let found_version = self
-            .execute_jj_command(vec!["version"], color, quiet)
+            .jj(["version"])
+            .verbose()
+            .run()
             .context("Run jj version")?;
 
         // Extract version number
@@ -237,6 +202,128 @@ impl Commander {
             ),
             Ok(_) => Ok(()), // found >= min, so jj is recent enough
         }
+    }
+}
+
+/// A single jj invocation, built from a [Commander] via [Commander::jj].
+///
+/// Carries the arguments and the per-command options. Configuration
+/// methods consume and return the builder so they can be chained; the
+/// command is run exactly once with [Self::run] or [Self::run_void].
+pub struct JjCommand<'a> {
+    commander: &'a Commander,
+    args: Vec<OsString>,
+    /// Whether the command should emit ANSI color. Off by default so output
+    /// is safe to parse; enable with [Self::color] for output shown to the
+    /// user.
+    color: bool,
+    /// Whether to pass `--quiet`. On by default.
+    quiet: bool,
+    /// Data to feed the command on standard input, if any.
+    stdin: Option<String>,
+    /// Environment variables for this command.
+    env_var: Vec<(String, String)>,
+}
+
+impl JjCommand<'_> {
+    /// Enable ANSI color in the command's output.
+    ///
+    /// Off by default, so parsed output stays free of escape codes; enable it
+    /// for output shown directly to the user (diffs, logs, the command log).
+    pub fn color(mut self) -> Self {
+        self.color = true;
+        self
+    }
+
+    /// Don't pass `--quiet`, so jj's informational output (snapshot and hint
+    /// messages) is included. Quiet is on by default.
+    pub fn verbose(mut self) -> Self {
+        self.quiet = false;
+        self
+    }
+
+    /// Feed `stdin` to the command on standard input.
+    ///
+    /// Useful for commands like `jj describe --stdin`, where passing the value
+    /// as an argument would be misinterpreted (e.g. a message starting with a
+    /// dash being parsed as a flag).
+    pub fn stdin(mut self, stdin: &str) -> Self {
+        self.stdin = Some(stdin.to_owned());
+        self
+    }
+
+    /// Execute the command and return its standard output.
+    pub fn run(self) -> Result<String, CommandError> {
+        let stdout = self.execute(Stdio::piped())?;
+        Ok(String::from_utf8(stdout)?)
+    }
+
+    /// Execute the command, discarding its output.
+    pub fn run_void(self) -> Result<(), CommandError> {
+        // The output isn't used, so don't bother capturing or decoding it.
+        // Color stays enabled so a failure's stderr reaches the user with its
+        // formatting intact.
+        self.color().execute(Stdio::null())?;
+        Ok(())
+    }
+
+    /// Configure and run the command, returning the captured standard output.
+    ///
+    /// `stdout` selects how the child's standard output is handled: piped to
+    /// be captured and returned, or null to be discarded. Standard error is
+    /// always captured so it can be surfaced on failure.
+    fn execute(self, stdout: Stdio) -> Result<Vec<u8>, CommandError> {
+        let mut command = Command::new(&self.commander.env.jj_bin);
+        command.args(&self.args);
+        command.args(get_output_args(
+            !self.commander.force_no_color && self.color,
+            self.quiet,
+        ));
+
+        if let Some(jj_config_toml) = &self.commander.jj_config_toml {
+            for cfg in jj_config_toml {
+                command.args(["--config", cfg]);
+            }
+        }
+
+        command.current_dir(&self.commander.env.root);
+        command.envs(self.env_var.iter().cloned());
+        command.stdout(stdout);
+        command.stderr(Stdio::piped());
+
+        let output = match self.stdin {
+            Some(input) => {
+                command.stdin(Stdio::piped());
+                let mut child = command.spawn()?;
+                let mut stdin = child.stdin.take().expect("stdin was piped");
+                // Write on a separate thread while we drain the child's output,
+                // so neither side deadlocks on a full pipe buffer. Dropping the
+                // handle closes the pipe, signalling EOF to the child.
+                let writer = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
+                let output = child.wait_with_output()?;
+                // Ignore a broken pipe (child exited early); the status check
+                // below surfaces the real error.
+                writer
+                    .join()
+                    .expect("stdin writer thread panicked")
+                    .or_else(|err| match err.kind() {
+                        io::ErrorKind::BrokenPipe => Ok(()),
+                        _ => Err(err),
+                    })?;
+                output
+            }
+            None => command.spawn()?.wait_with_output()?,
+        };
+
+        if !output.status.success() {
+            // Return JjError if non-zero status code
+            return Err(CommandError::Status(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+                output.status.code(),
+            ));
+        }
+
+        Ok(output.stdout)
     }
 }
 
@@ -314,7 +401,7 @@ pub mod tests {
             commander.jj_config_toml = Some(jj_config_toml);
             commander.force_no_color = true;
 
-            commander.execute_void_jj_command(vec!["git", "init", "--colocate"])?;
+            commander.jj(["git", "init", "--colocate"]).run_void()?;
 
             Ok(Self {
                 directory,
@@ -329,9 +416,7 @@ pub mod tests {
 
         let test_repo = TestRepo::new()?;
 
-        test_repo
-            .commander
-            .execute_jj_command(vec!["status"], true, true)?;
+        test_repo.commander.jj(["status"]).color().run()?;
 
         Ok(())
     }

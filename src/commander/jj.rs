@@ -19,13 +19,13 @@ impl Commander {
     #[instrument(level = "trace", skip(self, revisions))]
     pub fn run_new<'a, T: IntoIterator<Item = &'a str>>(&self, revisions: T) -> Result<()> {
         let args = ["new"].into_iter().chain::<T>(revisions);
-        self.execute_void_jj_command(args)
-            .context("Failed executing jj new")
+        self.jj(args).run_void().context("Failed executing jj new")
     }
 
     /// Duplicate a change. Maps to `jj duplicate`
     pub fn run_duplicate(&self, revision: &str) -> Result<()> {
-        self.execute_void_jj_command(vec!["duplicate", revision])
+        self.jj(["duplicate", revision])
+            .run_void()
             .context("Failed executing jj duplicate")
     }
 
@@ -37,8 +37,7 @@ impl Commander {
             args.push("--ignore-immutable");
         }
 
-        self.execute_void_jj_command(args)
-            .context("Failed executing jj edit")
+        self.jj(args).run_void().context("Failed executing jj edit")
     }
 
     /// Abandon change. Maps to `jj abandon <revision>`
@@ -47,52 +46,62 @@ impl Commander {
         let args = ["abandon"]
             .into_iter()
             .chain(commit_ids.iter().map(CommitId::as_str));
-        self.execute_void_jj_command(args)
+        self.jj(args)
+            .run_void()
             .context("Failed executing jj abandon")
     }
 
-    /// Describe change. Maps to `jj describe <revision> -m <message>`
+    /// Describe change. Maps to `jj describe <revision> --stdin`
+    ///
+    /// The message is passed on stdin rather than via `-m`, since jj would
+    /// otherwise mistake a message starting with a dash for a flag.
     #[instrument(level = "trace", skip(self))]
     pub fn run_describe(&self, revision: &str, message: &str) -> Result<()> {
-        self.execute_void_jj_command(vec!["describe", revision, "-m", message])
+        self.jj(["describe", revision, "--stdin"])
+            .stdin(message)
+            .run_void()
             .context("Failed executing jj describe")
     }
 
     /// Rebase changes. Maps to `jj rebase -s <rev> -d <rev>` or similar
     #[instrument(level = "trace", skip(self))]
     pub fn run_rebase(
-        &mut self,
+        &self,
         src_mode: &str,
         src_rev: &str,
         tgt_mode: &str,
         tgt_rev: &str,
     ) -> Result<()> {
-        Ok(self.execute_void_jj_command(vec!["rebase", src_mode, src_rev, tgt_mode, tgt_rev])?)
+        Ok(self
+            .jj(["rebase", src_mode, src_rev, tgt_mode, tgt_rev])
+            .run_void()?)
     }
 
     /// Squash changes. Maps to `jj squash -u --into <revision>`
     #[instrument(level = "trace", skip(self))]
-    pub fn run_squash(&mut self, revision: &str, ignore_immutable: bool) -> Result<()> {
+    pub fn run_squash(&self, revision: &str, ignore_immutable: bool) -> Result<()> {
         let mut args = vec!["squash", "-u", "--into", revision];
         if ignore_immutable {
             args.push("--ignore-immutable");
         }
 
-        self.execute_void_jj_command(args)
+        self.jj(args)
+            .run_void()
             .context("Failed executing jj squash")
     }
 
     /// Absorb a change's diff into its mutable ancestors. Maps to `jj absorb --from <revision>`
     #[instrument(level = "trace", skip(self))]
-    pub fn run_absorb(&mut self, revision: &str) -> Result<()> {
-        self.execute_void_jj_command(vec!["absorb", "--from", revision])
+    pub fn run_absorb(&self, revision: &str) -> Result<()> {
+        self.jj(["absorb", "--from", revision])
+            .run_void()
             .context("Failed executing jj absorb")
     }
 
     /// Create bookmark. Maps to `jj bookmark create <name>`
     #[instrument(level = "trace", skip(self))]
     pub fn create_bookmark(&self, name: &str) -> Result<Bookmark, CommandError> {
-        self.execute_void_jj_command(vec!["bookmark", "create", name])?;
+        self.jj(["bookmark", "create", name]).run_void()?;
         // jj only creates local bookmarks
         Ok(Bookmark {
             name: name.to_owned(),
@@ -109,7 +118,8 @@ impl Commander {
         name: &str,
         commit_id: &CommitId,
     ) -> Result<Bookmark, CommandError> {
-        self.execute_void_jj_command(vec!["bookmark", "create", name, "-r", commit_id.as_str()])?;
+        self.jj(["bookmark", "create", name, "-r", commit_id.as_str()])
+            .run_void()?;
         // jj only creates local bookmarks
         Ok(Bookmark {
             name: name.to_owned(),
@@ -127,7 +137,7 @@ impl Commander {
         commit_id: &CommitId,
     ) -> Result<(), CommandError> {
         // TODO: Maybe don't do --allow-backwards by default?
-        self.execute_void_jj_command(vec![
+        self.jj([
             "bookmark",
             "set",
             name,
@@ -135,36 +145,39 @@ impl Commander {
             commit_id.as_str(),
             "--allow-backwards",
         ])
+        .run_void()
     }
 
     /// Rename bookmark. Maps to `jj bookmark rename <old> <new>`
     #[instrument(level = "trace", skip(self))]
     pub fn rename_bookmark(&self, old: &str, new: &str) -> Result<(), CommandError> {
-        self.execute_void_jj_command(vec!["bookmark", "rename", old, new])
+        self.jj(["bookmark", "rename", old, new]).run_void()
     }
 
     /// Delete bookmark. Maps to `jj bookmark delete <name>`
     #[instrument(level = "trace", skip(self))]
     pub fn delete_bookmark(&self, name: &str) -> Result<(), CommandError> {
-        self.execute_void_jj_command(vec!["bookmark", "delete", name])
+        self.jj(["bookmark", "delete", name]).run_void()
     }
 
     /// Forget bookmark. Maps to `jj bookmark forget <name>`
     #[instrument(level = "trace", skip(self))]
     pub fn forget_bookmark(&self, name: &str) -> Result<(), CommandError> {
-        self.execute_void_jj_command(vec!["bookmark", "forget", name])
+        self.jj(["bookmark", "forget", name]).run_void()
     }
 
     /// Track bookmark. Maps to `jj bookmark track <bookmark>@<remote>`
     #[instrument(level = "trace", skip(self))]
     pub fn track_bookmark(&self, bookmark: &Bookmark) -> Result<(), CommandError> {
-        self.execute_void_jj_command(vec!["bookmark", "track", &bookmark.to_string()])
+        self.jj(["bookmark", "track", &bookmark.to_string()])
+            .run_void()
     }
 
     /// Untrack bookmark. Maps to `jj bookmark untrack <bookmark>@<remote>`
     #[instrument(level = "trace", skip(self))]
     pub fn untrack_bookmark(&self, bookmark: &Bookmark) -> Result<(), CommandError> {
-        self.execute_void_jj_command(vec!["bookmark", "untrack", &bookmark.to_string()])
+        self.jj(["bookmark", "untrack", &bookmark.to_string()])
+            .run_void()
     }
 
     /// Git push. Maps to `jj git push`
@@ -186,7 +199,7 @@ impl Commander {
             args.push(commit_id.as_str());
         }
 
-        self.execute_jj_command(args, true, true)
+        self.jj(args).color().run()
     }
 
     /// Git fetch. Maps to `jj git fetch`
@@ -197,7 +210,7 @@ impl Commander {
             args.push("--all-remotes");
         }
 
-        self.execute_jj_command(args, true, true)
+        self.jj(args).color().run()
     }
 }
 
@@ -263,6 +276,22 @@ mod tests {
     }
 
     #[test]
+    fn run_describe_leading_dash() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        // A message starting with a dash must not be mistaken for a flag.
+        let head = test_repo.commander.get_current_head()?;
+        test_repo
+            .commander
+            .run_describe(head.commit_id.as_str(), "-AAA")?;
+
+        let head = test_repo.commander.get_current_head()?.commit_id;
+        assert_eq!(test_repo.commander.get_commit_description(&head)?, "-AAA");
+
+        Ok(())
+    }
+
+    #[test]
     fn create_bookmark() -> Result<()> {
         let test_repo = TestRepo::new()?;
 
@@ -295,8 +324,9 @@ mod tests {
             .commander
             .create_bookmark_commit("test", &head.commit_id)?;
 
-        let log = test_repo.commander.execute_jj_command(
-            [
+        let log = test_repo
+            .commander
+            .jj([
                 "log",
                 "--limit",
                 "1",
@@ -305,10 +335,8 @@ mod tests {
                 "commit_id",
                 "-r",
                 &bookmark.name,
-            ],
-            false,
-            true,
-        )?;
+            ])
+            .run()?;
 
         assert_eq!(head.commit_id.to_string(), log);
 
@@ -327,8 +355,9 @@ mod tests {
 
         let bookmark = test_repo.commander.create_bookmark("test")?;
 
-        let log = test_repo.commander.execute_jj_command(
-            [
+        let log = test_repo
+            .commander
+            .jj([
                 "log",
                 "--limit",
                 "1",
@@ -337,10 +366,8 @@ mod tests {
                 "commit_id",
                 "-r",
                 &bookmark.name,
-            ],
-            false,
-            true,
-        )?;
+            ])
+            .run()?;
 
         assert_eq!(new_head.commit_id.to_string(), log);
 
@@ -348,8 +375,9 @@ mod tests {
             .commander
             .set_bookmark_commit(&bookmark.name, &old_head.commit_id)?;
 
-        let log = test_repo.commander.execute_jj_command(
-            [
+        let log = test_repo
+            .commander
+            .jj([
                 "log",
                 "--limit",
                 "1",
@@ -358,10 +386,8 @@ mod tests {
                 "commit_id",
                 "-r",
                 &bookmark.name,
-            ],
-            false,
-            true,
-        )?;
+            ])
+            .run()?;
 
         assert_eq!(old_head.commit_id.to_string(), log);
 

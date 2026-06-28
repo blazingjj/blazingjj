@@ -94,7 +94,7 @@ impl Component for CommandPopup<'_> {
                     let res: Result<String> = split(command_input)
                         .context("Failed to split command input")
                         .and_then(|command| {
-                            Ok(new_commander().execute_jj_command(command, true, false)?)
+                            Ok(new_commander().jj(command).color().verbose().run()?)
                         });
                     let output_str = match res {
                         Ok(output) => output,

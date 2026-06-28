@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Pressing `s` on the working copy now offers to squash into the parent (when there is exactly one)
 
+### Fixed
+
+- Describing a commit with a message starting with a dash no longer fails
+
 ## [0.8.0] - 2026-04-19
 
 ### Added
