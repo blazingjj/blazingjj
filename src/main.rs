@@ -15,6 +15,7 @@ use anyhow::bail;
 use clap::Parser;
 use ratatui::DefaultTerminal;
 use ratatui::backend::CrosstermBackend;
+use ratatui::crossterm;
 use ratatui::crossterm::event::DisableFocusChange;
 use ratatui::crossterm::event::DisableMouseCapture;
 use ratatui::crossterm::event::EnableFocusChange;
@@ -22,7 +23,6 @@ use ratatui::crossterm::event::EnableMouseCapture;
 use ratatui::crossterm::event::KeyboardEnhancementFlags;
 use ratatui::crossterm::event::PopKeyboardEnhancementFlags;
 use ratatui::crossterm::event::PushKeyboardEnhancementFlags;
-use ratatui::crossterm::event::{self};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::EnterAlternateScreen;
 use ratatui::crossterm::terminal::LeaveAlternateScreen;
@@ -36,12 +36,14 @@ use tracing_subscriber::layer::SubscriberExt;
 mod app;
 mod commander;
 mod env;
+mod event;
 mod keybinds;
 mod ui;
 use crate::app::App;
 use crate::commander::Commander;
 use crate::env::Env;
 use crate::env::set_env;
+use crate::event::AppEvent;
 
 /// Command line arguments
 #[derive(Parser, Debug)]
@@ -160,6 +162,7 @@ fn init_env() -> Result<Env> {
 }
 
 fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
+    app.launch_input_channel();
     loop {
         app.update()?;
         terminal.draw(|f| {
@@ -189,7 +192,7 @@ fn input_to_app(app: &mut App) -> Result<bool> {
         FOREVER
     };
     // If no event arrives, return and draw next frame.
-    let event_arrived = event::poll(wait_duration)?;
+    let event_arrived = crossterm::event::poll(wait_duration)?;
     app.stats.start_time = Instant::now();
     if !event_arrived {
         return Ok(false);
@@ -198,9 +201,9 @@ fn input_to_app(app: &mut App) -> Result<bool> {
     // Handle all pending events in the queue.
     // Stop if an event requested the app to stop.
     let mut should_stop: bool = false;
-    while event::poll(Duration::ZERO)? && !should_stop {
-        let event = event::read()?;
-        should_stop = app.input(event)?;
+    while crossterm::event::poll(Duration::ZERO)? && !should_stop {
+        let event = crossterm::event::read()?;
+        should_stop = app.input(AppEvent::UserInput(event))?;
     }
     Ok(should_stop)
 }
