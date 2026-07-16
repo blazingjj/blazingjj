@@ -20,12 +20,12 @@ Goals:
 pub struct Timer<Signal> {
     cmd_sender: Sender<TimerCommand<Signal>>,
     thread: Option<thread::JoinHandle<()>>,
+    start: Instant,
 }
 
 /// Commands sent from the main thread to the background timer thread
 enum TimerCommand<Signal> {
     Set(Signal, Instant),
-    Cancel,
     Stop,
 }
 
@@ -42,6 +42,7 @@ impl<Signal: Send + 'static> Timer<Signal> {
         Self {
             cmd_sender,
             thread: Some(thread),
+            start: Instant::now(),
         }
     }
     /// The timer thread loop that waits and sends the signal
@@ -65,10 +66,10 @@ impl<Signal: Send + 'static> Timer<Signal> {
                 Some(TimerCommand::Set(sig, at)) => {
                     current_task = Some((sig, at));
                 }
-                Some(TimerCommand::Cancel) => {
-                    current_task = None;
+                Some(TimerCommand::Stop) => {
+                    break;
                 }
-                Some(TimerCommand::Stop) | None => break,
+                None => {}
             }
 
             // 3. If a task exists and the time has passed, send the signal
@@ -89,14 +90,13 @@ impl<Signal: Send + 'static> Timer<Signal> {
             let _ = handle.join();
         }
     }
+    /// Time elapsed since timer was created, NOT since last signal_in
+    pub fn elapsed(&self) -> Duration {
+        Instant::now() - self.start
+    }
     /// Queue a signal
     pub fn signal_in(&self, signal: Signal, wait_period: Duration) {
-        let _ = self
-            .cmd_sender
-            .send(TimerCommand::Set(signal, Instant::now() + wait_period));
-    }
-    /// Cancel next signal
-    pub fn cancel_signal(&self) {
-        let _ = self.cmd_sender.send(TimerCommand::Cancel);
+        let signal_at = Instant::now() + wait_period;
+        let _ = self.cmd_sender.send(TimerCommand::Set(signal, signal_at));
     }
 }

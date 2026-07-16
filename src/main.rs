@@ -15,7 +15,6 @@ use anyhow::bail;
 use clap::Parser;
 use ratatui::DefaultTerminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::crossterm;
 use ratatui::crossterm::event::DisableFocusChange;
 use ratatui::crossterm::event::DisableMouseCapture;
 use ratatui::crossterm::event::EnableFocusChange;
@@ -43,7 +42,6 @@ use crate::app::App;
 use crate::commander::Commander;
 use crate::env::Env;
 use crate::env::set_env;
-use crate::event::AppEvent;
 
 /// Command line arguments
 #[derive(Parser, Debug)]
@@ -191,19 +189,16 @@ fn input_to_app(app: &mut App) -> Result<bool> {
     } else {
         FOREVER
     };
-    // If no event arrives, return and draw next frame.
-    let event_arrived = crossterm::event::poll(wait_duration)?;
-    app.stats.start_time = Instant::now();
-    if !event_arrived {
-        return Ok(false);
-    }
 
     // Handle all pending events in the queue.
     // Stop if an event requested the app to stop.
+    // If no event arrives, return and draw next frame.
+    let mut event = app.try_recv_app_event(wait_duration);
+    app.stats.start_time = Instant::now();
     let mut should_stop: bool = false;
-    while crossterm::event::poll(Duration::ZERO)? && !should_stop {
-        let event = crossterm::event::read()?;
-        should_stop = app.input(AppEvent::UserInput(event))?;
+    while event.is_some() && !should_stop {
+        should_stop = app.input(event.unwrap())?;
+        event = app.try_recv_app_event(Duration::ZERO);
     }
     Ok(should_stop)
 }
