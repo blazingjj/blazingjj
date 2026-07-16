@@ -15,14 +15,13 @@ use ratatui::crossterm;
 use tracing::error;
 use tracing::trace;
 
-/// Minimum time between idle-events
-const IDLE_TIMEOUT: Duration = Duration::from_secs(1);
-
 /// Input event to the app
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum AppEvent {
     /// Keyboard or mouse input from user
     UserInput(crossterm::event::Event),
+    /// Redraw command from background thread
+    Refresh,
 }
 
 /// Generator of events to the app
@@ -51,6 +50,11 @@ impl EventSource {
         }
     }
 
+    /// Clone the sender to the event channel
+    pub fn clone_event_sender(&self) -> mpsc::Sender<AppEvent> {
+        self.app_event_sender.clone()
+    }
+
     /// Launch a user input event source
     pub fn launch_user_input(&mut self) {
         // Spawn user input thread
@@ -67,7 +71,8 @@ impl EventSource {
                     match crossterm::event::poll(poll_period) {
                         Err(err) => {
                             error!("cossterm reader - poll abort: {:?}", err);
-                        break; }
+                            break;
+                        }
                         Ok(false) => continue, // No event yet
                         Ok(true) => (),
                     }
@@ -91,16 +96,11 @@ impl EventSource {
     /// If no event is waiting, it will return None which represents
     /// an idle event. There will be at least IDLE_TIMEOUT between two
     /// consecutive idle events. Ordinary events are returned immediately.
-    pub fn try_recv(&mut self) -> Option<AppEvent> {
-        // Introduce timeout if app is idle.
-        // This will reduce CPU load
-        let timeout = if self.last_event_none {
-            IDLE_TIMEOUT
-        } else {
-            Duration::ZERO
-        };
-
+    pub fn try_recv(&mut self, timeout: Duration) -> Option<AppEvent> {
         // Get event
+        // NOTE: This loop seems redundant, but a later patch will
+        // add code related to file system notifications.
+        #[allow(clippy::never_loop)]
         let result = loop {
             // Wait for event. While waiting the watcher thread is allowed to
             // trigger a redraw.

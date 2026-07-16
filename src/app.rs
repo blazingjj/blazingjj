@@ -2,6 +2,7 @@ use core::fmt;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::Result;
@@ -120,7 +121,7 @@ impl<'a> App<'a> {
 
     pub fn get_log_tab(&mut self) -> Result<&mut LogTab<'a>> {
         if self.log.is_none() {
-            self.log = Some(LogTab::new()?);
+            self.log = Some(LogTab::new(self.event_source.clone_event_sender())?);
         }
 
         self.log
@@ -302,13 +303,19 @@ impl<'a> App<'a> {
     }
 
     /// Recieve an AppEvent if one is waiting
-    pub fn try_recv_app_event(&mut self) -> Option<AppEvent> {
-        self.event_source.try_recv()
+    pub fn try_recv_app_event(&mut self, timeout: Duration) -> Option<AppEvent> {
+        self.event_source.try_recv(timeout)
     }
 
     /// Process an AppEvent
     #[instrument(level = "trace", skip(self))]
     pub fn input(&mut self, event: AppEvent) -> Result<bool> {
+        let ev_name = match event {
+            AppEvent::UserInput(_) => "AppEvent",
+            AppEvent::Refresh => "Refresh",
+        };
+        trace!("Processing event {}", ev_name);
+
         let AppEvent::UserInput(event) = event else {
             trace!("an event that was not a UserInput was ignored");
             return Ok(false); // do not terminate the app
