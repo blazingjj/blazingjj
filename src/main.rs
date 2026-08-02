@@ -131,7 +131,7 @@ fn init_env() -> Result<Env> {
     let args = Args::parse();
     let path = match args.path {
         Some(path) => {
-            canonicalize(&path).with_context(|| format!("Could not find path {}", &path))?
+            canonicalize(&path).with_context(|| format!("Could not find path {}", path))?
         }
         None => current_dir()?,
     };

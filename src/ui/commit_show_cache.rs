@@ -1,4 +1,5 @@
-/*! This module provides a cache of the output from 'jj show'
+/*! A cache of the output from 'jj show'
+
 It is optimized for continous editing, which means that the
 automatic rebase that happens when a change is modified will
 also empty cache values. It does allow divergent changes, where
@@ -123,7 +124,7 @@ impl CommitShowCache {
     }
 
     /// Mark all active heads as dirty by changing their width to 1.
-    /// This way they will all be seen as old next time [set_active] is called.
+    /// This way they will all be seen as old next time [set_active](Self.set_active) is called.
     pub fn mark_dirty(&mut self) {
         // Collect all keys for active commits
         // std::mem::take moves the map out of self and leaves an empty one in its place

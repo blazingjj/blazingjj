@@ -3,11 +3,12 @@ The details_panel module contains the main class [DetailsPanel] which
 can show various content with an automatic scroll bar.
 
 There is no content in the DetailsPanel, that is provided every frame
-and rendered using the DetailsPanelRenderContext.
+as a struct that implements trait [DetailContent]
+and rendered using DetailsPanel.render_context.
 
-To make this effcicient there are two ways to provide content.
-* TextContent - for small texts rendered as a Ratatui Paragraph.
-* LargeStringContent - to render only the visible subset.
+To make this efficient there are two implementations of DetailContent.
+* [TextContent] - for small texts rendered as a Ratatui Paragraph.
+* [LargeStringContent] - for large texts where only the visible part is rendered.
 
 */
 
