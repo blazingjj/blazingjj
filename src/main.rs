@@ -22,7 +22,6 @@ use ratatui::crossterm::event::EnableMouseCapture;
 use ratatui::crossterm::event::KeyboardEnhancementFlags;
 use ratatui::crossterm::event::PopKeyboardEnhancementFlags;
 use ratatui::crossterm::event::PushKeyboardEnhancementFlags;
-use ratatui::crossterm::event::{self};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::EnterAlternateScreen;
 use ratatui::crossterm::terminal::LeaveAlternateScreen;
@@ -36,6 +35,7 @@ use tracing_subscriber::layer::SubscriberExt;
 mod app;
 mod commander;
 mod env;
+mod event;
 mod keybinds;
 mod ui;
 use crate::app::App;
@@ -160,6 +160,7 @@ fn init_env() -> Result<Env> {
 }
 
 fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
+    app.launch_input_channel();
     loop {
         app.update()?;
         terminal.draw(|f| {
@@ -188,19 +189,16 @@ fn input_to_app(app: &mut App) -> Result<bool> {
     } else {
         FOREVER
     };
-    // If no event arrives, return and draw next frame.
-    let event_arrived = event::poll(wait_duration)?;
-    app.stats.start_time = Instant::now();
-    if !event_arrived {
-        return Ok(false);
-    }
 
     // Handle all pending events in the queue.
     // Stop if an event requested the app to stop.
+    // If no event arrives, return and draw next frame.
+    let mut event = app.try_recv_app_event(wait_duration);
+    app.stats.start_time = Instant::now();
     let mut should_stop: bool = false;
-    while event::poll(Duration::ZERO)? && !should_stop {
-        let event = event::read()?;
-        should_stop = app.input(event)?;
+    while event.is_some() && !should_stop {
+        should_stop = app.input(event.unwrap())?;
+        event = app.try_recv_app_event(Duration::ZERO);
     }
     Ok(should_stop)
 }
