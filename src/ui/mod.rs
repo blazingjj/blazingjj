@@ -8,11 +8,13 @@ pub mod log_tab;
 pub mod panel;
 pub mod styles;
 pub mod utils;
+
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
 use ratatui::layout::Rect;
 
+use crate::commander::JjCommand;
 use crate::commander::log::Head;
 
 /// Action commmands from component to application
@@ -23,6 +25,9 @@ pub enum AppAction {
     SetPopup(Option<Box<dyn Component>>),
     Multiple(Vec<AppAction>),
     RefreshTab(),
+    /// Run a command that takes over the terminal. The main loop drains
+    /// these and refreshes the current view once the command exits.
+    RunInteractive(JjCommand),
 }
 
 /// When a Component process an input event, it returns an ComponentInputResult
