@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Pressing `s` on the working copy now offers to squash into the parent (when there is exactly one)
+- In log tab, the details panel update no longer blocks the UI thread.
 
 ### Fixed
 

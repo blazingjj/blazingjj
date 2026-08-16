@@ -1,9 +1,13 @@
 use core::fmt;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::Result;
 use anyhow::anyhow;
-use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::Event as TermEvent;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyModifiers;
 use ratatui::crossterm::event::{self};
@@ -17,9 +21,12 @@ use ratatui::symbols;
 use ratatui::widgets::*;
 use tracing::info;
 use tracing::instrument;
+use tracing::trace;
 
 use crate::commander::new_commander;
 use crate::env::get_env;
+use crate::event::AppEvent;
+use crate::event::EventSource;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -54,16 +61,23 @@ pub struct Stats {
 }
 
 pub struct App<'a> {
+    // user interface
     pub current_tab: Tab,
     pub log: Option<LogTab<'a>>,
     pub files: Option<FilesTab>,
     pub bookmarks: Option<BookmarksTab<'a>>,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
+
+    // event handling
+    running: Arc<AtomicBool>,
+    event_source: EventSource,
 }
 
 impl<'a> App<'a> {
     pub fn new() -> Result<App<'a>> {
+        let running = Arc::from(AtomicBool::new(true));
+        let event_source = EventSource::new(running.clone());
         Ok(App {
             current_tab: Tab::Log,
             log: None,
@@ -73,6 +87,9 @@ impl<'a> App<'a> {
             stats: Stats {
                 start_time: Instant::now(),
             },
+
+            running,
+            event_source,
         })
     }
 
@@ -104,7 +121,7 @@ impl<'a> App<'a> {
 
     pub fn get_log_tab(&mut self) -> Result<&mut LogTab<'a>> {
         if self.log.is_none() {
-            self.log = Some(LogTab::new()?);
+            self.log = Some(LogTab::new(self.event_source.clone_event_sender())?);
         }
 
         self.log
@@ -280,8 +297,29 @@ impl<'a> App<'a> {
         Ok(())
     }
 
+    /// Set up threads that capture input and send AppEvents
+    pub fn launch_input_channel(&mut self) {
+        self.event_source.launch_user_input();
+    }
+
+    /// Recieve an AppEvent if one is waiting
+    pub fn try_recv_app_event(&mut self, timeout: Duration) -> Option<AppEvent> {
+        self.event_source.try_recv(timeout)
+    }
+
+    /// Process an AppEvent
     #[instrument(level = "trace", skip(self))]
-    pub fn input(&mut self, event: Event) -> Result<bool> {
+    pub fn input(&mut self, event: AppEvent) -> Result<bool> {
+        let ev_name = match event {
+            AppEvent::UserInput(_) => "AppEvent",
+            AppEvent::Refresh => "Refresh",
+        };
+        trace!("Processing event {}", ev_name);
+
+        let AppEvent::UserInput(event) = event else {
+            trace!("an event that was not a UserInput was ignored");
+            return Ok(false); // do not terminate the app
+        };
         if let Some(popup) = self.popup.as_mut() {
             match popup.input(event.clone())? {
                 ComponentInputResult::HandledAction(app_action) => {
@@ -289,7 +327,7 @@ impl<'a> App<'a> {
                 }
                 ComponentInputResult::Handled => {}
                 ComponentInputResult::NotHandled => {
-                    if let Event::Key(key) = event
+                    if let TermEvent::Key(key) = event
                         && key.kind == event::KeyEventKind::Press
                     {
                         // Close
@@ -316,7 +354,7 @@ impl<'a> App<'a> {
                 }
                 ComponentInputResult::Handled => {}
                 ComponentInputResult::NotHandled => {
-                    if let Event::Key(key) = event
+                    if let TermEvent::Key(key) = event
                         && key.kind == event::KeyEventKind::Press
                     {
                         // Close
@@ -325,6 +363,7 @@ impl<'a> App<'a> {
                                 && (key.code == KeyCode::Char('c')))
                             || key.code == KeyCode::Esc
                         {
+                            self.running.store(false, Ordering::Relaxed);
                             return Ok(true);
                         }
                         //

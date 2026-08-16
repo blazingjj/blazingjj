@@ -1,6 +1,12 @@
 #![expect(clippy::borrow_interior_mutable_const)]
 
 use std::cmp::max;
+use std::io::Read;
+use std::process::Child;
+use std::sync::mpsc::Sender;
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
@@ -11,7 +17,10 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
+use tracing::debug;
+use tracing::error;
 use tracing::instrument;
+use tracing::warn;
 use tui_confirm_dialog::ButtonLabel;
 use tui_confirm_dialog::ConfirmDialog;
 use tui_confirm_dialog::ConfirmDialogState;
@@ -23,6 +32,7 @@ use crate::commander::new_commander;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::event::AppEvent;
 use crate::keybinds::LogTabEvent;
 use crate::keybinds::LogTabKeybinds;
 use crate::ui::AppAction;
@@ -39,7 +49,9 @@ use crate::ui::dialog::RebasePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::LargeStringContent;
 use crate::ui::panel::LogPanel;
+use crate::ui::panel::TextContent;
 use crate::ui::utils::PaneDivider;
+use crate::ui::utils::Timer;
 use crate::ui::utils::centered_rect_fixed;
 use crate::ui::utils::centered_rect_line_height;
 use crate::ui::utils::tabs_to_spaces;
@@ -51,6 +63,9 @@ const SQUASH_POPUP_ID: u16 = 4;
 
 /// Log tab. Shows `jj log` in main panel and shows selected change details of in details panel.
 pub struct LogTab<'a> {
+    /// Channel for app events
+    app_event_sender: Sender<AppEvent>,
+
     /// The revset filter to apply to jj log
     log_revset_textarea: Option<TextArea<'a>>,
 
@@ -65,6 +80,9 @@ pub struct LogTab<'a> {
 
     /// Cached change content
     commit_show_cache: CommitShowCache,
+
+    /// Child process for computing 'jj show'
+    pending_jj_show: Option<PendingJjShow>,
 
     /// The currently selected change. It is a copy of `self.log_panel.head`,
     /// so if these differ, we need to update `self.head`
@@ -94,6 +112,21 @@ pub struct LogTab<'a> {
     keybinds: LogTabKeybinds,
 }
 
+/// A background process for fetching 'jj show' and a thread for signalling
+/// the UI while waiting
+struct PendingJjShow {
+    /// The requested key
+    key: CommitShowKey,
+    /// The child process executing 'jj show'
+    child: Child,
+    /// The thread reading stdout from child process
+    stdout_reader: JoinHandle<Vec<u8>>,
+    /// The thread reading stderr from child process
+    stderr_reader: JoinHandle<Vec<u8>>,
+    /// A timer used to signal the application while child is running
+    timer: Timer<AppEvent>,
+}
+
 /**
 # Supporting functions
 Normally the event handling code would call
@@ -117,13 +150,17 @@ The main functions are:
   right panel
   (called by sync_head_output)
 
-* [compute_head_content](LogTab::compute_head_content) - Call `jj show` and
-  wrap the output as a ShowCacheValue
+* [request_jj_show](LogTab::request_jj_show) - Spawn `jj show` for a commit,
+  replacing any request that is still running
+  (called by refresh_head_output)
+
+* [try_read_jj_show_output](LogTab::try_read_jj_show_output) - Move the
+  output of a finished `jj show` into the cache
   (called by refresh_head_output)
 */
 impl<'a> LogTab<'a> {
     #[instrument(level = "info", name = "Initializing log tab", parent = None, skip())]
-    pub fn new() -> Result<Self> {
+    pub fn new(app_event_sender: Sender<AppEvent>) -> Result<Self> {
         let diff_format = get_env().jj_config.diff_format();
 
         let head = new_commander().get_current_head()?;
@@ -131,11 +168,7 @@ impl<'a> LogTab<'a> {
         const NO_WIDTH: usize = 0;
         let head_key = CommitShowKey::new(head.clone(), diff_format.clone(), NO_WIDTH);
 
-        let mut commit_show_cache = CommitShowCache::new();
-
-        let _new_content = commit_show_cache.get_or_insert(&head_key, || {
-            Self::compute_head_content(NO_WIDTH, &head, &diff_format)
-        });
+        let commit_show_cache = CommitShowCache::new();
 
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (bookmark_set_popup_tx, bookmark_set_popup_rx) = std::sync::mpsc::channel();
@@ -149,6 +182,8 @@ impl<'a> LogTab<'a> {
         let pane_divider = PaneDivider::new(config.layout_percent());
 
         Ok(Self {
+            app_event_sender,
+
             log_revset_textarea: None,
 
             log_panel: LogPanel::new()?,
@@ -158,6 +193,7 @@ impl<'a> LogTab<'a> {
             head_key,
 
             commit_show_cache,
+            pending_jj_show: None,
 
             diff_format,
 
@@ -206,6 +242,10 @@ impl<'a> LogTab<'a> {
 
     /// Refesh the diff of the currently selected change
     fn refresh_head_output(&mut self) {
+        // Check if the child process has new data for the cache
+        self.try_read_jj_show_output();
+
+        // Look up selected change via its key
         // If the key matches, then we can use the cached value.
         // This is not entierly true. A reconfiguration of jj could
         // generate different output for some keys. We probably need
@@ -214,13 +254,12 @@ impl<'a> LogTab<'a> {
         // TODO use shared function to build key, so width can be cleared if not needed
         let inner_width = self.head_panel.columns() as usize;
         let key = CommitShowKey::new(self.head.clone(), self.diff_format.clone(), inner_width);
-        let _new_content = self.commit_show_cache.get_or_insert(&key, || {
-            Self::compute_head_content(inner_width, &self.head, &self.diff_format)
-        });
 
         let content_changed = self.head_key != key;
 
         // Only update if content actually changed to prevent scroll jumping
+        // The next draw requests `jj show` for the new key if it is not
+        // already cached.
         if content_changed {
             self.head_key = key;
             self.head_panel.scroll_to(0);
@@ -250,29 +289,132 @@ impl<'a> LogTab<'a> {
         self.commit_show_cache.set_active(active_heads, &key);
     }
 
-    /// Extract head content from commander.get_commit_show
-    /// Wraps it in a cache value before returning it.
-    fn compute_head_content(
-        inner_width: usize,
-        head: &Head,
-        diff_format: &DiffFormat,
-    ) -> CommitShowValue {
-        // Call jj show
-        let commit_id = &head.commit_id;
+    /// Launch of a child process for 'jj show'
+    fn request_jj_show(&mut self, launch_key: CommitShowKey) {
+        // Ignore request for already pending key
+        if let Some(pjs) = self.pending_jj_show.as_ref()
+            && pjs.key == launch_key
+        {
+            return;
+        }
+        // Kill old child process
+        if let Some(mut pjs) = self.pending_jj_show.take() {
+            // TODO implement std::fmt::Display for CommitShowKey
+            //debug!("Kill 'jj show' that was too slow. key={}", &key);
+            if let Err(err) = pjs.child.kill() {
+                error!("Kill failed on 'jj show' child process: {err}");
+            }
+            let _ = pjs.child.wait();
+        }
+
+        // Lanuch new child process that runs 'jj show'
         let mut commander = new_commander();
-        commander.limit_width(inner_width);
-        let head_output = commander
-            .get_commit_show(commit_id, diff_format, true)
-            .map(|text| tabs_to_spaces(&text));
-        // Format output as string
-        let output = match head_output {
-            Ok(head_output) => head_output,
-            Err(err) => err.to_string(),
+        commander.limit_width(launch_key.width);
+        let launch_child =
+            commander.spawn_commit_show(&launch_key.id.commit_id, &launch_key.format, true);
+        let mut launch_child = match launch_child {
+            Ok(child) => child,
+            Err(err) => {
+                error!("Unable to spawn 'jj show': {err}");
+                self.show_error_in_details_panel(launch_key, err.to_string());
+                return;
+            }
         };
-        // Build value used by cache and return it
-        let key = CommitShowKey::new(head.clone(), diff_format.clone(), inner_width);
-        CommitShowValue::new(key, output)
+
+        let stdout_reader = spawn_pipe_reader("stdout", launch_child.stdout.take().unwrap());
+        let stderr_reader = spawn_pipe_reader("stderr", launch_child.stderr.take().unwrap());
+
+        // Check for updates from child
+        let launch_timer = Timer::new(self.app_event_sender.clone());
+        launch_timer.signal_in(AppEvent::Refresh, Duration::from_millis(100));
+
+        let pjs = PendingJjShow {
+            key: launch_key,
+            child: launch_child,
+            stdout_reader,
+            stderr_reader,
+            timer: launch_timer,
+        };
+        self.pending_jj_show = Some(pjs);
     }
+
+    /// Update the cache with data from the child process, if it is
+    /// ready.
+    fn try_read_jj_show_output(&mut self) {
+        let Some(mut pjs) = self.pending_jj_show.take() else {
+            return;
+        };
+
+        let wait_result = pjs.child.try_wait();
+        if let Err(err) = wait_result {
+            // Abort on error, but log what happended
+            error!(
+                "Unable to get result from 'jj show'. try_wait on child failed with message: {err}"
+            );
+            // TODO: Maybe we want to kill the child process here?
+            self.pending_jj_show = Some(pjs);
+            return;
+        }
+
+        let Some(status) = wait_result.unwrap() else {
+            // Child not done yet
+            let next_check_in = if pjs.timer.elapsed() < Duration::from_secs(1) {
+                Duration::from_millis(100)
+            } else {
+                Duration::from_millis(1000)
+            };
+            pjs.timer.signal_in(AppEvent::Refresh, next_check_in);
+            self.pending_jj_show = Some(pjs);
+            return;
+        };
+        debug!("jj show child process exited with status {status}");
+
+        // Read data from child process into cache
+        let stdout = pjs.stdout_reader.join().unwrap_or_default();
+        let stderr_bytes = pjs.stderr_reader.join().unwrap_or_default();
+        let stderr = String::from_utf8_lossy(&stderr_bytes);
+        pjs.timer.stop();
+
+        // A failing 'jj show' has nothing useful on stdout, so show the
+        // error instead of caching an empty document for the commit.
+        if !status.success() {
+            error!("'jj show' exited with status {status}:\n{stderr}");
+            self.show_error_in_details_panel(pjs.key, format!("jj show failed:\n\n{stderr}"));
+            return;
+        }
+        if !stderr.is_empty() {
+            warn!("Ignoring stderr from child process:\n{stderr}");
+        }
+
+        let text = tabs_to_spaces(&String::from_utf8_lossy(&stdout));
+        let value = CommitShowValue::new(pjs.key, text);
+        self.commit_show_cache.insert_document(value);
+
+        // Note: self.pending_jj_show.take() has already cleared the
+        // child handle, which indicates room for the next child process
+    }
+
+    /// Cache `message` as the content for `key`, so the details panel
+    /// shows it instead of staying blank.
+    fn show_error_in_details_panel(&mut self, key: CommitShowKey, message: String) {
+        self.commit_show_cache
+            .insert_document(CommitShowValue::new(key, message));
+    }
+}
+
+/// Drain a child process pipe from its own thread. The pipe buffer would
+/// otherwise fill up on large diffs and block the child before it exits.
+fn spawn_pipe_reader<R: Read + Send + 'static>(
+    name: &'static str,
+    mut pipe: R,
+) -> JoinHandle<Vec<u8>> {
+    thread::spawn(move || {
+        let mut output = Vec::new();
+        if let Err(err) = pipe.read_to_end(&mut output) {
+            error!("Failed to read {name} from 'jj show': {err}");
+        }
+        output
+    })
 }
 
 /**
@@ -709,9 +851,27 @@ impl Component for LogTab<'_> {
         self.log_panel.draw(f, chunks[0])?;
 
         // Draw change details
+        self.try_read_jj_show_output();
+        if !self.commit_show_cache.has_exact_match(&self.head_key) {
+            self.request_jj_show(self.head_key.clone());
+        }
         if let Some(content) = self.commit_show_cache.get(&self.head_key) {
             self.head_panel
                 .render_context::<LargeStringContent>(content.value())
+                .title(format!(" Details for {} ", self.head.change_id))
+                .draw(f, chunks[1])
+        } else if let Some(pjj) = &self.pending_jj_show {
+            let duration = pjj.timer.elapsed();
+            let message = if duration < Duration::from_secs(1) {
+                "".to_string()
+            } else {
+                let mut sec = duration.as_secs();
+                let min = sec / 60;
+                sec %= 60;
+                format!("Waiting for 'jj show' .. {:02}:{:02}", min, sec)
+            };
+            self.head_panel
+                .render_context::<TextContent>(message)
                 .title(format!(" Details for {} ", self.head.change_id))
                 .draw(f, chunks[1])
         }
