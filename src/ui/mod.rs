@@ -12,6 +12,7 @@ use ratatui::Frame;
 use ratatui::crossterm::event::Event;
 use ratatui::layout::Rect;
 
+use crate::background_tasks::TaskResult;
 use crate::commander::log::Head;
 
 /// Action commmands from component to application
@@ -52,6 +53,17 @@ pub enum Scroll {
 pub trait Component {
     fn update(&mut self) -> Result<Option<AppAction>> {
         Ok(None)
+    }
+
+    /// Called with the result of a task this component submitted.
+    fn task_done(&mut self, _result: TaskResult) -> Result<Option<AppAction>> {
+        Ok(None)
+    }
+
+    /// Whether the component is still waiting for a task result it wants.
+    /// While it is, the main loop keeps calling [Self::update].
+    fn is_waiting(&self) -> bool {
+        false
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()>;

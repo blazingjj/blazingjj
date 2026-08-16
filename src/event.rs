@@ -14,13 +14,15 @@ use ratatui::crossterm;
 use tracing::error;
 use tracing::trace;
 
+use crate::background_tasks::TaskResult;
+
 /// Input event to the app
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum AppEvent {
     /// Keyboard or mouse input from user
     UserInput(crossterm::event::Event),
-    /// Redraw command from background thread
-    Refresh,
+    /// A background task finished and delivers its output
+    TaskDone(TaskResult),
 }
 
 /// Generator of events to the app

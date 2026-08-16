@@ -1,9 +1,9 @@
 mod large_string;
 
 use std::time::Duration;
+use std::time::Instant;
 
 pub use large_string::LargeString;
-mod timer;
 use ratatui::crossterm::event::MouseButton;
 use ratatui::crossterm::event::MouseEvent;
 use ratatui::crossterm::event::MouseEventKind;
@@ -11,7 +11,6 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-pub use timer::Timer;
 
 use crate::env::JJLayout;
 
@@ -177,23 +176,70 @@ pub fn centered_rect_fixed(area: Rect, width: u16, height: u16) -> Rect {
     }
 }
 
-/// What a panel shows instead of its content while `command` is still
-/// running, given how long the wait has been going on. A wait shorter
-/// than `grace` stays blank, since a message that flashes by is only
-/// noise.
-pub fn waiting_message(waited: Option<Duration>, command: &str, grace: Duration) -> String {
-    let Some(waited) = waited else {
-        return String::new();
-    };
-    if waited < grace {
-        return String::new();
+/// How long a panel keeps quiet about the command it is waiting for.
+const LOADING_GRACE: Duration = Duration::from_secs(1);
+
+/// The wait a panel is in while what it shows is being computed
+/// elsewhere.
+#[derive(Default)]
+pub struct PanelWait {
+    since: Option<Instant>,
+}
+
+impl PanelWait {
+    /// Note that the panel wants content it does not have. A wait that is
+    /// already going on keeps the start it had, so asking again does not
+    /// renew the grace period.
+    pub fn begin(&mut self) {
+        self.since.get_or_insert_with(Instant::now);
     }
-    let seconds = waited.as_secs();
-    format!(
-        "Waiting for '{command}' .. {:02}:{:02}",
-        seconds / 60,
-        seconds % 60
-    )
+
+    /// Note that the panel is no longer waiting, because its content
+    /// arrived or because it wants something else now.
+    pub fn end(&mut self) {
+        self.since = None;
+    }
+
+    /// Whether the panel is waiting for content at all.
+    pub fn is_waiting(&self) -> bool {
+        self.since.is_some()
+    }
+
+    /// Whether the panel may go on showing content it is about to
+    /// replace, rather than saying that it is waiting.
+    pub fn within_grace(&self) -> bool {
+        self.waited().is_some_and(|waited| waited < LOADING_GRACE)
+    }
+
+    /// What the panel shows instead of its content: nothing while the
+    /// wait is within its grace, and how long `command` has been running
+    /// after that.
+    pub fn message(&self, command: &str) -> String {
+        let Some(waited) = self.waited() else {
+            return String::new();
+        };
+        // A message that flashes by is only noise.
+        if waited < LOADING_GRACE {
+            return String::new();
+        }
+
+        let seconds = waited.as_secs();
+        format!(
+            "Waiting for '{command}' .. {:02}:{:02}",
+            seconds / 60,
+            seconds % 60
+        )
+    }
+
+    /// How long the panel has been waiting, if it is.
+    fn waited(&self) -> Option<Duration> {
+        self.since.map(|since| since.elapsed())
+    }
+
+    #[cfg(test)]
+    fn started_at(since: Instant) -> Self {
+        Self { since: Some(since) }
+    }
 }
 
 /// replaces tabs in a string by spaces
@@ -263,27 +309,52 @@ pub fn tabs_to_spaces(line: &str) -> String {
 mod tests {
     use super::*;
 
-    const GRACE: Duration = Duration::from_secs(1);
-
-    #[test]
-    fn nothing_is_waited_for() {
-        assert_eq!(waiting_message(None, "jj show", GRACE), "");
-    }
-
-    #[test]
-    fn a_short_wait_stays_blank() {
-        assert_eq!(waiting_message(Some(Duration::ZERO), "jj show", GRACE), "");
-    }
-
     #[test]
     fn a_long_wait_names_the_command_and_its_runtime() {
         assert_eq!(
-            waiting_message(Some(Duration::from_secs(1)), "jj show", GRACE),
+            PanelWait::started_at(Instant::now() - LOADING_GRACE).message("jj show"),
             "Waiting for 'jj show' .. 00:01"
         );
         assert_eq!(
-            waiting_message(Some(Duration::from_secs(62)), "jj diff", GRACE),
+            PanelWait::started_at(Instant::now() - Duration::from_secs(62)).message("jj diff"),
             "Waiting for 'jj diff' .. 01:02"
         );
+    }
+
+    #[test]
+    fn a_panel_that_waits_for_nothing_says_nothing() {
+        let wait = PanelWait::default();
+
+        assert!(!wait.is_waiting());
+        assert!(!wait.within_grace());
+        assert_eq!(wait.message("jj show"), "");
+    }
+
+    #[test]
+    fn a_fresh_wait_keeps_the_panel_quiet() {
+        let mut wait = PanelWait::default();
+        wait.begin();
+
+        assert!(wait.is_waiting());
+        assert!(wait.within_grace());
+        assert_eq!(wait.message("jj show"), "");
+    }
+
+    #[test]
+    fn asking_again_does_not_renew_the_grace() {
+        let mut wait = PanelWait::started_at(Instant::now() - LOADING_GRACE);
+        wait.begin();
+
+        assert!(!wait.within_grace());
+        assert_eq!(wait.message("jj show"), "Waiting for 'jj show' .. 00:01");
+    }
+
+    #[test]
+    fn a_panel_that_is_done_waiting_stops_counting() {
+        let mut wait = PanelWait::started_at(Instant::now() - LOADING_GRACE);
+        wait.end();
+
+        assert!(!wait.is_waiting());
+        assert_eq!(wait.message("jj show"), "");
     }
 }

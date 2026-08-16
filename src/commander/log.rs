@@ -6,7 +6,6 @@ It is mostly used in the [log_tab][crate::ui::log_tab] module.
 */
 
 use std::fmt::Display;
-use std::process::Child;
 
 use anyhow::Context;
 use anyhow::Result;
@@ -171,20 +170,6 @@ impl Commander {
         })
     }
 
-    /// Spawn child process to get commit details.
-    /// Maps to `jj show <commit>`
-    #[instrument(level = "trace", skip(self))]
-    pub fn spawn_commit_show(
-        &self,
-        commit_id: &CommitId,
-        diff_format: &DiffFormat,
-        ignore_working_copy: bool,
-    ) -> Result<Child, CommandError> {
-        self.build_jj_commit_show(commit_id, diff_format, ignore_working_copy)
-            .color()
-            .spawn()
-    }
-
     /// Create the JjCommmand for `jj show <commit>`
     #[instrument(level = "trace", skip(self))]
     pub fn build_jj_commit_show(
@@ -327,6 +312,7 @@ mod tests {
     use insta::assert_debug_snapshot;
 
     use super::*;
+    use crate::commander::cancel::CancelToken;
     use crate::commander::tests::TestRepo;
 
     fn head(change_id: &str, commit_id: &str, divergent: bool, immutable: bool) -> Head {
@@ -396,17 +382,17 @@ mod tests {
     }
 
     #[test]
-    fn spawn_commit_show() -> Result<()> {
+    fn run_commit_show() -> Result<()> {
         let test_repo = TestRepo::new()?;
 
         fs::write(test_repo.directory.path().join("README"), b"AAA")?;
 
         let head = test_repo.commander.get_current_head()?;
-        let output = test_repo
+        let show = test_repo
             .commander
-            .spawn_commit_show(&head.commit_id, &DiffFormat::ColorWords, false)?
-            .wait_with_output()?;
-        let show = String::from_utf8(output.stdout)?.remove_end_line();
+            .build_jj_commit_show(&head.commit_id, &DiffFormat::ColorWords, false)
+            .run_cancellable(&CancelToken::new())?
+            .remove_end_line();
 
         let mut settings = insta::Settings::clone_current();
         settings.add_filter(r"Commit ID: [0-9a-fA-F]{40}", "Commit ID: [COMMIT_ID]");

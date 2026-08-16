@@ -22,6 +22,9 @@ use tracing::instrument;
 use tracing::trace;
 use tracing::warn;
 
+use crate::background_tasks::BackgroundTasks;
+use crate::background_tasks::TaskResult;
+use crate::background_tasks::TaskSlot;
 use crate::commander::ids::OperationId;
 use crate::commander::new_commander;
 use crate::env::get_env;
@@ -40,7 +43,7 @@ use crate::ui::dialog::HelpPopup;
 use crate::ui::files_tab::FilesTab;
 use crate::ui::log_tab::LogTab;
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub enum TabId {
     Log,
     Files,
@@ -88,12 +91,14 @@ pub struct App<'a> {
     // event handling
     running: Arc<AtomicBool>,
     event_source: EventSource,
+    background_tasks: BackgroundTasks,
 }
 
 impl<'a> App<'a> {
     pub fn new() -> Result<App<'a>> {
         let running = Arc::from(AtomicBool::new(true));
         let event_source = EventSource::new(running.clone());
+        let background_tasks = BackgroundTasks::new(event_source.clone_event_sender());
         let mut global_keybinds = GlobalKeybinds::default();
         if let Some(keybinds_config) = get_env().jj_config.keybinds() {
             global_keybinds.extend_from_config(keybinds_config);
@@ -102,9 +107,9 @@ impl<'a> App<'a> {
 
         Ok(App {
             current_tab: TabId::Log,
-            log: LogTab::new(event_source.clone_event_sender(), current_head.clone()),
+            log: LogTab::new(background_tasks.clone(), current_head.clone()),
             files: FilesTab::new(&current_head),
-            bookmarks: BookmarksTab::new(event_source.clone_event_sender()),
+            bookmarks: BookmarksTab::new(background_tasks.clone()),
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
@@ -117,6 +122,7 @@ impl<'a> App<'a> {
 
             running,
             event_source,
+            background_tasks,
         })
     }
 
@@ -263,8 +269,7 @@ impl<'a> App<'a> {
     /// Returns whether anything that shows may have changed.
     #[instrument(level = "trace", skip(self))]
     pub fn update(&mut self) -> Result<bool> {
-        // A popup animates, so it wants a frame whatever it says.
-        let mut changed = self.popup.is_some();
+        let mut changed = self.needs_periodic_redraw();
 
         if let Some(popup) = self.popup.as_mut()
             && let Some(component_action) = popup.update()?
@@ -360,19 +365,39 @@ impl<'a> App<'a> {
         self.event_source.try_recv(timeout)
     }
 
+    /// Whether something on screen counts up on its own, so that the main
+    /// loop has to come back on a timer rather than only on an event.
+    pub fn needs_periodic_redraw(&mut self) -> bool {
+        self.popup.is_some() || self.get_current_tab().is_waiting()
+    }
+
+    /// Hand the output of a finished task to whoever asked for it
+    fn handle_task_result(&mut self, result: TaskResult) -> Result<()> {
+        self.background_tasks.finish(&result);
+
+        let consumer: &mut dyn Component = match result.slot {
+            TaskSlot::CommitShow(tab, _) => self.get_tab(tab),
+        };
+
+        if let Some(app_action) = consumer.task_done(result)? {
+            self.handle_action(app_action)?;
+        }
+        Ok(())
+    }
+
     /// Process an AppEvent
     #[instrument(level = "trace", skip(self))]
     pub fn input(&mut self, event: AppEvent) -> Result<bool> {
-        let ev_name = match event {
-            AppEvent::UserInput(_) => "AppEvent",
-            AppEvent::Refresh => "Refresh",
+        let event = match event {
+            AppEvent::UserInput(event) => event,
+            AppEvent::TaskDone(result) => {
+                trace!("Processing task result");
+                self.handle_task_result(result)?;
+                return Ok(false); // do not terminate the app
+            }
         };
-        trace!("Processing event {}", ev_name);
+        trace!("Processing user input");
 
-        let AppEvent::UserInput(event) = event else {
-            trace!("an event that was not a UserInput was ignored");
-            return Ok(false); // do not terminate the app
-        };
         // Coming back to the window is worth a check, as the repo may
         // well have moved while we were not being watched.
         if event == event::Event::FocusGained {

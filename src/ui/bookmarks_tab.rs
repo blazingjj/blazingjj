@@ -1,7 +1,5 @@
 #![expect(clippy::borrow_interior_mutable_const)]
 
-use std::sync::mpsc::Sender;
-
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
@@ -15,13 +13,16 @@ use tui_confirm_dialog::ConfirmDialog;
 use tui_confirm_dialog::ConfirmDialogState;
 use tui_confirm_dialog::Listener;
 
+use crate::app::TabId;
+use crate::background_tasks::BackgroundTasks;
+use crate::background_tasks::TaskResult;
+use crate::background_tasks::TaskSlot;
 use crate::commander::CommandError;
 use crate::commander::bookmarks::BookmarkLine;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::env::get_env;
-use crate::event::AppEvent;
 use crate::keybinds::BookmarksTabEvent;
 use crate::keybinds::BookmarksTabKeybinds;
 use crate::keybinds::DetailsPanelEvent;
@@ -119,8 +120,8 @@ fn get_current_bookmark_index(
 
 impl BookmarksTab {
     /// A stale tab holding no bookmarks yet.
-    #[instrument(level = "info", name = "Initializing bookmarks tab", parent = None, skip(app_event_sender))]
-    pub fn new(app_event_sender: Sender<AppEvent>) -> Self {
+    #[instrument(level = "info", name = "Initializing bookmarks tab", parent = None, skip(background_tasks))]
+    pub fn new(background_tasks: BackgroundTasks) -> Self {
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (bookmark_name_popup_tx, bookmark_name_popup_rx) = std::sync::mpsc::channel();
 
@@ -137,7 +138,7 @@ impl BookmarksTab {
 
             show_all: false,
 
-            bookmark_panel: CommitShowPanel::new(app_event_sender),
+            bookmark_panel: CommitShowPanel::new(TabId::Bookmarks, background_tasks),
 
             delete: None,
             forget: None,
@@ -271,6 +272,8 @@ impl Tab for BookmarksTab {
 
 impl Component for BookmarksTab {
     fn update(&mut self) -> Result<Option<AppAction>> {
+        self.bookmark_panel.update();
+
         // Check for popup action
         if let Ok(res) = self.popup_rx.try_recv()
             && res.1.unwrap_or(false)
@@ -345,6 +348,16 @@ impl Component for BookmarksTab {
         }
 
         Ok(None)
+    }
+
+    fn task_done(&mut self, result: TaskResult) -> Result<Option<AppAction>> {
+        let TaskSlot::CommitShow(_, request) = result.slot;
+        self.bookmark_panel.task_done(request, result.output);
+        Ok(None)
+    }
+
+    fn is_waiting(&self) -> bool {
+        self.bookmark_panel.is_waiting()
     }
 
     fn draw(

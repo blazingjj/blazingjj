@@ -33,6 +33,7 @@ use tracing_chrome::ChromeLayerBuilder;
 use tracing_subscriber::layer::SubscriberExt;
 
 mod app;
+mod background_tasks;
 mod commander;
 mod env;
 mod event;
@@ -200,8 +201,10 @@ fn input_to_app(app: &mut App) -> Result<Input> {
     // causing EINVAL (os error 22). Use a safe large value instead.
     const FOREVER: Duration = Duration::from_secs(24 * 3600);
 
-    // Allow popups like the fetch animation to update every 100ms.
-    let wait_duration = if app.popup.is_some() {
+    // Something that counts up on its own needs a frame every 100ms.
+    // Everything else is delivered on the event channel, so there is
+    // nothing to wake up for.
+    let wait_duration = if app.needs_periodic_redraw() {
         Duration::from_millis(100)
     } else {
         FOREVER
