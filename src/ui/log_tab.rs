@@ -17,6 +17,7 @@ use tui_confirm_dialog::Listener;
 
 use crate::app::TabId;
 use crate::background_tasks::BackgroundTasks;
+use crate::background_tasks::TaskOutput;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
 use crate::commander::log::Head;
@@ -52,6 +53,10 @@ const SQUASH_POPUP_ID: u16 = 4;
 
 /// Log tab. Shows `jj log` in main panel and shows selected change details of in details panel.
 pub struct LogTab<'a> {
+    /// Where the commands the tab runs itself go, so they do not block
+    /// the UI thread
+    background_tasks: BackgroundTasks,
+
     /// The revset filter to apply to jj log
     log_revset_textarea: Option<TextArea<'a>>,
 
@@ -129,7 +134,9 @@ impl<'a> LogTab<'a> {
             log_panel: LogPanel::new(head.clone()),
 
             head,
-            head_panel: CommitShowPanel::new(TabId::Log, background_tasks),
+            head_panel: CommitShowPanel::new(TabId::Log, background_tasks.clone()),
+
+            background_tasks,
 
             popup: ConfirmDialogState::default(),
             popup_tx,
@@ -171,6 +178,19 @@ impl<'a> LogTab<'a> {
         self.head = self.log_panel.head.clone();
         let title = format!(" Details for {} ", self.head.change_id);
         self.head_panel.show(Some(self.head.clone()), title);
+    }
+
+    /// Run `operation` in `slot` and put up a loader popup for it, which
+    /// stays until that slot's result arrives. The popup swallows all
+    /// input, so the slot it waits for has to be the one submitted here.
+    fn run_with_loader<F>(&self, operation_name: &str, slot: TaskSlot, operation: F) -> AppAction
+    where
+        F: FnOnce() -> TaskOutput + Send + 'static,
+    {
+        self.background_tasks
+            .submit_uninterruptible(slot.clone(), operation);
+
+        AppAction::SetPopup(Box::new(LoaderPopup::new(operation_name.to_owned(), slot)))
     }
 }
 
@@ -495,21 +515,17 @@ impl<'a> LogTab<'a> {
             } => {
                 let commit_id = self.head.commit_id.clone();
 
-                let loader = LoaderPopup::new("Pushing".to_string(), move || {
-                    new_commander().git_push(all_bookmarks, allow_new, &commit_id)
-                });
-
-                return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                    Box::new(loader),
+                return Ok(ComponentInputResult::HandledAction(self.run_with_loader(
+                    "Pushing",
+                    TaskSlot::GitPush,
+                    move || Ok(new_commander().git_push(all_bookmarks, allow_new, &commit_id)?),
                 )));
             }
             LogTabEvent::Fetch { all_remotes } => {
-                let loader = LoaderPopup::new("Fetching".to_string(), move || {
-                    new_commander().git_fetch(all_remotes)
-                });
-
-                return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                    Box::new(loader),
+                return Ok(ComponentInputResult::HandledAction(self.run_with_loader(
+                    "Fetching",
+                    TaskSlot::GitFetch,
+                    move || Ok(new_commander().git_fetch(all_remotes)?),
                 )));
             }
             LogTabEvent::Save
@@ -617,8 +633,9 @@ impl Component for LogTab<'_> {
     }
 
     fn task_done(&mut self, result: TaskResult) -> Result<Option<AppAction>> {
-        let TaskSlot::CommitShow(_, request) = result.slot;
-        self.head_panel.task_done(request, result.output);
+        if let TaskSlot::CommitShow(_, request) = result.slot {
+            self.head_panel.task_done(request, result.output);
+        }
         Ok(None)
     }
 
