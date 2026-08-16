@@ -28,6 +28,7 @@ use crate::app::TabId;
 use crate::commander::CommandError;
 use crate::commander::cancel::CancelToken;
 use crate::event::AppEvent;
+use crate::ui::files_tab::FileDiffKey;
 use crate::ui::panel::CommitShowKey;
 use crate::ui::panel::OutputRequest;
 
@@ -62,6 +63,8 @@ pub enum TaskSlot {
     /// same change at once, and each keeps its own copy of the output, so
     /// the tab is part of the slot.
     CommitShow(TabId, OutputRequest<CommitShowKey>),
+    /// A 'jj diff' for the details panel of a tab
+    FileDiff(TabId, OutputRequest<FileDiffKey>),
     GitPush,
     GitFetch,
 }

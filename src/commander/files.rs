@@ -12,18 +12,19 @@ use tracing::instrument;
 
 use crate::commander::CommandError;
 use crate::commander::Commander;
+use crate::commander::JjCommand;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::env::DiffFormat;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct File {
     pub line: String,
     pub path: Option<String>,
     pub diff_type: Option<DiffType>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DiffType {
     Added,
     Modified,
@@ -171,19 +172,19 @@ impl Commander {
             .collect())
     }
 
-    /// Get diff for file change in a change.
+    /// Create the JjCommand for the diff of a file in a change.
     /// Maps to `jj diff -r <revision> <path>`
+    ///
+    /// Returns None for a file that has no path to diff.
     #[instrument(level = "trace", skip(self))]
-    pub fn get_file_diff(
+    pub fn build_file_diff(
         &self,
         head: &Head,
         current_file: &File,
         diff_format: &DiffFormat,
         ignore_working_copy: bool,
-    ) -> Result<Option<String>, CommandError> {
-        let Some(path) = current_file.path.as_deref() else {
-            return Ok(None);
-        };
+    ) -> Option<JjCommand<'_>> {
+        let path = current_file.path.as_deref()?;
 
         let fileset = Self::get_file_revset(path);
         let mut args = vec!["diff", "-r", head.commit_id.as_str(), &fileset];
@@ -194,7 +195,7 @@ impl Commander {
             command = command.ignore_working_copy();
         }
 
-        command.run().map(Some)
+        Some(command)
     }
 
     #[instrument(level = "trace", skip(self))]
@@ -233,8 +234,23 @@ mod tests {
     use insta::assert_debug_snapshot;
 
     use super::*;
+    use crate::commander::cancel::CancelToken;
     use crate::commander::revset::Revset;
     use crate::commander::tests::TestRepo;
+
+    /// Run the diff of a file to completion, the way a task does
+    fn run_file_diff(
+        commander: &Commander,
+        head: &Head,
+        current_file: &File,
+        diff_format: &DiffFormat,
+        ignore_working_copy: bool,
+    ) -> Result<Option<String>, CommandError> {
+        commander
+            .build_file_diff(head, current_file, diff_format, ignore_working_copy)
+            .map(|command| command.run_cancellable(&CancelToken::new()))
+            .transpose()
+    }
 
     #[test]
     fn every_status_jj_lists_has_a_diff_type() {
@@ -392,7 +408,7 @@ mod tests {
     }
 
     #[test]
-    fn get_file_diff() -> Result<()> {
+    fn build_file_diff() -> Result<()> {
         let test_repo = TestRepo::new()?;
 
         let mut file_path = test_repo.directory.path().join("README");
@@ -407,13 +423,15 @@ mod tests {
             };
 
             let head = test_repo.commander.get_current_head()?;
-            assert_debug_snapshot!(test_repo.commander.get_file_diff(
+            assert_debug_snapshot!(run_file_diff(
+                &test_repo.commander,
                 &head,
                 &file,
                 &DiffFormat::ColorWords,
                 false
             )?);
-            assert_debug_snapshot!(test_repo.commander.get_file_diff(
+            assert_debug_snapshot!(run_file_diff(
+                &test_repo.commander,
                 &head,
                 &file,
                 &DiffFormat::Git,
@@ -434,13 +452,15 @@ mod tests {
             };
 
             let head = test_repo.commander.get_current_head()?;
-            assert_debug_snapshot!(test_repo.commander.get_file_diff(
+            assert_debug_snapshot!(run_file_diff(
+                &test_repo.commander,
                 &head,
                 &file,
                 &DiffFormat::ColorWords,
                 true
             )?);
-            assert_debug_snapshot!(test_repo.commander.get_file_diff(
+            assert_debug_snapshot!(run_file_diff(
+                &test_repo.commander,
                 &head,
                 &file,
                 &DiffFormat::Git,
@@ -466,13 +486,15 @@ mod tests {
             };
 
             let head = test_repo.commander.get_current_head()?;
-            assert_debug_snapshot!(test_repo.commander.get_file_diff(
+            assert_debug_snapshot!(run_file_diff(
+                &test_repo.commander,
                 &head,
                 &file,
                 &DiffFormat::ColorWords,
                 true
             )?);
-            assert_debug_snapshot!(test_repo.commander.get_file_diff(
+            assert_debug_snapshot!(run_file_diff(
+                &test_repo.commander,
                 &head,
                 &file,
                 &DiffFormat::Git,
@@ -493,13 +515,15 @@ mod tests {
             };
 
             let head = test_repo.commander.get_current_head()?;
-            assert_debug_snapshot!(test_repo.commander.get_file_diff(
+            assert_debug_snapshot!(run_file_diff(
+                &test_repo.commander,
                 &head,
                 &file,
                 &DiffFormat::ColorWords,
                 true
             )?);
-            assert_debug_snapshot!(test_repo.commander.get_file_diff(
+            assert_debug_snapshot!(run_file_diff(
+                &test_repo.commander,
                 &head,
                 &file,
                 &DiffFormat::Git,

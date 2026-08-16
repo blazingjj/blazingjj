@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   thread, and the changes it has shown are cached
 - Scrolling past a change no longer abandons the `jj show` running for it, so
   coming back to it is instant
+- In files tab, the diff panel update no longer blocks the UI thread, and the
+  diffs it has shown are cached
 
 ### Fixed
 

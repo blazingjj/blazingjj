@@ -12,10 +12,9 @@ pub use details_panel::LargeStringContent;
 pub use details_panel::TextContent;
 pub use list_pane::ListPane;
 pub use log_panel::LogPanel;
-/// Only a test builds a key of its own.
-#[cfg(test)]
 pub use output_cache::OutputKey;
 pub use output_cache::OutputRequest;
+pub use output_panel::OutputPanel;
 use ratatui::crossterm::event::MouseEvent;
 
 /// What a panel did with a mouse event.
