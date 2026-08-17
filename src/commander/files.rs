@@ -31,6 +31,7 @@ pub enum DiffType {
     Modified,
     Deleted,
     Renamed,
+    Copied,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -45,6 +46,7 @@ impl DiffType {
             "M" => Some(DiffType::Modified),
             "D" => Some(DiffType::Deleted),
             "R" => Some(DiffType::Renamed),
+            "C" => Some(DiffType::Copied),
             _ => None,
         }
     }
@@ -54,6 +56,7 @@ impl DiffType {
             DiffType::Added => Color::Green,
             DiffType::Modified => Color::Cyan,
             DiffType::Renamed => Color::Cyan,
+            DiffType::Copied => Color::Cyan,
             DiffType::Deleted => Color::Red,
         }
     }
@@ -216,6 +219,16 @@ mod tests {
 
     use super::*;
     use crate::commander::tests::TestRepo;
+
+    #[test]
+    fn every_status_jj_lists_has_a_diff_type() {
+        assert_eq!(DiffType::parse("A"), Some(DiffType::Added));
+        assert_eq!(DiffType::parse("M"), Some(DiffType::Modified));
+        assert_eq!(DiffType::parse("D"), Some(DiffType::Deleted));
+        assert_eq!(DiffType::parse("R"), Some(DiffType::Renamed));
+        assert_eq!(DiffType::parse("C"), Some(DiffType::Copied));
+        assert_eq!(DiffType::parse("?"), None);
+    }
 
     #[test]
     fn get_files() -> Result<()> {
