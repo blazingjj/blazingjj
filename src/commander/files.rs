@@ -4,12 +4,9 @@
 This module has features to parse the diff output.
 It is mostly used in the [files_tab][crate::ui::files_tab] module.
 */
-use std::sync::LazyLock;
-
 use anyhow::Context;
 use anyhow::Result;
 use ratatui::style::Color;
-use regex::Regex;
 use serde::Deserialize;
 use tracing::instrument;
 
@@ -35,7 +32,9 @@ pub enum DiffType {
     Copied,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+/// A conflicted file as [CONFLICTS_TEMPLATE] describes it. The field name is
+/// the one the template writes.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct Conflict {
     pub path: String,
 }
@@ -63,7 +62,15 @@ impl DiffType {
     }
 }
 
-static CONFLICTS_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(.*)    .*").unwrap());
+/// Template writing a conflicted file as a JSON object, one per line.
+///
+/// Paths are formatted for display, as [FILES_TEMPLATE] does, so that the
+/// two lists name the same file the same way.
+const CONFLICTS_TEMPLATE: &str = r#"
+    self.conflicted_files().map(|entry|
+        '{"path":' ++ entry.path().display().escape_json() ++ '}' ++ "\n"
+    ).join("")
+"#;
 
 /// Template writing a changed file as a JSON object, one per line.
 ///
@@ -92,6 +99,11 @@ struct FileRecord {
     display_path: String,
     /// Path to act on, which for a rename or a copy is the new one
     path: String,
+}
+
+/// Parse the [Conflict] one line of [CONFLICTS_TEMPLATE] output describes.
+fn parse_conflict(line: &str) -> Option<Conflict> {
+    serde_json::from_str(line).ok()
 }
 
 /// Parse the [File] one line of [FILES_TEMPLATE] output describes.
@@ -134,33 +146,24 @@ impl Commander {
             .collect())
     }
 
-    /// Get list of changes files in a change. Parses the output.
-    /// Maps to `jj diff --summary -r <revision>`
+    /// Get list of conflicted files in a change. Parses the output.
+    /// Maps to `jj log -r <revision>` with [CONFLICTS_TEMPLATE]
     #[instrument(level = "trace", skip(self))]
     pub fn get_conflicts(&self, commit_id: &CommitId) -> Result<Vec<Conflict>> {
-        let output = self
-            .jj(["resolve", "--list", "-r", commit_id.as_str()])
-            .run();
-
-        match output {
-            Ok(output) => Ok(output
-                .lines()
-                .filter_map(|line| {
-                    let captured = CONFLICTS_REGEX.captures(line);
-                    captured
-                        .as_ref()
-                        .and_then(|captured| captured.get(1))
-                        .map(|inner_text| Conflict {
-                            path: inner_text.as_str().to_owned(),
-                        })
-                })
-                .collect()),
-            Err(CommandError::Status(_, Some(2))) => {
-                // No conflicts
-                Ok(vec![])
-            }
-            Err(err) => Err(err).context("Failed getting conflicts"),
-        }
+        Ok(self
+            .jj([
+                "log",
+                "--no-graph",
+                "-T",
+                CONFLICTS_TEMPLATE,
+                "-r",
+                commit_id.as_str(),
+            ])
+            .run()
+            .context("Failed getting conflicts")?
+            .lines()
+            .filter_map(parse_conflict)
+            .collect())
     }
 
     /// Get diff for file change in a change.
@@ -502,21 +505,64 @@ mod tests {
     }
 
     #[test]
+    fn parse_conflict_reads_a_conflicted_file() {
+        assert_eq!(
+            parse_conflict(r#"{"path":"src/main.rs"}"#),
+            Some(Conflict {
+                path: "src/main.rs".to_owned()
+            })
+        );
+    }
+
+    /// A path may hold anything a JSON string can, runs of spaces included.
+    #[test]
+    fn parse_conflict_reads_a_path_with_spaces_in_it() {
+        assert_eq!(
+            parse_conflict(r#"{"path":"four    spaces.txt"}"#),
+            Some(Conflict {
+                path: "four    spaces.txt".to_owned()
+            })
+        );
+    }
+
+    /// Write the two files that conflict below, of two different name
+    /// lengths, so that only one of them can be the widest.
+    fn write_conflicting_files(test_repo: &TestRepo, content: &[u8]) -> Result<()> {
+        fs::write(test_repo.directory.path().join("README"), content)?;
+        fs::write(
+            test_repo.directory.path().join("a much longer name.txt"),
+            content,
+        )?;
+        Ok(())
+    }
+
+    /// The two changes that conflict with each other, as siblings.
+    fn create_conflicting_changes(test_repo: &TestRepo) -> Result<(Head, Head)> {
+        let root = test_repo.commander.get_current_head()?;
+
+        test_repo.commander.run_new([root.commit_id.as_str()])?;
+        let head1 = test_repo.commander.get_current_head()?;
+        write_conflicting_files(test_repo, b"AAA")?;
+
+        test_repo.commander.run_new([root.commit_id.as_str()])?;
+        let head2 = test_repo.commander.get_current_head()?;
+        write_conflicting_files(test_repo, b"BBB")?;
+
+        Ok((head1, head2))
+    }
+
+    fn conflicted_paths(conflicts: &[Conflict]) -> Vec<&str> {
+        conflicts
+            .iter()
+            .map(|conflict| conflict.path.as_str())
+            .collect()
+    }
+
+    #[test]
     fn get_conflicts() -> Result<()> {
         let test_repo = TestRepo::new()?;
 
-        let file_path = test_repo.directory.path().join("README");
-
-        let head0 = test_repo.commander.get_current_head()?;
-
-        // First change
-        test_repo.commander.run_new([head0.commit_id.as_str()])?;
-        let head1 = test_repo.commander.get_current_head()?;
-        fs::write(&file_path, b"AAA")?;
-
-        test_repo.commander.run_new([head0.commit_id.as_str()])?;
-        let head2 = test_repo.commander.get_current_head()?;
-        fs::write(&file_path, b"BBB")?;
+        let (head1, head2) = create_conflicting_changes(&test_repo)?;
 
         test_repo
             .commander
@@ -534,10 +580,37 @@ mod tests {
         let conflicts = test_repo.commander.get_conflicts(&head.commit_id)?;
 
         assert_eq!(
-            conflicts,
-            [Conflict {
-                path: "README".to_owned()
-            }]
+            conflicted_paths(&conflicts),
+            ["README", "a much longer name.txt"]
+        );
+
+        Ok(())
+    }
+
+    /// A merge is where the change itself has nothing to show: the conflict
+    /// is already in the tree the parents merge to, so no file is listed as
+    /// changed.
+    #[test]
+    fn get_conflicts_of_a_merge() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        let (head1, head2) = create_conflicting_changes(&test_repo)?;
+
+        // By change ID, as writing the files moved both changes on from the
+        // commits they were looked up as.
+        test_repo
+            .commander
+            .run_new([head1.change_id.as_str(), head2.change_id.as_str()])?;
+
+        let head = test_repo.commander.get_current_head()?;
+
+        assert_eq!(test_repo.commander.get_files(&head)?, vec![]);
+
+        let conflicts = test_repo.commander.get_conflicts(&head.commit_id)?;
+
+        assert_eq!(
+            conflicted_paths(&conflicts),
+            ["README", "a much longer name.txt"]
         );
 
         Ok(())

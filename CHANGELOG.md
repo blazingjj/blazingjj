@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   working copy
 - In files tab, a file renamed within a directory now shows its diff, and `x`/`r`
   no longer act on a path that does not exist
+- Conflicted paths in the files list no longer carry trailing spaces when a
+  change has conflicts in paths of differing lengths
 
 ## [0.8.0] - 2026-04-19
 
