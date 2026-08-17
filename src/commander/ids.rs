@@ -4,8 +4,10 @@ Helper structs [ChangeId] and [CommitId]
 use std::ffi::OsStr;
 use std::fmt::Display;
 
+use serde::Deserialize;
+
 /// Wrapper around change ID.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Deserialize)]
 pub struct ChangeId(pub String);
 
 impl ChangeId {
@@ -35,7 +37,7 @@ impl Display for ChangeId {
 }
 
 /// Wrapper around commit ID.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Deserialize)]
 pub struct CommitId(pub String);
 
 impl CommitId {
