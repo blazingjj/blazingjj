@@ -15,6 +15,7 @@ use anyhow::bail;
 use ratatui::style::Color;
 use serde::Deserialize;
 
+use crate::commander::MIN_SETTABLE_WIDTH;
 use crate::commander::RemoveEndLine;
 use crate::commander::get_output_args;
 use crate::keybinds::KeybindsConfig;
@@ -195,6 +196,20 @@ impl DiffFormat {
             _ => DiffFormat::ColorWords,
         }
     }
+
+    /// How wide output in this format is rendered, given the width of the
+    /// panel showing it. Only an external diff tool is told the width, via
+    /// the COLUMNS environment variable. jj's own formats produce the same
+    /// output whatever the width, and the panel wraps or scrolls it.
+    ///
+    /// A width too narrow to be passed on makes no difference either, so it
+    /// comes out as no width at all rather than as a value of its own.
+    pub fn render_width(&self, panel_width: usize) -> usize {
+        match self {
+            DiffFormat::DiffTool(_) if panel_width >= MIN_SETTABLE_WIDTH => panel_width,
+            _ => 0,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Default, Copy, PartialEq)]
@@ -212,5 +227,45 @@ impl From<JJLayout> for ratatui::layout::Direction {
             JJLayout::Horizontal => ratatui::layout::Direction::Horizontal,
             JJLayout::Vertical => ratatui::layout::Direction::Vertical,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PANEL_WIDTH: usize = 80;
+
+    #[test]
+    fn only_a_diff_tool_is_told_the_panel_width() {
+        assert_eq!(
+            DiffFormat::DiffTool(Some("difft".to_owned())).render_width(PANEL_WIDTH),
+            PANEL_WIDTH
+        );
+        assert_eq!(
+            DiffFormat::DiffTool(None).render_width(PANEL_WIDTH),
+            PANEL_WIDTH
+        );
+
+        for format in [
+            DiffFormat::ColorWords,
+            DiffFormat::Git,
+            DiffFormat::Summary,
+            DiffFormat::Stat,
+        ] {
+            assert_eq!(format.render_width(PANEL_WIDTH), 0, "{format:?}");
+        }
+    }
+
+    #[test]
+    fn a_width_that_cannot_be_passed_on_is_no_width() {
+        let diff_tool = DiffFormat::DiffTool(None);
+
+        assert_eq!(
+            diff_tool.render_width(MIN_SETTABLE_WIDTH),
+            MIN_SETTABLE_WIDTH
+        );
+        assert_eq!(diff_tool.render_width(MIN_SETTABLE_WIDTH - 1), 0);
+        assert_eq!(diff_tool.render_width(0), 0);
     }
 }

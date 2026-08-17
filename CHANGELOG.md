@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   change has conflicts in paths of differing lengths
 - Coming back to the terminal window no longer stalls the UI while `jj log` runs
   again for a repo that has not changed
+- Resizing the details panel no longer empties it while an external diff tool
+  renders the change again
 
 ## [0.8.0] - 2026-04-19
 

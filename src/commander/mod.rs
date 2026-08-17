@@ -62,6 +62,11 @@ use crate::env::get_env;
 const JJ_MIN_VERSION: &str = "0.37.0";
 const JJ_VERSION_IGNORE_HELP: &str = "If you want to continue anyway, use --ignore-jj-version";
 
+/// The narrowest width jj is told to limit secondary programs to. Anything
+/// below this is ignored, as those programs produce garbage output at that
+/// size, so it makes no difference to what they print.
+pub const MIN_SETTABLE_WIDTH: usize = 20;
+
 impl DiffFormat {
     pub fn get_args(&self) -> Vec<&str> {
         match self {
@@ -146,7 +151,6 @@ impl Commander {
     /// tools, by setting `COLUMNS` on every command this commander runs.
     /// Too narrow width requests are ignored, as they produce garbage output.
     pub fn limit_width(&mut self, columns: usize) {
-        const MIN_SETTABLE_WIDTH: usize = 20;
         if columns >= MIN_SETTABLE_WIDTH {
             self.columns = Some(columns);
         }
