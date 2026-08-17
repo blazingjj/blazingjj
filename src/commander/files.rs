@@ -10,6 +10,7 @@ use anyhow::Context;
 use anyhow::Result;
 use ratatui::style::Color;
 use regex::Regex;
+use serde::Deserialize;
 use tracing::instrument;
 
 use crate::commander::CommandError;
@@ -62,37 +63,74 @@ impl DiffType {
     }
 }
 
-// Example line: `A README.md`, `M src/main.rs`, `D Hello World`
-static FILES_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(.) (.*)").unwrap());
-static RENAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{(.*?) => (.*?)\}").unwrap());
 static CONFLICTS_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(.*)    .*").unwrap());
+
+/// Template writing a changed file as a JSON object, one per line.
+///
+/// `map()` joins what it renders with a space, so the newline that makes
+/// this JSONL has to go inside the closure.
+///
+/// Paths are formatted for display, which is what makes them relative to
+/// the working directory, the way `file:` filesets read them back.
+const FILES_TEMPLATE: &str = r#"
+    self.diff().files().map(|entry|
+        '{"status":' ++ entry.status_char().escape_json()
+        ++ ',"display_path":' ++ entry.display_diff_path().escape_json()
+        ++ ',"path":' ++ entry.path().display().escape_json()
+        ++ '}' ++ "\n"
+    ).join("")
+"#;
+
+/// A changed file as [FILES_TEMPLATE] describes it. The field names are the
+/// ones the template writes.
+#[derive(Deserialize)]
+struct FileRecord {
+    /// Single-character status: one of `AMDRC`
+    status: String,
+    /// Path as the files list shows it, with a rename spelled out as
+    /// `dir/{old => new}`
+    display_path: String,
+    /// Path to act on, which for a rename or a copy is the new one
+    path: String,
+}
+
+/// Parse the [File] one line of [FILES_TEMPLATE] output describes.
+///
+/// jj writes an error into the object it cannot render, as it does for a
+/// path that is not valid UTF-8. There is nothing to act on then, so the
+/// line is left to be shown as it came.
+fn parse_file(line: &str) -> File {
+    match serde_json::from_str::<FileRecord>(line) {
+        Ok(record) => File {
+            line: format!("{} {}", record.status, record.display_path),
+            diff_type: DiffType::parse(&record.status),
+            path: Some(record.path),
+        },
+        Err(_) => File {
+            line: line.to_owned(),
+            diff_type: None,
+            path: None,
+        },
+    }
+}
 
 impl Commander {
     /// Get list of changes files in a change. Parses the output.
-    /// Maps to `jj diff --summary -r <revision>`
+    /// Maps to `jj log -r <revision>` with [FILES_TEMPLATE]
     #[instrument(level = "trace", skip(self))]
     pub fn get_files(&self, head: &Head) -> Result<Vec<File>, CommandError> {
         Ok(self
-            .jj(["diff", "-r", head.commit_id.as_str(), "--summary"])
+            .jj([
+                "log",
+                "--no-graph",
+                "-T",
+                FILES_TEMPLATE,
+                "-r",
+                head.commit_id.as_str(),
+            ])
             .run()?
             .lines()
-            .map(|line| {
-                let captured = FILES_REGEX.captures(line);
-                let diff_type = captured
-                    .as_ref()
-                    .and_then(|captured| captured.get(1))
-                    .and_then(|inner_text| DiffType::parse(inner_text.as_str()));
-                let path = captured
-                    .as_ref()
-                    .and_then(|captured| captured.get(2))
-                    .map(|inner_text| inner_text.as_str().to_owned());
-
-                File {
-                    line: line.to_string(),
-                    path,
-                    diff_type,
-                }
-            })
+            .map(parse_file)
             .collect())
     }
 
@@ -135,20 +173,8 @@ impl Commander {
         diff_format: &DiffFormat,
         ignore_working_copy: bool,
     ) -> Result<Option<String>, CommandError> {
-        let Some(path) = current_file.path.as_ref() else {
+        let Some(path) = current_file.path.as_deref() else {
             return Ok(None);
-        };
-
-        let path = if let (true, Some(captures)) = (
-            current_file.diff_type == Some(DiffType::Renamed),
-            RENAME_REGEX.captures(path),
-        ) {
-            match captures.get(2) {
-                Some(path) => path.as_str(),
-                None => return Ok(None),
-            }
-        } else {
-            path
         };
 
         let fileset = Self::get_file_revset(path);
@@ -165,19 +191,8 @@ impl Commander {
 
     #[instrument(level = "trace", skip(self))]
     pub fn untrack_file(&self, current_file: &File) -> Result<Option<String>, CommandError> {
-        let Some(path) = current_file.path.as_ref() else {
+        let Some(path) = current_file.path.as_deref() else {
             return Ok(None);
-        };
-
-        let path = if let Some(DiffType::Renamed) = current_file.diff_type
-            && let Some(captures) = RENAME_REGEX.captures(path)
-        {
-            match captures.get(2) {
-                Some(path) => path.as_str(),
-                None => return Ok(None),
-            }
-        } else {
-            path
         };
 
         let fileset = Self::get_file_revset(path);
@@ -186,19 +201,8 @@ impl Commander {
 
     #[instrument(level = "trace", skip(self))]
     pub fn restore_file(&self, current_file: &File) -> Result<Option<String>, CommandError> {
-        let Some(path) = current_file.path.as_ref() else {
+        let Some(path) = current_file.path.as_deref() else {
             return Ok(None);
-        };
-
-        let path = if let Some(DiffType::Renamed) = current_file.diff_type
-            && let Some(captures) = RENAME_REGEX.captures(path)
-        {
-            match captures.get(2) {
-                Some(path) => path.as_str(),
-                None => return Ok(None),
-            }
-        } else {
-            path
         };
 
         let fileset = Self::get_file_revset(path);
@@ -216,6 +220,7 @@ impl Commander {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
 
     use insta::assert_debug_snapshot;
 
@@ -230,6 +235,61 @@ mod tests {
         assert_eq!(DiffType::parse("R"), Some(DiffType::Renamed));
         assert_eq!(DiffType::parse("C"), Some(DiffType::Copied));
         assert_eq!(DiffType::parse("?"), None);
+    }
+
+    #[test]
+    fn parse_file_reads_a_changed_file() {
+        assert_eq!(
+            parse_file(r#"{"status":"M","display_path":"src/main.rs","path":"src/main.rs"}"#),
+            File {
+                line: "M src/main.rs".to_owned(),
+                path: Some("src/main.rs".to_owned()),
+                diff_type: Some(DiffType::Modified),
+            }
+        );
+    }
+
+    /// The line spells the rename out the way jj does, while the path is the
+    /// new name on its own, ready to act on.
+    #[test]
+    fn parse_file_reads_a_rename() {
+        assert_eq!(
+            parse_file(
+                r#"{"status":"R","display_path":"dir/{a.txt => b.txt}","path":"dir/b.txt"}"#
+            ),
+            File {
+                line: "R dir/{a.txt => b.txt}".to_owned(),
+                path: Some("dir/b.txt".to_owned()),
+                diff_type: Some(DiffType::Renamed),
+            }
+        );
+    }
+
+    /// A path may hold anything a JSON string can, delimiters included.
+    #[test]
+    fn parse_file_reads_a_path_that_needed_escaping() {
+        assert_eq!(
+            parse_file(r#"{"status":"A","display_path":"a\"b\n{c}","path":"a\"b\n{c}"}"#),
+            File {
+                line: "A a\"b\n{c}".to_owned(),
+                path: Some("a\"b\n{c}".to_owned()),
+                diff_type: Some(DiffType::Added),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_file_leaves_a_record_holding_an_error_to_be_shown_as_it_is() {
+        let line = r#"{"status":"A","display_path":<Error: Invalid UTF-8>,"path":""}"#;
+
+        assert_eq!(
+            parse_file(line),
+            File {
+                line: line.to_owned(),
+                path: None,
+                diff_type: None,
+            }
+        );
     }
 
     #[test]
@@ -279,9 +339,33 @@ mod tests {
             );
         }
 
-        // Delete file
+        // Commit
+        test_repo.commander.jj(["new"]).run_void()?;
+
+        // Rename file into a directory
+        let directory = test_repo.directory.path().join("dir");
         {
-            fs::remove_file(&file_path)?;
+            fs::create_dir(&directory)?;
+            fs::rename(&file_path, directory.join("README2"))?;
+
+            // jj renders paths for display, so the separator is the platform's.
+            let renamed = Path::new("dir").join("README2").display().to_string();
+
+            let head = test_repo.commander.get_current_head()?;
+            let files = test_repo.commander.get_files(&head)?;
+            assert_eq!(
+                files,
+                vec![File {
+                    line: format!("R {{README => {renamed}}}"),
+                    path: Some(renamed),
+                    diff_type: Some(DiffType::Renamed)
+                },]
+            );
+        }
+
+        // Delete file, which is the rename with nothing left of it
+        {
+            fs::remove_dir_all(&directory)?;
 
             let head = test_repo.commander.get_current_head()?;
             let files = test_repo.commander.get_files(&head)?;
@@ -364,8 +448,10 @@ mod tests {
             fs::rename(file_path, &file_path_new)?;
             file_path = file_path_new;
 
+            // The path is the one get_files() resolved, while the line keeps
+            // both names for display.
             let file = File {
-                path: Some("{README => README2}".to_string()),
+                path: Some("README2".to_string()),
                 diff_type: Some(DiffType::Renamed),
                 line: "R {README => README2}".to_string(),
             };

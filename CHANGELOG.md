@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The keybindings shared by all tabs are now configured under `[blazingjj.keybinds]`:
   `focus-current`, `refresh` and `open-help` move there from
   `[blazingjj.keybinds.log-tab]`, which also loses its `scroll-*` overrides
++- jj 0.37.0 or newer is now required
 
 ### Added
 
@@ -41,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A copied file in the files list is now colored like the other changes
 - Running a command from the log tab no longer moves the selection to the
   working copy
+- In files tab, a file renamed within a directory now shows its diff, and `x`/`r`
+  no longer act on a path that does not exist
 
 ## [0.8.0] - 2026-04-19
 

@@ -56,8 +56,9 @@ use crate::env::Env;
 use crate::env::get_env;
 
 /// The oldest version of jj that is known to work with blazingjj.
-/// 0.33.0 changed the template language for evolog/obslog
-const JJ_MIN_VERSION: &str = "0.33.0";
+/// 0.37.0 added `status_char()` and `display_diff_path()`, which the files
+/// list is built from
+const JJ_MIN_VERSION: &str = "0.37.0";
 const JJ_VERSION_IGNORE_HELP: &str = "If you want to continue anyway, use --ignore-jj-version";
 
 impl DiffFormat {
