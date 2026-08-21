@@ -1,5 +1,5 @@
 /*!
-Helper structs [ChangeId] and [CommitId]
+Helper structs [ChangeId], [CommitId] and [OperationId]
 */
 use std::ffi::OsStr;
 use std::fmt::Display;
@@ -65,3 +65,7 @@ impl Display for CommitId {
         write!(f, "{}", self.as_str())
     }
 }
+
+/// Wrapper around operation ID.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct OperationId(pub String);

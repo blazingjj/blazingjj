@@ -20,7 +20,9 @@ use ratatui::widgets::*;
 use tracing::info;
 use tracing::instrument;
 use tracing::trace;
+use tracing::warn;
 
+use crate::commander::ids::OperationId;
 use crate::commander::new_commander;
 use crate::env::get_env;
 use crate::event::AppEvent;
@@ -63,6 +65,9 @@ pub struct Stats {
     pub start_time: Instant,
 }
 
+/// How long after a check of what the repo is at the next one is due.
+const OP_ID_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+
 pub struct App<'a> {
     // user interface
     pub current_tab: TabId,
@@ -72,6 +77,13 @@ pub struct App<'a> {
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     global_keybinds: GlobalKeybinds,
+
+    repo_op_id: Option<OperationId>,
+    next_op_id_check: Instant,
+
+    /// Whether the next check may leave the working copy alone rather
+    /// than snapshotting it.
+    ignore_working_copy: bool,
 
     // event handling
     running: Arc<AtomicBool>,
@@ -98,6 +110,10 @@ impl<'a> App<'a> {
                 start_time: Instant::now(),
             },
             global_keybinds,
+
+            repo_op_id: None,
+            next_op_id_check: Instant::now(),
+            ignore_working_copy: false,
 
             running,
             event_source,
@@ -136,9 +152,51 @@ impl<'a> App<'a> {
         self.current_tab = tab;
     }
 
-    /// Read the current tab if it is stale.
-    pub fn refresh_current_tab(&mut self) -> Result<()> {
+    /// Mark every tab stale if the repo has moved since the last check,
+    /// then read the current tab if it is stale.
+    pub fn refresh_view(&mut self) -> Result<()> {
+        if self.check_repo_moved() {
+            trace!("The repo has moved, so every tab is stale");
+            for tab in TabId::VALUES {
+                self.get_tab(tab).mark_stale();
+            }
+        }
+
         self.get_current_tab().refresh()
+    }
+
+    /// Ask for the next check to read the repo without waiting out
+    /// [OP_ID_CHECK_INTERVAL], and snapshot the working copy while at it.
+    fn request_check_with_snapshot(&mut self) {
+        self.next_op_id_check = Instant::now();
+        self.ignore_working_copy = false;
+    }
+
+    /// Read what operation the repo is at once the last check is an
+    /// [OP_ID_CHECK_INTERVAL] old, or as soon as one was asked for, and
+    /// remember it. Reports whether it differs from what was remembered
+    /// before; a check that is not due yet or that fails reports no
+    /// movement.
+    fn check_repo_moved(&mut self) -> bool {
+        if Instant::now() < self.next_op_id_check {
+            return false;
+        }
+
+        let result = new_commander().get_operation_id(self.ignore_working_copy);
+        self.next_op_id_check = Instant::now() + OP_ID_CHECK_INTERVAL;
+
+        let operation_id = match result {
+            Ok(operation_id) => operation_id,
+            Err(err) => {
+                warn!("Could not read what the repo is at: {err}");
+                return false;
+            }
+        };
+        self.ignore_working_copy = true;
+
+        let moved = self.repo_op_id.as_ref() != Some(&operation_id);
+        self.repo_op_id = Some(operation_id);
+        moved
     }
 
     pub fn get_tab(&mut self, tab: TabId) -> &mut dyn Tab {
@@ -181,6 +239,9 @@ impl<'a> App<'a> {
             }
             AppAction::RefreshTab => {
                 self.get_current_tab().mark_stale();
+                // Whatever asks for this has likely moved the repo, so
+                // the other tabs want checking without delay.
+                self.next_op_id_check = Instant::now();
             }
         }
 
@@ -295,6 +356,13 @@ impl<'a> App<'a> {
             trace!("an event that was not a UserInput was ignored");
             return Ok(false); // do not terminate the app
         };
+        // Coming back to the window is worth a check, as the repo may
+        // well have moved while we were not being watched.
+        if event == event::Event::FocusGained {
+            self.request_check_with_snapshot();
+            return Ok(false);
+        }
+
         if let Some(popup) = self.popup.as_mut() {
             match popup.input(event.clone())? {
                 ComponentInputResult::HandledAction(app_action) => {
@@ -320,8 +388,6 @@ impl<'a> App<'a> {
                     }
                 }
             };
-        } else if event == event::Event::FocusGained {
-            self.get_current_tab().mark_stale();
         } else {
             match self.get_current_tab().input(event.clone())? {
                 ComponentInputResult::HandledAction(app_action) => {
@@ -351,6 +417,7 @@ impl<'a> App<'a> {
                                 self.get_current_tab().focus_current()?;
                             }
                             GlobalEvent::Refresh => {
+                                self.request_check_with_snapshot();
                                 self.get_current_tab().drop_caches();
                                 self.handle_action(AppAction::RefreshTab)?;
                             }
