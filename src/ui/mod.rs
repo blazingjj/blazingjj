@@ -66,10 +66,9 @@ pub trait Component {
         Ok(())
     }
 
-    /// Read afresh on the user's request, discarding anything cached.
-    fn force_refresh(&mut self) -> Result<()> {
-        self.refresh()
-    }
+    /// Discard whatever this component has cached, so that the next read
+    /// goes to the repo.
+    fn drop_caches(&mut self) {}
 
     /// Move the selection in the main panel.
     fn scroll_main_panel(&mut self, _scroll: Scroll) -> Result<()> {

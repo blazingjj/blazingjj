@@ -761,9 +761,8 @@ impl Component for LogTab<'_> {
         Ok(())
     }
 
-    fn force_refresh(&mut self) -> Result<()> {
+    fn drop_caches(&mut self) {
         self.mark_cache_as_dirty();
-        self.refresh()
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
