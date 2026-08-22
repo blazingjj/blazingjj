@@ -6,7 +6,6 @@ use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::Result;
-use anyhow::anyhow;
 use ratatui::crossterm::event::Event as TermEvent;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::{self};
@@ -66,9 +65,9 @@ pub struct Stats {
 pub struct App<'a> {
     // user interface
     pub current_tab: Tab,
-    pub log: Option<LogTab<'a>>,
-    pub files: Option<FilesTab>,
-    pub bookmarks: Option<BookmarksTab<'a>>,
+    pub log: LogTab<'a>,
+    pub files: FilesTab,
+    pub bookmarks: BookmarksTab<'a>,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     global_keybinds: GlobalKeybinds,
@@ -86,11 +85,13 @@ impl<'a> App<'a> {
         if let Some(keybinds_config) = get_env().jj_config.keybinds() {
             global_keybinds.extend_from_config(keybinds_config);
         }
+        let current_head = new_commander().get_current_head()?;
+
         Ok(App {
             current_tab: Tab::Log,
-            log: None,
-            files: None,
-            bookmarks: None,
+            log: LogTab::new(event_source.clone_event_sender())?,
+            files: FilesTab::new(&current_head)?,
+            bookmarks: BookmarksTab::new()?,
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
@@ -102,11 +103,7 @@ impl<'a> App<'a> {
         })
     }
 
-    pub fn get_or_init_current_tab(&mut self) -> Result<&mut dyn Component> {
-        self.get_or_init_tab(self.current_tab)
-    }
-
-    pub fn get_current_tab(&mut self) -> Option<&mut dyn Component> {
+    pub fn get_current_tab(&mut self) -> &mut dyn Component {
         self.get_tab(self.current_tab)
     }
 
@@ -123,7 +120,7 @@ impl<'a> App<'a> {
 
     fn open_help(&mut self) -> Result<()> {
         let global_help = self.global_keybinds.make_help();
-        let tab = self.get_or_init_current_tab()?;
+        let tab = self.get_current_tab();
         let popup = HelpPopup::new(
             tab.make_main_panel_help(),
             tab.make_details_panel_help(),
@@ -136,63 +133,15 @@ impl<'a> App<'a> {
     pub fn set_tab(&mut self, tab: Tab) -> Result<()> {
         info!("Setting tab to {}", tab);
         self.current_tab = tab;
-        self.get_or_init_current_tab()?.refresh()?;
+        self.get_current_tab().refresh()?;
         Ok(())
     }
 
-    pub fn get_log_tab(&mut self) -> Result<&mut LogTab<'a>> {
-        if self.log.is_none() {
-            self.log = Some(LogTab::new(self.event_source.clone_event_sender())?);
-        }
-
-        self.log
-            .as_mut()
-            .ok_or_else(|| anyhow!("Failed to get mutable reference to LogTab"))
-    }
-
-    pub fn get_files_tab(&mut self) -> Result<&mut FilesTab> {
-        if self.files.is_none() {
-            let current_head = new_commander().get_current_head()?;
-            self.files = Some(FilesTab::new(&current_head)?);
-        }
-
-        self.files
-            .as_mut()
-            .ok_or_else(|| anyhow!("Failed to get mutable reference to FilesTab"))
-    }
-
-    pub fn get_bookmarks_tab(&mut self) -> Result<&mut BookmarksTab<'a>> {
-        if self.bookmarks.is_none() {
-            self.bookmarks = Some(BookmarksTab::new()?);
-        }
-
-        self.bookmarks
-            .as_mut()
-            .ok_or_else(|| anyhow!("Failed to get mutable reference to BookmarksTab"))
-    }
-
-    pub fn get_or_init_tab(&mut self, tab: Tab) -> Result<&mut dyn Component> {
-        Ok(match tab {
-            Tab::Log => self.get_log_tab()?,
-            Tab::Files => self.get_files_tab()?,
-            Tab::Bookmarks => self.get_bookmarks_tab()?,
-        })
-    }
-
-    pub fn get_tab(&mut self, tab: Tab) -> Option<&mut dyn Component> {
+    pub fn get_tab(&mut self, tab: Tab) -> &mut dyn Component {
         match tab {
-            Tab::Log => self
-                .log
-                .as_mut()
-                .map(|log_tab| log_tab as &mut dyn Component),
-            Tab::Files => self
-                .files
-                .as_mut()
-                .map(|files_tab| files_tab as &mut dyn Component),
-            Tab::Bookmarks => self
-                .bookmarks
-                .as_mut()
-                .map(|bookmarks_tab| bookmarks_tab as &mut dyn Component),
+            Tab::Log => &mut self.log,
+            Tab::Files => &mut self.files,
+            Tab::Bookmarks => &mut self.bookmarks,
         }
     }
 
@@ -202,14 +151,14 @@ impl<'a> App<'a> {
         match app_action {
             AppAction::ViewFiles(head) => {
                 self.set_tab(Tab::Files)?;
-                self.get_files_tab()?.set_head(&head)?;
+                self.files.set_head(&head)?;
             }
             AppAction::ViewLog(head) => {
-                self.get_log_tab()?.set_head(head);
+                self.log.set_head(head);
                 self.set_tab(Tab::Log)?;
             }
             AppAction::ChangeHead(head) => {
-                self.get_files_tab()?.set_head(&head)?;
+                self.files.set_head(&head)?;
             }
             AppAction::SetPopup(popup) => {
                 self.popup = Some(popup);
@@ -242,7 +191,7 @@ impl<'a> App<'a> {
             self.handle_action(component_action)?;
         }
 
-        if let Some(component_action) = self.get_or_init_current_tab()?.update()? {
+        if let Some(component_action) = self.get_current_tab().update()? {
             self.handle_action(component_action)?;
         }
 
@@ -297,9 +246,7 @@ impl<'a> App<'a> {
             f.render_widget(tabs, header_chunks[1]);
         }
 
-        if let Some(current_tab) = self.get_current_tab() {
-            current_tab.draw(f, chunks[1])?;
-        }
+        self.get_current_tab().draw(f, chunks[1])?;
 
         if let Some(popup) = self.popup.as_mut() {
             popup.draw(f, area)?;
@@ -370,9 +317,9 @@ impl<'a> App<'a> {
                 }
             };
         } else if event == event::Event::FocusGained {
-            self.get_or_init_current_tab()?.refresh()?;
+            self.get_current_tab().refresh()?;
         } else {
-            match self.get_or_init_current_tab()?.input(event.clone())? {
+            match self.get_current_tab().input(event.clone())? {
                 ComponentInputResult::HandledAction(app_action) => {
                     self.handle_action(app_action)?
                 }
@@ -383,26 +330,24 @@ impl<'a> App<'a> {
                     {
                         match self.global_keybinds.match_event(key) {
                             GlobalEvent::ScrollDown => {
-                                self.get_or_init_current_tab()?
-                                    .scroll_main_panel(Scroll::Down)?;
+                                self.get_current_tab().scroll_main_panel(Scroll::Down)?;
                             }
                             GlobalEvent::ScrollUp => {
-                                self.get_or_init_current_tab()?
-                                    .scroll_main_panel(Scroll::Up)?;
+                                self.get_current_tab().scroll_main_panel(Scroll::Up)?;
                             }
                             GlobalEvent::ScrollDownHalf => {
-                                self.get_or_init_current_tab()?
+                                self.get_current_tab()
                                     .scroll_main_panel(Scroll::DownHalfPage)?;
                             }
                             GlobalEvent::ScrollUpHalf => {
-                                self.get_or_init_current_tab()?
+                                self.get_current_tab()
                                     .scroll_main_panel(Scroll::UpHalfPage)?;
                             }
                             GlobalEvent::FocusCurrent => {
-                                self.get_or_init_current_tab()?.focus_current()?;
+                                self.get_current_tab().focus_current()?;
                             }
                             GlobalEvent::Refresh => {
-                                self.get_or_init_current_tab()?.drop_caches();
+                                self.get_current_tab().drop_caches();
                                 self.handle_action(AppAction::RefreshTab)?;
                             }
                             GlobalEvent::NextTab => self.set_next_tab_with_offset(1)?,
