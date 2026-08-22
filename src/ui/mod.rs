@@ -27,7 +27,7 @@ pub enum AppAction {
     /// Take the popup down, nothing having been done.
     PopupCanceled,
     Multiple(Vec<AppAction>),
-    RefreshTab(),
+    RefreshTab,
 }
 
 /// When a Component process an input event, it returns an ComponentInputResult
