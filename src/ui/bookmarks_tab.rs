@@ -235,7 +235,7 @@ impl BookmarksTab<'_> {
 }
 
 impl Component for BookmarksTab<'_> {
-    fn focus(&mut self) -> Result<()> {
+    fn refresh(&mut self) -> Result<()> {
         self.refresh_bookmarks();
         self.refresh_bookmark();
         Ok(())

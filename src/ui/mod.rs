@@ -46,8 +46,8 @@ impl ComponentInputResult {
     }
 }
 pub trait Component {
-    // Called when switching to tab
-    fn focus(&mut self) -> Result<()> {
+    /// Read whatever this component shows afresh from the repo.
+    fn refresh(&mut self) -> Result<()> {
         Ok(())
     }
 
