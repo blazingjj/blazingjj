@@ -26,7 +26,7 @@ use crate::env::get_env;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
-use crate::ui::dialog::HelpPopup;
+use crate::ui::Scroll;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
@@ -239,6 +239,47 @@ impl Component for BookmarksTab<'_> {
         self.refresh_bookmarks();
         self.refresh_bookmark();
         Ok(())
+    }
+
+    fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
+        let half_page = self.bookmarks_height as isize / 2;
+        self.scroll_bookmarks(match scroll {
+            Scroll::Down => 1,
+            Scroll::Up => -1,
+            Scroll::DownHalfPage => half_page,
+            Scroll::UpHalfPage => half_page.saturating_neg(),
+        });
+        Ok(())
+    }
+
+    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+        vec![
+            ("a".to_owned(), "show all remotes".to_owned()),
+            ("c".to_owned(), "create bookmark".to_owned()),
+            ("r".to_owned(), "rename bookmark".to_owned()),
+            ("d/f".to_owned(), "delete/forget bookmark".to_owned()),
+            ("t/T".to_owned(), "track/untrack bookmark".to_owned()),
+            ("Enter".to_owned(), "view in log".to_owned()),
+            ("n".to_owned(), "new from bookmark".to_owned()),
+            ("N".to_owned(), "new and describe".to_owned()),
+            ("e".to_owned(), "edit bookmark".to_owned()),
+        ]
+    }
+
+    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+        vec![
+            ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
+            (
+                "Ctrl+d/Ctrl+u".to_owned(),
+                "scroll down/up by ½ page".to_owned(),
+            ),
+            (
+                "Ctrl+f/Ctrl+b".to_owned(),
+                "scroll down/up by page".to_owned(),
+            ),
+            ("w".to_owned(), "toggle diff format".to_owned()),
+            ("W".to_owned(), "toggle wrapping".to_owned()),
+        ]
     }
 
     fn update(&mut self) -> Result<Option<AppAction>> {
@@ -771,20 +812,8 @@ impl Component for BookmarksTab<'_> {
             }
 
             match key.code {
-                KeyCode::Char('j') | KeyCode::Down => self.scroll_bookmarks(1),
-                KeyCode::Char('k') | KeyCode::Up => self.scroll_bookmarks(-1),
-                KeyCode::Char('J') => {
-                    self.scroll_bookmarks(self.bookmarks_height as isize / 2);
-                }
-                KeyCode::Char('K') => {
-                    self.scroll_bookmarks((self.bookmarks_height as isize / 2).saturating_neg());
-                }
                 KeyCode::Char('w') => {
                     self.diff_format = self.diff_format.get_next(self.config.diff_tool());
-                    self.refresh_bookmark();
-                }
-                KeyCode::Char('R') | KeyCode::F(5) => {
-                    self.refresh_bookmarks();
                     self.refresh_bookmark();
                 }
                 KeyCode::Char('a') => {
@@ -933,38 +962,6 @@ impl Component for BookmarksTab<'_> {
                             new_commander().get_bookmark_head(bookmark)?,
                         )));
                     }
-                }
-                KeyCode::Char('?') => {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(HelpPopup::new(
-                            vec![
-                                ("j/k".to_owned(), "scroll down/up".to_owned()),
-                                ("J/K".to_owned(), "scroll down by ½ page".to_owned()),
-                                ("a".to_owned(), "show all remotes".to_owned()),
-                                ("c".to_owned(), "create bookmark".to_owned()),
-                                ("r".to_owned(), "rename bookmark".to_owned()),
-                                ("d/f".to_owned(), "delete/forget bookmark".to_owned()),
-                                ("t/T".to_owned(), "track/untrack bookmark".to_owned()),
-                                ("Enter".to_owned(), "view in log".to_owned()),
-                                ("n".to_owned(), "new from bookmark".to_owned()),
-                                ("N".to_owned(), "new and describe".to_owned()),
-                                ("e".to_owned(), "edit bookmark".to_owned()),
-                            ],
-                            vec![
-                                ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
-                                (
-                                    "Ctrl+d/Ctrl+u".to_owned(),
-                                    "scroll down/up by ½ page".to_owned(),
-                                ),
-                                (
-                                    "Ctrl+f/Ctrl+b".to_owned(),
-                                    "scroll down/up by page".to_owned(),
-                                ),
-                                ("w".to_owned(), "toggle diff format".to_owned()),
-                                ("W".to_owned(), "toggle wrapping".to_owned()),
-                            ],
-                        )),
-                    )));
                 }
                 _ => return Ok(ComponentInputResult::NotHandled),
             };

@@ -249,7 +249,7 @@ impl<'a> LogPanel<'a> {
     /// Number of log list items that fit on screen. Think of this as
     /// in unit head-index. Moving the head-index this much causes a
     /// full page scroll.
-    fn visible_heads(&self) -> u16 {
+    pub fn visible_heads(&self) -> u16 {
         // Every item in the log list is 2 lines high, so divide screen rows
         // by 2 to get the number of log items that fit in it.
         self.log_rect.height / 2
@@ -264,7 +264,7 @@ impl<'a> LogPanel<'a> {
     /// Move selection relative to the current position.
     /// The scroll is relative to head-index, not line-index.
     /// This will update self.head
-    fn scroll_relative(&mut self, scroll: isize) {
+    pub fn scroll_relative(&mut self, scroll: isize) {
         let log_output = match self.log_output.as_ref() {
             Ok(log_output) => log_output,
             Err(_) => return,
@@ -322,18 +322,6 @@ impl<'a> LogPanel<'a> {
 
     pub fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<ComponentInputResult> {
         match log_tab_event {
-            LogTabEvent::ScrollDown => {
-                self.scroll_relative(1);
-            }
-            LogTabEvent::ScrollUp => {
-                self.scroll_relative(-1);
-            }
-            LogTabEvent::ScrollDownHalf => {
-                self.scroll_relative(self.visible_heads() as isize / 2);
-            }
-            LogTabEvent::ScrollUpHalf => {
-                self.scroll_relative((self.visible_heads() as isize / 2).saturating_neg());
-            }
             LogTabEvent::ScrollToBottom => {
                 self.scroll_relative(isize::MAX);
             }
@@ -406,11 +394,11 @@ impl Component for LogPanel<'_> {
             // Execute command dependent on panel and event kind
             match mouse_event.kind {
                 MouseEventKind::ScrollUp => {
-                    self.handle_event(LogTabEvent::ScrollUp)?;
+                    self.scroll_relative(-1);
                     return Ok(ComponentInputResult::Handled);
                 }
                 MouseEventKind::ScrollDown => {
-                    self.handle_event(LogTabEvent::ScrollDown)?;
+                    self.scroll_relative(1);
                     return Ok(ComponentInputResult::Handled);
                 }
                 MouseEventKind::Up(_) => {

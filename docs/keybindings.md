@@ -11,10 +11,11 @@ save = false
 
 In below examples default values are used.
 
-### Top-level scroll bindings
+### Global
 
-These apply as defaults to all scroll-capable components and can be overridden
-in each component's own section.
+These work in every tab. The scroll bindings also apply as defaults to the
+popups, which can override them in their own section. Selecting a tab by its
+number in the tab bar (`1`, `2`, `3`) is not configurable.
 
 ```toml
 [blazingjj.keybinds]
@@ -22,11 +23,21 @@ scroll-down = ["j", "down"]
 scroll-up = ["k", "up"]
 scroll-down-half = "shift+j"
 scroll-up-half = "shift+k"
+
+focus-current = "@"
+refresh = ["shift+r", "f5"]
+open-help = "?"
+
+next-tab = "l"
+prev-tab = "h"
+
+command-popup = ":"
+quit = ["q", "ctrl+c", "esc"]
 ```
 
 ### Message popup
 
-Overrides top-level scroll bindings. `scroll-down-page` and `scroll-up-page`
+Overrides the global scroll bindings. `scroll-down-page` and `scroll-up-page`
 are only configurable here.
 
 ```toml
@@ -48,15 +59,8 @@ cancel = "esc"
 
 close-popup = "q"
 
-scroll-down = ["j", "down"]
-scroll-up = ["k", "up"]
-scroll-down-half = "shift+j"
-scroll-up-half = "shift+k"
-
-focus-current = "@"
 toggle-diff-format = "w"
 
-refresh = ["shift+r", "f5"]
 create-new = "n"
 create-new-describe = "shift+n"
 duplicate = "shift+d"
@@ -79,6 +83,4 @@ push-all = "shift+p"
 push-all-new = "ctrl+shift+p"
 fetch = "f"
 fetch-all = "shift+f"
-
-open-help = "?"
 ```

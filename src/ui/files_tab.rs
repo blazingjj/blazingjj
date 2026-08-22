@@ -20,7 +20,7 @@ use crate::env::get_env;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
-use crate::ui::dialog::HelpPopup;
+use crate::ui::Scroll;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
@@ -202,6 +202,43 @@ impl Component for FilesTab {
         Ok(())
     }
 
+    fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
+        let half_page = self.files_height as isize / 2;
+        self.scroll_files(match scroll {
+            Scroll::Down => 1,
+            Scroll::Up => -1,
+            Scroll::DownHalfPage => half_page,
+            Scroll::UpHalfPage => half_page.saturating_neg(),
+        })
+    }
+
+    fn focus_current(&mut self) -> Result<()> {
+        self.set_head(&new_commander().get_current_head()?)
+    }
+
+    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+        vec![
+            ("x".to_owned(), "untrack file".to_owned()),
+            ("r".to_owned(), "restore file".to_owned()),
+        ]
+    }
+
+    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+        vec![
+            ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
+            (
+                "Ctrl+d/Ctrl+u".to_owned(),
+                "scroll down/up by ½ page".to_owned(),
+            ),
+            (
+                "Ctrl+f/Ctrl+b".to_owned(),
+                "scroll down/up by page".to_owned(),
+            ),
+            ("w".to_owned(), "toggle diff format".to_owned()),
+            ("W".to_owned(), "toggle wrapping".to_owned()),
+        ]
+    }
+
     fn draw(
         &mut self,
         f: &mut ratatui::prelude::Frame<'_>,
@@ -339,14 +376,6 @@ impl Component for FilesTab {
             }
 
             match key.code {
-                KeyCode::Char('j') | KeyCode::Down => self.scroll_files(1)?,
-                KeyCode::Char('k') | KeyCode::Up => self.scroll_files(-1)?,
-                KeyCode::Char('J') => {
-                    self.scroll_files(self.files_height as isize / 2)?;
-                }
-                KeyCode::Char('K') => {
-                    self.scroll_files((self.files_height as isize / 2).saturating_neg())?;
-                }
                 KeyCode::Char('w') => {
                     self.diff_format = self.diff_format.get_next(self.config.diff_tool());
                     self.refresh_diff()?;
@@ -370,41 +399,6 @@ impl Component for FilesTab {
                         )));
                     }
                     self.set_head(&new_commander().get_current_head()?)?;
-                }
-                KeyCode::Char('R') | KeyCode::F(5) => {
-                    self.head = new_commander().get_head_latest(&self.head)?;
-                    self.refresh_files()?;
-                    self.refresh_diff()?;
-                }
-                KeyCode::Char('@') => {
-                    let head = &new_commander().get_current_head()?;
-                    self.set_head(head)?;
-                }
-                KeyCode::Char('?') => {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(HelpPopup::new(
-                            vec![
-                                ("j/k".to_owned(), "scroll down/up".to_owned()),
-                                ("J/K".to_owned(), "scroll down by ½ page".to_owned()),
-                                ("x".to_owned(), "untrack file".to_owned()),
-                                ("r".to_owned(), "restore file".to_owned()),
-                                ("@".to_owned(), "view current change files".to_owned()),
-                            ],
-                            vec![
-                                ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
-                                (
-                                    "Ctrl+d/Ctrl+u".to_owned(),
-                                    "scroll down/up by ½ page".to_owned(),
-                                ),
-                                (
-                                    "Ctrl+f/Ctrl+b".to_owned(),
-                                    "scroll down/up by page".to_owned(),
-                                ),
-                                ("w".to_owned(), "toggle diff format".to_owned()),
-                                ("W".to_owned(), "toggle wrapping".to_owned()),
-                            ],
-                        )),
-                    )));
                 }
                 _ => return Ok(ComponentInputResult::NotHandled),
             };

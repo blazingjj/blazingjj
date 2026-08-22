@@ -38,11 +38,11 @@ use crate::keybinds::LogTabKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::Scroll;
 use crate::ui::commit_show_cache::CommitShowCache;
 use crate::ui::commit_show_cache::CommitShowKey;
 use crate::ui::commit_show_cache::CommitShowValue;
 use crate::ui::dialog::BookmarkSetPopup;
-use crate::ui::dialog::HelpPopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
@@ -537,28 +537,16 @@ impl<'a> LogTab<'a> {
 
     fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<ComponentInputResult> {
         match log_tab_event {
-            LogTabEvent::ScrollDown
-            | LogTabEvent::ScrollUp
-            | LogTabEvent::ScrollDownHalf
-            | LogTabEvent::ScrollUpHalf
-            | LogTabEvent::ScrollToBottom
+            LogTabEvent::ScrollToBottom
             | LogTabEvent::ScrollToTop
             | LogTabEvent::ToggleHeadMark => {
                 self.log_panel.handle_event(log_tab_event)?;
                 self.sync_head_output();
             }
-            LogTabEvent::FocusCurrent => {
-                self.set_head(new_commander().get_current_head()?);
-            }
             LogTabEvent::ToggleDiffFormat => {
                 self.diff_format = self.diff_format.get_next(self.config.diff_tool());
                 self.refresh_head_output();
             }
-            LogTabEvent::Refresh => {
-                self.mark_cache_as_dirty();
-                self.refresh_log_output();
-            }
-
             LogTabEvent::Duplicate => {
                 let _ = new_commander().run_duplicate(&self.head.change_id.to_string());
                 self.refresh_log_output();
@@ -757,26 +745,6 @@ impl<'a> LogTab<'a> {
                     Box::new(loader),
                 )));
             }
-            LogTabEvent::OpenHelp => {
-                return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                    Box::new(HelpPopup::new(
-                        self.keybinds.make_main_panel_help(),
-                        vec![
-                            ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
-                            (
-                                "Ctrl+d/Ctrl+u".to_owned(),
-                                "scroll down/up by ½ page".to_owned(),
-                            ),
-                            (
-                                "Ctrl+f/Ctrl+b".to_owned(),
-                                "scroll down/up by page".to_owned(),
-                            ),
-                            ("w".to_owned(), "toggle diff format".to_owned()),
-                            ("W".to_owned(), "toggle wrapping".to_owned()),
-                        ],
-                    )),
-                )));
-            }
             LogTabEvent::Save
             | LogTabEvent::Cancel
             | LogTabEvent::ClosePopup
@@ -791,6 +759,48 @@ impl Component for LogTab<'_> {
         let latest_head = new_commander().get_head_latest(&self.head)?;
         self.set_head(latest_head);
         Ok(())
+    }
+
+    fn force_refresh(&mut self) -> Result<()> {
+        self.mark_cache_as_dirty();
+        self.refresh()
+    }
+
+    fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
+        let half_page = self.log_panel.visible_heads() as isize / 2;
+        self.log_panel.scroll_relative(match scroll {
+            Scroll::Down => 1,
+            Scroll::Up => -1,
+            Scroll::DownHalfPage => half_page,
+            Scroll::UpHalfPage => half_page.saturating_neg(),
+        });
+        self.sync_head_output();
+        Ok(())
+    }
+
+    fn focus_current(&mut self) -> Result<()> {
+        self.set_head(new_commander().get_current_head()?);
+        Ok(())
+    }
+
+    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+        self.keybinds.make_main_panel_help()
+    }
+
+    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+        vec![
+            ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
+            (
+                "Ctrl+d/Ctrl+u".to_owned(),
+                "scroll down/up by ½ page".to_owned(),
+            ),
+            (
+                "Ctrl+f/Ctrl+b".to_owned(),
+                "scroll down/up by page".to_owned(),
+            ),
+            ("w".to_owned(), "toggle diff format".to_owned()),
+            ("W".to_owned(), "toggle wrapping".to_owned()),
+        ]
     }
 
     fn update(&mut self) -> Result<Option<AppAction>> {

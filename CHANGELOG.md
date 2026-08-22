@@ -13,13 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The keybinds config section is now kebab-cased: `[blazingjj.keybinds.log_tab]` must be
   changed to `[blazingjj.keybinds.log-tab]`
+- The keybindings shared by all tabs are now configured under `[blazingjj.keybinds]`:
+  `focus-current`, `refresh` and `open-help` move there from
+  `[blazingjj.keybinds.log-tab]`, which also loses its `scroll-*` overrides
 
 ### Added
 
 - Keybinding for jj absorb (`A`)
-- Top-level scroll keybindings (`scroll-down`, `scroll-up`, `scroll-down-half`,
-  `scroll-up-half` under `[blazingjj.keybinds]`) that apply as defaults to all
-  scroll-capable components and can be overridden per-component
+- Global keybindings under `[blazingjj.keybinds]` (`scroll-down`, `scroll-up`,
+  `scroll-down-half`, `scroll-up-half`, `focus-current`, `refresh`, `open-help`,
+  `next-tab`, `prev-tab`, `command-popup`, `quit`) that work the same in every
+  tab; the scroll ones also apply as defaults to the popups, which can override
+  them per-component
+- The help popup now lists the global keybindings alongside the main and details panel ones
 - Message popup now supports scrolling with a scrollbar
 - Command popup output now preserves ANSI color
 - Drag to resize pane divider in all tabs
