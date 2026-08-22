@@ -94,9 +94,6 @@ pub struct LogTab<'a> {
     popup_tx: std::sync::mpsc::Sender<Listener>,
     popup_rx: std::sync::mpsc::Receiver<Listener>,
 
-    bookmark_set_popup_tx: std::sync::mpsc::Sender<bool>,
-    bookmark_set_popup_rx: std::sync::mpsc::Receiver<bool>,
-
     describe_textarea: Option<TextArea<'a>>,
     describe_after_new: bool,
 
@@ -171,7 +168,6 @@ impl<'a> LogTab<'a> {
         let commit_show_cache = CommitShowCache::new();
 
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
-        let (bookmark_set_popup_tx, bookmark_set_popup_rx) = std::sync::mpsc::channel();
 
         let mut keybinds = LogTabKeybinds::default();
         if let Some(keybinds_config) = get_env().jj_config.keybinds() {
@@ -200,9 +196,6 @@ impl<'a> LogTab<'a> {
             popup: ConfirmDialogState::default(),
             popup_tx,
             popup_rx,
-
-            bookmark_set_popup_tx,
-            bookmark_set_popup_rx,
 
             describe_textarea: None,
             describe_after_new: false,
@@ -480,10 +473,10 @@ impl<'a> LogTab<'a> {
         // Cannot abandon immutable changes
         if self.head.immutable {
             return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                Some(Box::new(MessagePopup::new(
+                Box::new(MessagePopup::new(
                     "Abandon",
                     "The change cannot be abandoned because it is immutable.",
-                ))),
+                )),
             )));
         }
 
@@ -592,10 +585,10 @@ impl<'a> LogTab<'a> {
                         }
                         Err(_) => {
                             return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                                Some(Box::new(MessagePopup::new(
+                                Box::new(MessagePopup::new(
                                     "Squash",
                                     "Cannot squash onto current change",
-                                ))),
+                                )),
                             )));
                         }
                     }
@@ -606,10 +599,10 @@ impl<'a> LogTab<'a> {
 
                 if target.immutable && !ignore_immutable {
                     return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Some(Box::new(MessagePopup::new(
+                        Box::new(MessagePopup::new(
                             "Squash",
                             "Cannot squash onto immutable change",
-                        ))),
+                        )),
                     )));
                 }
 
@@ -640,10 +633,10 @@ impl<'a> LogTab<'a> {
             LogTabEvent::EditChange { ignore_immutable } => {
                 if self.head.immutable && !ignore_immutable {
                     return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Some(Box::new(MessagePopup::new(
+                        Box::new(MessagePopup::new(
                             " Edit ",
                             "The change cannot be edited because it is immutable.",
-                        ))),
+                        )),
                     )));
                 }
 
@@ -679,10 +672,10 @@ impl<'a> LogTab<'a> {
             LogTabEvent::Describe => {
                 if self.head.immutable {
                     return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Some(Box::new(MessagePopup::new(
+                        Box::new(MessagePopup::new(
                             "Describe",
                             "The change cannot be described because it is immutable.",
-                        ))),
+                        )),
                     )));
                 } else {
                     let mut textarea = TextArea::new(
@@ -713,12 +706,11 @@ impl<'a> LogTab<'a> {
             }
             LogTabEvent::SetBookmark => {
                 return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                    Some(Box::new(BookmarkSetPopup::new(
+                    Box::new(BookmarkSetPopup::new(
                         self.config.clone(),
                         Some(self.head.change_id.clone()),
                         self.head.commit_id.clone(),
-                        self.bookmark_set_popup_tx.clone(),
-                    ))),
+                    )),
                 )));
             }
             LogTabEvent::OpenFiles => {
@@ -753,7 +745,7 @@ impl<'a> LogTab<'a> {
                 });
 
                 return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                    Some(Box::new(loader)),
+                    Box::new(loader),
                 )));
             }
             LogTabEvent::Fetch { all_remotes } => {
@@ -762,12 +754,12 @@ impl<'a> LogTab<'a> {
                 });
 
                 return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                    Some(Box::new(loader)),
+                    Box::new(loader),
                 )));
             }
             LogTabEvent::OpenHelp => {
                 return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                    Some(Box::new(HelpPopup::new(
+                    Box::new(HelpPopup::new(
                         self.keybinds.make_main_panel_help(),
                         vec![
                             ("Ctrl+e/Ctrl+y".to_owned(), "scroll down/up".to_owned()),
@@ -782,7 +774,7 @@ impl<'a> LogTab<'a> {
                             ("w".to_owned(), "toggle diff format".to_owned()),
                             ("W".to_owned(), "toggle wrapping".to_owned()),
                         ],
-                    ))),
+                    )),
                 )));
             }
             LogTabEvent::Save
@@ -831,10 +823,6 @@ impl Component for LogTab<'_> {
                 }
                 _ => {}
             }
-        }
-
-        if let Ok(true) = self.bookmark_set_popup_rx.try_recv() {
-            self.refresh_log_output();
         }
 
         Ok(None)
@@ -1031,7 +1019,7 @@ impl Component for LogTab<'_> {
                 self.rebase_popup = None;
                 let msg = handled.err().unwrap();
                 return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                    Some(Box::new(MessagePopup::new("Error", msg.to_string()))),
+                    Box::new(MessagePopup::new("Error", msg.to_string())),
                 )));
             }
             if handled.ok() == Some(true) {

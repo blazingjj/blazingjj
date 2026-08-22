@@ -191,7 +191,14 @@ impl<'a> App<'a> {
                 self.get_files_tab()?.set_head(&head)?;
             }
             AppAction::SetPopup(popup) => {
-                self.popup = popup;
+                self.popup = Some(popup);
+            }
+            AppAction::PopupDone => {
+                self.popup = None;
+                self.handle_action(AppAction::RefreshTab())?;
+            }
+            AppAction::PopupCanceled => {
+                self.popup = None;
             }
             AppAction::Multiple(app_actions) => {
                 for app_action in app_actions.into_iter() {

@@ -81,9 +81,9 @@ impl Component for CommandPopup<'_> {
                     let mut command_input = command_input.as_str();
 
                     if command_input.trim().is_empty() {
-                        return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                            None,
-                        )));
+                        return Ok(ComponentInputResult::HandledAction(
+                            AppAction::PopupCanceled,
+                        ));
                     }
 
                     if command_input == "jj" {
@@ -107,25 +107,23 @@ impl Component for CommandPopup<'_> {
                     };
 
                     if output_str.trim().is_empty() {
-                        return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                            vec![AppAction::SetPopup(None), AppAction::RefreshTab()],
-                        )));
+                        return Ok(ComponentInputResult::HandledAction(AppAction::PopupDone));
                     }
 
                     return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
                         vec![
-                            AppAction::SetPopup(Some(Box::new(
+                            AppAction::SetPopup(Box::new(
                                 MessagePopup::new(format!("jj {command_input}"), output_str)
                                     .text_align(Alignment::Left),
-                            ))),
+                            )),
                             AppAction::RefreshTab(),
                         ],
                     )));
                 }
                 KeyCode::Esc => {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        None,
-                    )));
+                    return Ok(ComponentInputResult::HandledAction(
+                        AppAction::PopupCanceled,
+                    ));
                 }
                 _ => {}
             }
