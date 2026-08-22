@@ -23,18 +23,12 @@ pub enum LogTabEvent {
 
     ClosePopup,
 
-    ScrollDown,
-    ScrollUp,
-    ScrollDownHalf,
-    ScrollUpHalf,
     ScrollToBottom,
     ScrollToTop,
 
-    FocusCurrent,
     ToggleHeadMark,
     ToggleDiffFormat,
 
-    Refresh,
     CreateNew {
         describe: bool,
     },
@@ -63,8 +57,6 @@ pub enum LogTabEvent {
         all_remotes: bool,
     },
 
-    OpenHelp,
-
     Unbound,
 }
 
@@ -76,20 +68,11 @@ impl Default for LogTabKeybinds {
             LogTabEvent::Save => "ctrl+s",
             LogTabEvent::Cancel => "esc",
             LogTabEvent::ClosePopup => "q",
-            LogTabEvent::ScrollDown => "j",
-            LogTabEvent::ScrollDown => "down",
-            LogTabEvent::ScrollUp => "k",
-            LogTabEvent::ScrollUp => "up",
-            LogTabEvent::ScrollDownHalf => "shift+j",
-            LogTabEvent::ScrollUpHalf => "shift+k",
             LogTabEvent::ScrollToBottom => "ctrl+end",
             LogTabEvent::ScrollToTop => "ctrl+home",
-            LogTabEvent::FocusCurrent => "@",
             LogTabEvent::ToggleHeadMark => "space",
             // todo: move to DetailsKeybindings
             LogTabEvent::ToggleDiffFormat => "w",
-            LogTabEvent::Refresh => "shift+r",
-            LogTabEvent::Refresh => "f5",
             LogTabEvent::Duplicate => "shift+d",
             LogTabEvent::CreateNew { describe: false } => "n",
             LogTabEvent::CreateNew { describe: true } => "shift+n",
@@ -112,7 +95,6 @@ impl Default for LogTabKeybinds {
             event_push(true, true) => "ctrl+shift+p",
             LogTabEvent::Fetch { all_remotes: false } => "f",
             LogTabEvent::Fetch { all_remotes: true } => "shift+f",
-            LogTabEvent::OpenHelp => "?",
         );
 
         Self { keys }
@@ -128,13 +110,6 @@ impl LogTabKeybinds {
         }
     }
     pub fn extend_from_config(&mut self, config: &KeybindsConfig) {
-        update_keybinds!(
-            self.keys,
-            LogTabEvent::ScrollDown => config.scroll_down,
-            LogTabEvent::ScrollUp => config.scroll_up,
-            LogTabEvent::ScrollDownHalf => config.scroll_down_half,
-            LogTabEvent::ScrollUpHalf => config.scroll_up_half,
-        );
         if let Some(ref log_tab) = config.log_tab {
             self.extend_from_log_tab_config(log_tab);
         }
@@ -146,13 +121,7 @@ impl LogTabKeybinds {
             LogTabEvent::Save => config.save,
             LogTabEvent::Cancel => config.cancel,
             LogTabEvent::ClosePopup => config.close_popup,
-            LogTabEvent::ScrollDown => config.scroll_down,
-            LogTabEvent::ScrollUp => config.scroll_up,
-            LogTabEvent::ScrollDownHalf => config.scroll_down_half,
-            LogTabEvent::ScrollUpHalf => config.scroll_up_half,
-            LogTabEvent::FocusCurrent => config.focus_current,
             LogTabEvent::ToggleDiffFormat => config.toggle_diff_format,
-            LogTabEvent::Refresh => config.refresh,
             LogTabEvent::Duplicate => config.duplicate,
             LogTabEvent::CreateNew { describe: false } => config.create_new,
             LogTabEvent::CreateNew { describe: true } => config.create_new_describe,
@@ -175,18 +144,12 @@ impl LogTabKeybinds {
             event_push(true, true) => config.push_all_new,
             LogTabEvent::Fetch { all_remotes: false } => config.fetch,
             LogTabEvent::Fetch { all_remotes: true } => config.fetch_all,
-            LogTabEvent::OpenHelp => config.open_help,
         );
     }
     pub fn make_main_panel_help(&self) -> Vec<(String, String)> {
         make_keybinds_help!(
             self.keys,
-            LogTabEvent::ScrollDown => "scroll down",
-            LogTabEvent::ScrollUp => "scroll up",
-            LogTabEvent::ScrollDownHalf => "scroll down by ½ page",
-            LogTabEvent::ScrollUpHalf => "scroll up by ½ page",
             LogTabEvent::OpenFiles => "see files",
-            LogTabEvent::FocusCurrent => "current change",
             LogTabEvent::EditRevset => "set revset",
             LogTabEvent::Describe => "describe change",
             LogTabEvent::Duplicate => "duplicate change",

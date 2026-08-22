@@ -8,6 +8,16 @@ pub struct KeybindsConfig {
     pub scroll_down_half: Option<Keybind>,
     pub scroll_up_half: Option<Keybind>,
 
+    pub focus_current: Option<Keybind>,
+    pub refresh: Option<Keybind>,
+    pub open_help: Option<Keybind>,
+
+    pub next_tab: Option<Keybind>,
+    pub prev_tab: Option<Keybind>,
+
+    pub command_popup: Option<Keybind>,
+    pub quit: Option<Keybind>,
+
     pub log_tab: Option<LogTabKeybindsConfig>,
     pub message_popup: Option<MessagePopupKeybindsConfig>,
 }
@@ -39,15 +49,8 @@ pub struct LogTabKeybindsConfig {
 
     pub close_popup: Option<Keybind>,
 
-    pub scroll_down: Option<Keybind>,
-    pub scroll_up: Option<Keybind>,
-    pub scroll_down_half: Option<Keybind>,
-    pub scroll_up_half: Option<Keybind>,
-
-    pub focus_current: Option<Keybind>,
     pub toggle_diff_format: Option<Keybind>,
 
-    pub refresh: Option<Keybind>,
     pub duplicate: Option<Keybind>,
     pub create_new: Option<Keybind>,
     pub create_new_describe: Option<Keybind>,
@@ -71,6 +74,4 @@ pub struct LogTabKeybindsConfig {
     pub push_all_new: Option<Keybind>,
     pub fetch: Option<Keybind>,
     pub fetch_all: Option<Keybind>,
-
-    pub open_help: Option<Keybind>,
 }

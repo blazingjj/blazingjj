@@ -50,10 +50,45 @@ impl ComponentInputResult {
         }
     }
 }
+
+/// How far to move the selection in a tab's main panel.
+#[derive(Debug, Clone, Copy)]
+pub enum Scroll {
+    Down,
+    Up,
+    DownHalfPage,
+    UpHalfPage,
+}
+
 pub trait Component {
     /// Read whatever this component shows afresh from the repo.
     fn refresh(&mut self) -> Result<()> {
         Ok(())
+    }
+
+    /// Read afresh on the user's request, discarding anything cached.
+    fn force_refresh(&mut self) -> Result<()> {
+        self.refresh()
+    }
+
+    /// Move the selection in the main panel.
+    fn scroll_main_panel(&mut self, _scroll: Scroll) -> Result<()> {
+        Ok(())
+    }
+
+    /// Show the change the working copy is on.
+    fn focus_current(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Keybindings of the main panel, for the help popup.
+    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+        vec![]
+    }
+
+    /// Keybindings of the details panel, for the help popup.
+    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+        vec![]
     }
 
     fn update(&mut self) -> Result<Option<AppAction>> {

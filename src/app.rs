@@ -9,7 +9,6 @@ use anyhow::Result;
 use anyhow::anyhow;
 use ratatui::crossterm::event::Event as TermEvent;
 use ratatui::crossterm::event::KeyCode;
-use ratatui::crossterm::event::KeyModifiers;
 use ratatui::crossterm::event::{self};
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -27,11 +26,15 @@ use crate::commander::new_commander;
 use crate::env::get_env;
 use crate::event::AppEvent;
 use crate::event::EventSource;
+use crate::keybinds::GlobalEvent;
+use crate::keybinds::GlobalKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::Scroll;
 use crate::ui::bookmarks_tab::BookmarksTab;
 use crate::ui::dialog::CommandPopup;
+use crate::ui::dialog::HelpPopup;
 use crate::ui::files_tab::FilesTab;
 use crate::ui::log_tab::LogTab;
 
@@ -68,6 +71,7 @@ pub struct App<'a> {
     pub bookmarks: Option<BookmarksTab<'a>>,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
+    global_keybinds: GlobalKeybinds,
 
     // event handling
     running: Arc<AtomicBool>,
@@ -78,6 +82,10 @@ impl<'a> App<'a> {
     pub fn new() -> Result<App<'a>> {
         let running = Arc::from(AtomicBool::new(true));
         let event_source = EventSource::new(running.clone());
+        let mut global_keybinds = GlobalKeybinds::default();
+        if let Some(keybinds_config) = get_env().jj_config.keybinds() {
+            global_keybinds.extend_from_config(keybinds_config);
+        }
         Ok(App {
             current_tab: Tab::Log,
             log: None,
@@ -87,6 +95,7 @@ impl<'a> App<'a> {
             stats: Stats {
                 start_time: Instant::now(),
             },
+            global_keybinds,
 
             running,
             event_source,
@@ -110,6 +119,18 @@ impl<'a> App<'a> {
             (current_index as i64 + Tab::VALUES.len() as i64 + offset) as usize % Tab::VALUES.len();
         let new_tab: Tab = Tab::VALUES[new_index];
         self.set_tab(new_tab)
+    }
+
+    fn open_help(&mut self) -> Result<()> {
+        let global_help = self.global_keybinds.make_help();
+        let tab = self.get_or_init_current_tab()?;
+        let popup = HelpPopup::new(
+            tab.make_main_panel_help(),
+            tab.make_details_panel_help(),
+            global_help,
+        );
+        self.popup = Some(Box::new(popup));
+        Ok(())
     }
 
     pub fn set_tab(&mut self, tab: Tab) -> Result<()> {
@@ -360,35 +381,43 @@ impl<'a> App<'a> {
                     if let TermEvent::Key(key) = event
                         && key.kind == event::KeyEventKind::Press
                     {
-                        // Close
-                        if key.code == KeyCode::Char('q')
-                            || (key.modifiers.contains(KeyModifiers::CONTROL)
-                                && (key.code == KeyCode::Char('c')))
-                            || key.code == KeyCode::Esc
-                        {
-                            self.running.store(false, Ordering::Relaxed);
-                            return Ok(true);
-                        }
-                        //
-                        // Tab switching
-                        else if key.code == KeyCode::Char('l') {
-                            self.set_next_tab_with_offset(1)?;
-                        } else if key.code == KeyCode::Char('h') {
-                            self.set_next_tab_with_offset(-1)?;
-                        } else if let Some((_, tab)) =
-                            Tab::VALUES.iter().enumerate().find(|(i, _)| {
-                                key.code
-                                    == KeyCode::Char(
-                                        char::from_digit((*i as u32) + 1u32, 10)
-                                            .expect("Tab index could not be converted to digit"),
-                                    )
-                            })
-                        {
-                            self.set_tab(*tab)?;
-                        }
-                        // General jj command runner
-                        else if key.code == KeyCode::Char(':') {
-                            self.popup = Some(Box::new(CommandPopup::new()));
+                        match self.global_keybinds.match_event(key) {
+                            GlobalEvent::ScrollDown => {
+                                self.get_or_init_current_tab()?
+                                    .scroll_main_panel(Scroll::Down)?;
+                            }
+                            GlobalEvent::ScrollUp => {
+                                self.get_or_init_current_tab()?
+                                    .scroll_main_panel(Scroll::Up)?;
+                            }
+                            GlobalEvent::ScrollDownHalf => {
+                                self.get_or_init_current_tab()?
+                                    .scroll_main_panel(Scroll::DownHalfPage)?;
+                            }
+                            GlobalEvent::ScrollUpHalf => {
+                                self.get_or_init_current_tab()?
+                                    .scroll_main_panel(Scroll::UpHalfPage)?;
+                            }
+                            GlobalEvent::FocusCurrent => {
+                                self.get_or_init_current_tab()?.focus_current()?;
+                            }
+                            GlobalEvent::Refresh => {
+                                self.get_or_init_current_tab()?.force_refresh()?;
+                            }
+                            GlobalEvent::NextTab => self.set_next_tab_with_offset(1)?,
+                            GlobalEvent::PrevTab => self.set_next_tab_with_offset(-1)?,
+                            GlobalEvent::LogTab => self.set_tab(Tab::Log)?,
+                            GlobalEvent::FilesTab => self.set_tab(Tab::Files)?,
+                            GlobalEvent::BookmarksTab => self.set_tab(Tab::Bookmarks)?,
+                            GlobalEvent::CommandPopup => {
+                                self.popup = Some(Box::new(CommandPopup::new()));
+                            }
+                            GlobalEvent::OpenHelp => self.open_help()?,
+                            GlobalEvent::Quit => {
+                                self.running.store(false, Ordering::Relaxed);
+                                return Ok(true);
+                            }
+                            GlobalEvent::Unbound => {}
                         }
                     }
                 }
