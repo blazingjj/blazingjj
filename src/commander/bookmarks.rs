@@ -181,11 +181,13 @@ impl Commander {
         let bookmark_arg = &bookmark.to_string();
         let mut args = vec!["show", bookmark_arg];
         args.append(&mut diff_format.get_args());
+
+        let mut command = self.jj(args).color();
         if ignore_working_copy {
-            args.push("--ignore-working-copy");
+            command = command.ignore_working_copy();
         }
 
-        Ok(self.jj(args).color().run()?.remove_end_line())
+        Ok(command.run()?.remove_end_line())
     }
 
     #[instrument(level = "trace", skip(self))]

@@ -186,11 +186,13 @@ impl Commander {
     ) -> JjCommand<'_> {
         let mut args = vec!["show", commit_id.as_str()];
         args.append(&mut diff_format.get_args());
+
+        let mut command = self.jj(args);
         if ignore_working_copy {
-            args.push("--ignore-working-copy");
+            command = command.ignore_working_copy();
         }
 
-        self.jj(args)
+        command
     }
 
     /// Get the current head.
