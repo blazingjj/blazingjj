@@ -194,7 +194,7 @@ impl FilesTab {
 }
 
 impl Component for FilesTab {
-    fn focus(&mut self) -> Result<()> {
+    fn refresh(&mut self) -> Result<()> {
         self.is_current_head = self.head == new_commander().get_current_head()?;
         self.head = new_commander().get_head_latest(&self.head)?;
         self.refresh_files()?;

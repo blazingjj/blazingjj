@@ -115,7 +115,7 @@ impl<'a> App<'a> {
     pub fn set_tab(&mut self, tab: Tab) -> Result<()> {
         info!("Setting tab to {}", tab);
         self.current_tab = tab;
-        self.get_or_init_current_tab()?.focus()?;
+        self.get_or_init_current_tab()?.refresh()?;
         Ok(())
     }
 
@@ -350,7 +350,7 @@ impl<'a> App<'a> {
                 }
             };
         } else if event == event::Event::FocusGained {
-            self.get_or_init_current_tab()?.focus()?;
+            self.get_or_init_current_tab()?.refresh()?;
         } else {
             match self.get_or_init_current_tab()?.input(event.clone())? {
                 ComponentInputResult::HandledAction(app_action) => {

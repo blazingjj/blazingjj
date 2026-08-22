@@ -352,11 +352,6 @@ impl<'a> LogPanel<'a> {
 }
 
 impl Component for LogPanel<'_> {
-    // Called when switching to tab
-    fn focus(&mut self) -> Result<()> {
-        Ok(())
-    }
-
     fn update(&mut self) -> Result<Option<AppAction>> {
         Ok(None)
     }

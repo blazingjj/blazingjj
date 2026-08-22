@@ -795,7 +795,7 @@ impl<'a> LogTab<'a> {
 }
 
 impl Component for LogTab<'_> {
-    fn focus(&mut self) -> Result<()> {
+    fn refresh(&mut self) -> Result<()> {
         let latest_head = new_commander().get_head_latest(&self.head)?;
         self.set_head(latest_head);
         Ok(())
