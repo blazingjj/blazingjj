@@ -199,15 +199,7 @@ impl<'a> App<'a> {
                 }
             }
             AppAction::RefreshTab() => {
-                // Moving the selection refreshes the log tab on its own,
-                // so going through set_tab as well would run `jj log`
-                // twice.
-                if self.current_tab == Tab::Log {
-                    let head = new_commander().get_current_head()?;
-                    self.get_log_tab()?.set_head(head);
-                } else {
-                    self.set_tab(self.current_tab)?;
-                }
+                self.set_tab(self.current_tab)?;
             }
         }
 
