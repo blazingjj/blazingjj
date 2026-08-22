@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Describing a commit with a message starting with a dash no longer fails
 - A copied file in the files list is now colored like the other changes
+- Running a command from the log tab no longer moves the selection to the
+  working copy
 
 ## [0.8.0] - 2026-04-19
 
