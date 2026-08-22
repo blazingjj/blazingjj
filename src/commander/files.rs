@@ -154,11 +154,13 @@ impl Commander {
         let fileset = Self::get_file_revset(path);
         let mut args = vec!["diff", "-r", head.commit_id.as_str(), &fileset];
         args.append(&mut diff_format.get_args());
+
+        let mut command = self.jj(args).color();
         if ignore_working_copy {
-            args.push("--ignore-working-copy");
+            command = command.ignore_working_copy();
         }
 
-        self.jj(args).color().run().map(Some)
+        command.run().map(Some)
     }
 
     #[instrument(level = "trace", skip(self))]

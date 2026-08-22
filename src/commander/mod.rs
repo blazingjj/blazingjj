@@ -165,6 +165,7 @@ impl Commander {
             args: args.into_iter().map(|s| s.as_ref().to_owned()).collect(),
             color: false,
             quiet: true,
+            ignore_working_copy: false,
             stdin: None,
             env_var,
         }
@@ -222,6 +223,9 @@ pub struct JjCommand<'a> {
     color: bool,
     /// Whether to pass `--quiet`. On by default.
     quiet: bool,
+    /// Whether to pass `--ignore-working-copy`. Off by default, so a
+    /// command sees the files as they are now.
+    ignore_working_copy: bool,
     /// Data to feed the command on standard input, if any.
     stdin: Option<String>,
     /// Environment variables for this command.
@@ -242,6 +246,17 @@ impl JjCommand<'_> {
     /// messages) is included. Quiet is on by default.
     pub fn verbose(mut self) -> Self {
         self.quiet = false;
+        self
+    }
+
+    /// Pass `--ignore-working-copy`, so the command reads the repo as it
+    /// stands without snapshotting the files first.
+    ///
+    /// Off by default. Use it where a stale answer beats an operation of
+    /// our own: reads that are meant to leave the repo where the caller
+    /// found it.
+    pub fn ignore_working_copy(mut self) -> Self {
+        self.ignore_working_copy = true;
         self
     }
 
@@ -334,6 +349,10 @@ impl JjCommand<'_> {
             !self.commander.force_no_color && self.color,
             self.quiet,
         ));
+
+        if self.ignore_working_copy {
+            command.arg("--ignore-working-copy");
+        }
 
         if let Some(jj_config_toml) = &self.commander.jj_config_toml {
             for cfg in jj_config_toml {
