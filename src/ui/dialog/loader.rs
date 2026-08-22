@@ -83,7 +83,7 @@ impl Component for LoaderPopup {
                     format!("{} message", self.operation_name),
                     output,
                 ))),
-                AppAction::RefreshTab(),
+                AppAction::RefreshTab,
             ]),
             Ok(_) => AppAction::PopupDone,
             Err(err) => AppAction::SetPopup(Box::new(MessagePopup::new(

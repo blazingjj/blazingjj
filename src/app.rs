@@ -216,7 +216,7 @@ impl<'a> App<'a> {
             }
             AppAction::PopupDone => {
                 self.popup = None;
-                self.handle_action(AppAction::RefreshTab())?;
+                self.handle_action(AppAction::RefreshTab)?;
             }
             AppAction::PopupCanceled => {
                 self.popup = None;
@@ -226,7 +226,7 @@ impl<'a> App<'a> {
                     self.handle_action(app_action)?;
                 }
             }
-            AppAction::RefreshTab() => {
+            AppAction::RefreshTab => {
                 self.set_tab(self.current_tab)?;
             }
         }

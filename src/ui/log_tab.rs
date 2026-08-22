@@ -1036,7 +1036,7 @@ impl Component for LogTab<'_> {
                 // when handle_input returns true,
                 // the popup should be closed
                 self.rebase_popup = None;
-                return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab()));
+                return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
             }
             return Ok(ComponentInputResult::Handled);
         }
