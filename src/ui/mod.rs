@@ -20,7 +20,12 @@ pub enum AppAction {
     ViewFiles(Head),
     ViewLog(Head),
     ChangeHead(Head),
-    SetPopup(Option<Box<dyn Component>>),
+    /// Put this popup up, in place of whatever is up now.
+    SetPopup(Box<dyn Component>),
+    /// Take the popup down, what it was there to do having been done.
+    PopupDone,
+    /// Take the popup down, nothing having been done.
+    PopupCanceled,
     Multiple(Vec<AppAction>),
     RefreshTab(),
 }

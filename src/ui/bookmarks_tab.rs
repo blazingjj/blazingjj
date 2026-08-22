@@ -260,8 +260,9 @@ impl Component for BookmarksTab<'_> {
                                 self.refresh_bookmark();
                             }
                             Err(err) => {
-                                return Ok(Some(AppAction::SetPopup(Some(Box::new(
-                                    MessagePopup::new("Delete error", err.to_string()),
+                                return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
+                                    "Delete error",
+                                    err.to_string(),
                                 )))));
                             }
                         }
@@ -280,8 +281,9 @@ impl Component for BookmarksTab<'_> {
                                 self.refresh_bookmark();
                             }
                             Err(err) => {
-                                return Ok(Some(AppAction::SetPopup(Some(Box::new(
-                                    MessagePopup::new("Forget error", err.to_string()),
+                                return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
+                                    "Forget error",
+                                    err.to_string(),
                                 )))));
                             }
                         }
@@ -899,10 +901,10 @@ impl Component for BookmarksTab<'_> {
                                 && !ignore_immutable
                             {
                                 return Ok(ComponentInputResult::HandledAction(
-                                    AppAction::SetPopup(Some(Box::new(MessagePopup::new(
+                                    AppAction::SetPopup(Box::new(MessagePopup::new(
                                         "Edit",
                                         "The change cannot be edited because it is immutable.",
-                                    )))),
+                                    ))),
                                 ));
                             }
 
@@ -934,7 +936,7 @@ impl Component for BookmarksTab<'_> {
                 }
                 KeyCode::Char('?') => {
                     return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Some(Box::new(HelpPopup::new(
+                        Box::new(HelpPopup::new(
                             vec![
                                 ("j/k".to_owned(), "scroll down/up".to_owned()),
                                 ("J/K".to_owned(), "scroll down by ½ page".to_owned()),
@@ -961,7 +963,7 @@ impl Component for BookmarksTab<'_> {
                                 ("w".to_owned(), "toggle diff format".to_owned()),
                                 ("W".to_owned(), "toggle wrapping".to_owned()),
                             ],
-                        ))),
+                        )),
                     )));
                 }
                 _ => return Ok(ComponentInputResult::NotHandled),

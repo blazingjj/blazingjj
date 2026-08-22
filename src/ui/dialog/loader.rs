@@ -79,17 +79,17 @@ impl Component for LoaderPopup {
 
         let action = match result {
             Ok(output) if !output.is_empty() => AppAction::Multiple(vec![
-                AppAction::SetPopup(Some(Box::new(MessagePopup::new(
+                AppAction::SetPopup(Box::new(MessagePopup::new(
                     format!("{} message", self.operation_name),
                     output,
-                )))),
+                ))),
                 AppAction::RefreshTab(),
             ]),
-            Ok(_) => AppAction::Multiple(vec![AppAction::SetPopup(None), AppAction::RefreshTab()]),
-            Err(err) => AppAction::SetPopup(Some(Box::new(MessagePopup::new(
+            Ok(_) => AppAction::PopupDone,
+            Err(err) => AppAction::SetPopup(Box::new(MessagePopup::new(
                 format!("{} error", self.operation_name),
                 err.to_string(),
-            )))),
+            ))),
         };
 
         Ok(Some(action))

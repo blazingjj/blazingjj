@@ -355,10 +355,10 @@ impl Component for FilesTab {
                     // this works even for deleted files because jj doesn't return error in that case
                     if self.untrack_file().is_err() {
                         return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                            Some(Box::new(MessagePopup::new(
+                            Box::new(MessagePopup::new(
                                 "Can't untrack file",
                                 "Make sure that file is ignored",
-                            ))),
+                            )),
                         )));
                     }
                     self.set_head(&new_commander().get_current_head()?)?;
@@ -366,10 +366,7 @@ impl Component for FilesTab {
                 KeyCode::Char('r') => {
                     if let Err(err) = self.restore_file() {
                         return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                            Some(Box::new(MessagePopup::new(
-                                "Can't restore file",
-                                err.to_string(),
-                            ))),
+                            Box::new(MessagePopup::new("Can't restore file", err.to_string())),
                         )));
                     }
                     self.set_head(&new_commander().get_current_head()?)?;
@@ -385,7 +382,7 @@ impl Component for FilesTab {
                 }
                 KeyCode::Char('?') => {
                     return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Some(Box::new(HelpPopup::new(
+                        Box::new(HelpPopup::new(
                             vec![
                                 ("j/k".to_owned(), "scroll down/up".to_owned()),
                                 ("J/K".to_owned(), "scroll down by ½ page".to_owned()),
@@ -406,7 +403,7 @@ impl Component for FilesTab {
                                 ("w".to_owned(), "toggle diff format".to_owned()),
                                 ("W".to_owned(), "toggle wrapping".to_owned()),
                             ],
-                        ))),
+                        )),
                     )));
                 }
                 _ => return Ok(ComponentInputResult::NotHandled),

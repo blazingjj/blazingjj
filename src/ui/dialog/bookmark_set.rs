@@ -51,7 +51,6 @@ pub struct BookmarkSetPopup<'a> {
     list_height: u16,
     config: JjConfig,
     creating: Option<TextArea<'a>>,
-    tx: std::sync::mpsc::Sender<bool>,
 }
 
 fn generate_options(change_id: Option<&ChangeId>) -> Vec<BookmarkSetOption> {
@@ -95,12 +94,7 @@ fn generate_name(change_id: &ChangeId) -> String {
 }
 
 impl BookmarkSetPopup<'_> {
-    pub fn new(
-        config: JjConfig,
-        change_id: Option<ChangeId>,
-        commit_id: CommitId,
-        tx: std::sync::mpsc::Sender<bool>,
-    ) -> Self {
+    pub fn new(config: JjConfig, change_id: Option<ChangeId>, commit_id: CommitId) -> Self {
         Self {
             options: generate_options(change_id.as_ref()),
             change_id,
@@ -109,7 +103,6 @@ impl BookmarkSetPopup<'_> {
             config,
             commit_id,
             creating: None,
-            tx,
         }
     }
 
@@ -257,15 +250,12 @@ impl Component for BookmarkSetPopup<'_> {
                         }
 
                         self.create_bookmark(name)?;
-                        self.tx.send(true)?;
-                        return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                            None,
-                        )));
+                        return Ok(ComponentInputResult::HandledAction(AppAction::PopupDone));
                     }
                     KeyCode::Esc => {
-                        return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                            None,
-                        )));
+                        return Ok(ComponentInputResult::HandledAction(
+                            AppAction::PopupCanceled,
+                        ));
                     }
                     _ => {}
                 }
@@ -291,10 +281,7 @@ impl Component for BookmarkSetPopup<'_> {
                 }
                 KeyCode::Char('g') => {
                     self.generate_bookmark()?;
-                    self.tx.send(true)?;
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        None,
-                    )));
+                    return Ok(ComponentInputResult::HandledAction(AppAction::PopupDone));
                 }
                 KeyCode::Char('c') => {
                     self.on_creating();
@@ -311,17 +298,15 @@ impl Component for BookmarkSetPopup<'_> {
                             }
                             BookmarkSetOption::GeneratedName(_, _) => {
                                 self.generate_bookmark()?;
-                                self.tx.send(true)?;
                                 return Ok(ComponentInputResult::HandledAction(
-                                    AppAction::SetPopup(None),
+                                    AppAction::PopupDone,
                                 ));
                             }
                             BookmarkSetOption::Bookmark(bookmark) => {
                                 new_commander()
                                     .set_bookmark_commit(&bookmark.name, &self.commit_id)?;
-                                self.tx.send(true)?;
                                 return Ok(ComponentInputResult::HandledAction(
-                                    AppAction::SetPopup(None),
+                                    AppAction::PopupDone,
                                 ));
                             }
                             BookmarkSetOption::Error(_) => {
@@ -331,10 +316,9 @@ impl Component for BookmarkSetPopup<'_> {
                     }
                 }
                 KeyCode::Char('q') | KeyCode::Esc => {
-                    self.tx.send(false)?;
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        None,
-                    )));
+                    return Ok(ComponentInputResult::HandledAction(
+                        AppAction::PopupCanceled,
+                    ));
                 }
                 _ => return Ok(ComponentInputResult::NotHandled),
             }
