@@ -402,7 +402,8 @@ impl<'a> App<'a> {
                                 self.get_or_init_current_tab()?.focus_current()?;
                             }
                             GlobalEvent::Refresh => {
-                                self.get_or_init_current_tab()?.force_refresh()?;
+                                self.get_or_init_current_tab()?.drop_caches();
+                                self.handle_action(AppAction::RefreshTab)?;
                             }
                             GlobalEvent::NextTab => self.set_next_tab_with_offset(1)?,
                             GlobalEvent::PrevTab => self.set_next_tab_with_offset(-1)?,
