@@ -779,7 +779,13 @@ impl<'a> LogTab<'a> {
 impl Tab for LogTab<'_> {
     fn refresh(&mut self) -> Result<()> {
         if self.stale {
-            let latest_head = new_commander().get_head_latest(&self.head)?;
+            // The log we are about to read leaves the working copy alone,
+            // so following the selection has to as well, or the two
+            // disagree.
+            let mut commander = new_commander();
+            commander.ignore_working_copy();
+
+            let latest_head = commander.get_head_latest(&self.head)?;
             self.log_panel.set_head(latest_head);
             self.refresh_log_output();
             self.stale = false;

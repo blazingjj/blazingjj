@@ -128,7 +128,8 @@ fn parse_file(line: &str) -> File {
 
 impl Commander {
     /// Get list of changes files in a change. Parses the output.
-    /// Maps to `jj log -r <revision>` with [FILES_TEMPLATE]
+    /// Leaves the working copy alone.
+    /// Maps to `jj log -r <revision> --ignore-working-copy` with [FILES_TEMPLATE]
     #[instrument(level = "trace", skip(self))]
     pub fn get_files(&self, head: &Head) -> Result<Vec<File>, CommandError> {
         Ok(self
@@ -140,6 +141,7 @@ impl Commander {
                 "-r",
                 head.commit_id.as_str(),
             ])
+            .ignore_working_copy()
             .run()?
             .lines()
             .map(parse_file)
@@ -147,7 +149,9 @@ impl Commander {
     }
 
     /// Get list of conflicted files in a change. Parses the output.
-    /// Maps to `jj log -r <revision>` with [CONFLICTS_TEMPLATE]
+    /// Leaves the working copy alone.
+    /// Maps to `jj log -r <revision> --ignore-working-copy` with
+    /// [CONFLICTS_TEMPLATE]
     #[instrument(level = "trace", skip(self))]
     pub fn get_conflicts(&self, commit_id: &CommitId) -> Result<Vec<Conflict>> {
         Ok(self
@@ -159,6 +163,7 @@ impl Commander {
                 "-r",
                 commit_id.as_str(),
             ])
+            .ignore_working_copy()
             .run()
             .context("Failed getting conflicts")?
             .lines()

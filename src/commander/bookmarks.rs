@@ -84,7 +84,8 @@ impl BookmarkLine {
 
 impl Commander {
     /// Get bookmarks.
-    /// Maps to `jj bookmark list`
+    /// Leaves the working copy alone.
+    /// Maps to `jj bookmark list --ignore-working-copy`
     #[instrument(level = "trace", skip(self))]
     pub fn get_bookmarks(&self, show_all: bool) -> Result<Vec<BookmarkLine>, CommandError> {
         let mut args = vec![];
@@ -111,10 +112,12 @@ impl Commander {
             ]
             .concat())
             .color()
+            .ignore_working_copy()
             .run()?;
 
         let bookmarks: Vec<BookmarkLine> = self
             .jj([vec!["bookmark", "list", "-T", BRANCH_TEMPLATE], args].concat())
+            .ignore_working_copy()
             .run()?
             .lines()
             .zip(bookmarks_colored.lines())
@@ -130,6 +133,8 @@ impl Commander {
         Ok(bookmarks)
     }
 
+    /// Get the bookmarks that exist, newest first, leaving the working
+    /// copy alone.
     #[instrument(level = "trace", skip(self))]
     pub fn get_bookmarks_list(&self, show_all: bool) -> Result<Vec<Bookmark>, CommandError> {
         let mut args = vec![
@@ -144,6 +149,7 @@ impl Commander {
 
         let bookmarks: Vec<Bookmark> = self
             .jj(args)
+            .ignore_working_copy()
             .run()?
             .lines()
             .filter_map(parse_bookmark)
