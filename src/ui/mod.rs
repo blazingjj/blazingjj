@@ -61,35 +61,6 @@ pub enum Scroll {
 }
 
 pub trait Component {
-    /// Read whatever this component shows afresh from the repo.
-    fn refresh(&mut self) -> Result<()> {
-        Ok(())
-    }
-
-    /// Discard whatever this component has cached, so that the next read
-    /// goes to the repo.
-    fn drop_caches(&mut self) {}
-
-    /// Move the selection in the main panel.
-    fn scroll_main_panel(&mut self, _scroll: Scroll) -> Result<()> {
-        Ok(())
-    }
-
-    /// Show the change the working copy is on.
-    fn focus_current(&mut self) -> Result<()> {
-        Ok(())
-    }
-
-    /// Keybindings of the main panel, for the help popup.
-    fn make_main_panel_help(&self) -> Vec<(String, String)> {
-        vec![]
-    }
-
-    /// Keybindings of the details panel, for the help popup.
-    fn make_details_panel_help(&self) -> Vec<(String, String)> {
-        vec![]
-    }
-
     fn update(&mut self) -> Result<Option<AppAction>> {
         Ok(None)
     }
@@ -97,4 +68,28 @@ pub trait Component {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()>;
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult>;
+}
+
+/// A top-level tab, showing what it reads from the repo.
+pub trait Tab: Component {
+    /// Read whatever this tab shows afresh from the repo.
+    fn refresh(&mut self) -> Result<()>;
+
+    /// Discard whatever this tab has cached, so that the next read goes
+    /// to the repo.
+    fn drop_caches(&mut self) {}
+
+    /// Move the selection in the main panel.
+    fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()>;
+
+    /// Show the change the working copy is on, if the tab has one.
+    fn focus_current(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Keybindings of the main panel, for the help popup.
+    fn make_main_panel_help(&self) -> Vec<(String, String)>;
+
+    /// Keybindings of the details panel, for the help popup.
+    fn make_details_panel_help(&self) -> Vec<(String, String)>;
 }

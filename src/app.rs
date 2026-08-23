@@ -31,6 +31,7 @@ use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
+use crate::ui::Tab;
 use crate::ui::bookmarks_tab::BookmarksTab;
 use crate::ui::dialog::CommandPopup;
 use crate::ui::dialog::HelpPopup;
@@ -38,24 +39,24 @@ use crate::ui::files_tab::FilesTab;
 use crate::ui::log_tab::LogTab;
 
 #[derive(PartialEq, Copy, Clone)]
-pub enum Tab {
+pub enum TabId {
     Log,
     Files,
     Bookmarks,
 }
 
-impl fmt::Display for Tab {
+impl fmt::Display for TabId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Tab::Log => write!(f, "Log"),
-            Tab::Files => write!(f, "Files"),
-            Tab::Bookmarks => write!(f, "Bookmarks"),
+            TabId::Log => write!(f, "Log"),
+            TabId::Files => write!(f, "Files"),
+            TabId::Bookmarks => write!(f, "Bookmarks"),
         }
     }
 }
 
-impl Tab {
-    pub const VALUES: [Self; 3] = [Tab::Log, Tab::Files, Tab::Bookmarks];
+impl TabId {
+    pub const VALUES: [Self; 3] = [TabId::Log, TabId::Files, TabId::Bookmarks];
 }
 
 pub struct Stats {
@@ -64,7 +65,7 @@ pub struct Stats {
 
 pub struct App<'a> {
     // user interface
-    pub current_tab: Tab,
+    pub current_tab: TabId,
     pub log: LogTab<'a>,
     pub files: FilesTab,
     pub bookmarks: BookmarksTab<'a>,
@@ -88,7 +89,7 @@ impl<'a> App<'a> {
         let current_head = new_commander().get_current_head()?;
 
         Ok(App {
-            current_tab: Tab::Log,
+            current_tab: TabId::Log,
             log: LogTab::new(event_source.clone_event_sender())?,
             files: FilesTab::new(&current_head)?,
             bookmarks: BookmarksTab::new()?,
@@ -103,18 +104,18 @@ impl<'a> App<'a> {
         })
     }
 
-    pub fn get_current_tab(&mut self) -> &mut dyn Component {
+    pub fn get_current_tab(&mut self) -> &mut dyn Tab {
         self.get_tab(self.current_tab)
     }
 
     pub fn set_next_tab_with_offset(&mut self, offset: i64) -> Result<()> {
-        let current_index = Tab::VALUES
+        let current_index = TabId::VALUES
             .iter()
             .position(|&t| t == self.current_tab)
             .unwrap();
-        let new_index =
-            (current_index as i64 + Tab::VALUES.len() as i64 + offset) as usize % Tab::VALUES.len();
-        let new_tab: Tab = Tab::VALUES[new_index];
+        let new_index = (current_index as i64 + TabId::VALUES.len() as i64 + offset) as usize
+            % TabId::VALUES.len();
+        let new_tab: TabId = TabId::VALUES[new_index];
         self.set_tab(new_tab)
     }
 
@@ -130,18 +131,18 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    pub fn set_tab(&mut self, tab: Tab) -> Result<()> {
+    pub fn set_tab(&mut self, tab: TabId) -> Result<()> {
         info!("Setting tab to {}", tab);
         self.current_tab = tab;
         self.get_current_tab().refresh()?;
         Ok(())
     }
 
-    pub fn get_tab(&mut self, tab: Tab) -> &mut dyn Component {
+    pub fn get_tab(&mut self, tab: TabId) -> &mut dyn Tab {
         match tab {
-            Tab::Log => &mut self.log,
-            Tab::Files => &mut self.files,
-            Tab::Bookmarks => &mut self.bookmarks,
+            TabId::Log => &mut self.log,
+            TabId::Files => &mut self.files,
+            TabId::Bookmarks => &mut self.bookmarks,
         }
     }
 
@@ -150,12 +151,12 @@ impl<'a> App<'a> {
     pub fn handle_action(&mut self, app_action: AppAction) -> Result<()> {
         match app_action {
             AppAction::ViewFiles(head) => {
-                self.set_tab(Tab::Files)?;
+                self.set_tab(TabId::Files)?;
                 self.files.set_head(&head)?;
             }
             AppAction::ViewLog(head) => {
                 self.log.set_head(head);
-                self.set_tab(Tab::Log)?;
+                self.set_tab(TabId::Log)?;
             }
             AppAction::ChangeHead(head) => {
                 self.files.set_head(&head)?;
@@ -212,7 +213,7 @@ impl<'a> App<'a> {
 
         {
             let tabs = Tabs::new(
-                Tab::VALUES
+                TabId::VALUES
                     .iter()
                     .enumerate()
                     .map(|(i, tab)| format!("[{}] {}", i + 1, tab)),
@@ -224,7 +225,7 @@ impl<'a> App<'a> {
             )
             .highlight_style(Style::default().bg(get_env().jj_config.highlight_color()))
             .select(
-                Tab::VALUES
+                TabId::VALUES
                     .iter()
                     .position(|tab| tab == &self.current_tab)
                     .unwrap_or(0),
@@ -352,9 +353,9 @@ impl<'a> App<'a> {
                             }
                             GlobalEvent::NextTab => self.set_next_tab_with_offset(1)?,
                             GlobalEvent::PrevTab => self.set_next_tab_with_offset(-1)?,
-                            GlobalEvent::LogTab => self.set_tab(Tab::Log)?,
-                            GlobalEvent::FilesTab => self.set_tab(Tab::Files)?,
-                            GlobalEvent::BookmarksTab => self.set_tab(Tab::Bookmarks)?,
+                            GlobalEvent::LogTab => self.set_tab(TabId::Log)?,
+                            GlobalEvent::FilesTab => self.set_tab(TabId::Files)?,
+                            GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks)?,
                             GlobalEvent::CommandPopup => {
                                 self.popup = Some(Box::new(CommandPopup::new()));
                             }

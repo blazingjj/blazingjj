@@ -39,6 +39,7 @@ use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
+use crate::ui::Tab;
 use crate::ui::commit_show_cache::CommitShowCache;
 use crate::ui::commit_show_cache::CommitShowKey;
 use crate::ui::commit_show_cache::CommitShowValue;
@@ -754,7 +755,7 @@ impl<'a> LogTab<'a> {
     }
 }
 
-impl Component for LogTab<'_> {
+impl Tab for LogTab<'_> {
     fn refresh(&mut self) -> Result<()> {
         let latest_head = new_commander().get_head_latest(&self.head)?;
         self.set_head(latest_head);
@@ -801,7 +802,9 @@ impl Component for LogTab<'_> {
             ("W".to_owned(), "toggle wrapping".to_owned()),
         ]
     }
+}
 
+impl Component for LogTab<'_> {
     fn update(&mut self) -> Result<Option<AppAction>> {
         // Check for popup action
         if let Ok(res) = self.popup_rx.try_recv()
