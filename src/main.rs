@@ -162,27 +162,40 @@ fn init_env() -> Result<Env> {
 
 fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
     app.launch_input_channel();
+    let mut idle = false;
     loop {
-        app.update()?;
+        let mut changed = app.update()?;
 
-        app.refresh_view()?;
+        changed |= app.refresh_view()?;
 
-        terminal.draw(|f| {
-            let _ = app.draw(f, f.area());
-        })?;
+        // Waking up to find that nothing has happened must not cost a
+        // frame, or the app would rebuild the whole display for it.
+        if changed || !idle {
+            terminal.draw(|f| {
+                let _ = app.draw(f, f.area());
+            })?;
+        }
 
-        let should_stop = input_to_app(app)?;
-
-        if should_stop {
-            return Ok(());
+        match input_to_app(app)? {
+            Input::Stop => return Ok(()),
+            Input::Handled => idle = false,
+            Input::Idle => idle = true,
         }
     }
 }
 
-/// Let app process all input events in queue before returning
-/// to draw the next frame.
-/// Return true if application should stop
-fn input_to_app(app: &mut App) -> Result<bool> {
+/// What waiting for input produced.
+enum Input {
+    /// The app was asked to stop.
+    Stop,
+    /// Events were handled, so what the app shows may have changed.
+    Handled,
+    /// Nothing arrived before the wait ran out.
+    Idle,
+}
+
+/// Let app process all input events in queue before returning.
+fn input_to_app(app: &mut App) -> Result<Input> {
     // Duration::MAX overflows the timespec struct used by kevent/kqueue on macOS,
     // causing EINVAL (os error 22). Use a safe large value instead.
     const FOREVER: Duration = Duration::from_secs(24 * 3600);
@@ -196,15 +209,20 @@ fn input_to_app(app: &mut App) -> Result<bool> {
 
     // Handle all pending events in the queue.
     // Stop if an event requested the app to stop.
-    // If no event arrives, return and draw next frame.
     let mut event = app.try_recv_app_event(wait_duration);
     app.stats.start_time = Instant::now();
+    let handled = event.is_some();
     let mut should_stop: bool = false;
     while event.is_some() && !should_stop {
         should_stop = app.input(event.unwrap())?;
         event = app.try_recv_app_event(Duration::ZERO);
     }
-    Ok(should_stop)
+
+    Ok(match (should_stop, handled) {
+        (true, _) => Input::Stop,
+        (false, true) => Input::Handled,
+        (false, false) => Input::Idle,
+    })
 }
 
 fn create_terminal() -> Result<DefaultTerminal> {

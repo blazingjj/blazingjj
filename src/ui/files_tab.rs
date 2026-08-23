@@ -197,19 +197,21 @@ impl FilesTab {
 
 impl Tab for FilesTab {
     fn refresh(&mut self) -> Result<()> {
-        if self.stale {
-            self.is_current_head = self.head == new_commander().get_current_head()?;
-            self.head = new_commander().get_head_latest(&self.head)?;
-            self.refresh_files()?;
-            self.refresh_diff()?;
-            self.stale = false;
-        }
+        self.is_current_head = self.head == new_commander().get_current_head()?;
+        self.head = new_commander().get_head_latest(&self.head)?;
+        self.refresh_files()?;
+        self.refresh_diff()?;
+        self.stale = false;
 
         Ok(())
     }
 
     fn mark_stale(&mut self) {
         self.stale = true;
+    }
+
+    fn is_stale(&self) -> bool {
+        self.stale
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
