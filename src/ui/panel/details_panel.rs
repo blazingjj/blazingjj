@@ -109,6 +109,7 @@ impl<'a> DetailContent<'a> for LargeStringContent<'a> {
         panel.content_rect = area;
         // Update total length. This is used by the scroll bar
         panel.lines = self.large_string.lines() as u16;
+        panel.clamp_scroll();
         // Extract visible part of content
         let top_line = panel.scroll as usize;
         let line_count = area.height as usize;
@@ -124,8 +125,9 @@ impl<'a> DetailContent<'a> for TextContent<'a> {
 
         panel.content_rect = area;
         panel.lines = paragraph.line_count(area.width) as u16;
+        panel.clamp_scroll();
 
-        paragraph = paragraph.scroll((panel.scroll.min(panel.lines.saturating_sub(1)), 0));
+        paragraph = paragraph.scroll((panel.scroll, 0));
 
         paragraph
     }
@@ -232,8 +234,18 @@ impl DetailsPanel {
         self.content_rect.height
     }
 
+    /// Scroll to a line, at most until the end of the content reaches the
+    /// bottom of the panel
     pub fn scroll_to(&mut self, line_no: u16) {
-        self.scroll = line_no.min(self.lines.saturating_sub(1))
+        // Wrapped content takes more rows than it has lines, and we do not
+        // know how many, so we can only keep its last line in view
+        let keep_visible = if self.wrap { 1 } else { self.rows() };
+        self.scroll = line_no.min(self.lines.saturating_sub(keep_visible))
+    }
+
+    /// Pull the scroll position back into content that has shrunk
+    fn clamp_scroll(&mut self) {
+        self.scroll_to(self.scroll);
     }
 
     pub fn scroll(&mut self, scroll: isize) {
@@ -306,5 +318,79 @@ impl DetailsPanel {
             _ => return false,
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const AREA: Rect = Rect {
+        x: 0,
+        y: 0,
+        width: 40,
+        height: 10,
+    };
+
+    /// A panel that has rendered `lines` of unwrapped content into [AREA]
+    fn panel_showing(lines: u16) -> DetailsPanel {
+        let mut panel = DetailsPanel::new();
+        panel.content_rect = AREA;
+        panel.lines = lines;
+        panel.wrap = false;
+        panel
+    }
+
+    fn render(panel: &mut DetailsPanel, content: &LargeString) {
+        LargeStringContent::from(content).render_as_paragraph(panel, AREA);
+    }
+
+    #[test]
+    fn scrolling_stops_with_the_last_line_at_the_bottom() {
+        let mut panel = panel_showing(100);
+
+        panel.scroll_to(u16::MAX);
+
+        assert_eq!(panel.scroll, 90);
+    }
+
+    #[test]
+    fn wrapped_content_scrolls_up_to_its_last_line() {
+        let mut panel = panel_showing(100);
+        panel.wrap = true;
+
+        panel.scroll_to(u16::MAX);
+
+        assert_eq!(panel.scroll, 99);
+    }
+
+    #[test]
+    fn content_shorter_than_the_panel_is_not_scrolled() {
+        let mut panel = panel_showing(3);
+
+        panel.scroll_to(u16::MAX);
+
+        assert_eq!(panel.scroll, 0);
+    }
+
+    #[test]
+    fn shrinking_content_pulls_the_scroll_position_back() {
+        let mut panel = panel_showing(100);
+        panel.scroll_to(90);
+
+        render(&mut panel, &LargeString::new("a\nb\nc\n".to_owned()));
+
+        assert_eq!(panel.scroll, 0);
+    }
+
+    #[test]
+    fn growing_content_keeps_the_scroll_position() {
+        let mut panel = panel_showing(20);
+        panel.scroll_to(10);
+
+        let lines = "a\n".repeat(100);
+        render(&mut panel, &LargeString::new(lines));
+
+        assert_eq!(panel.scroll, 10);
     }
 }
