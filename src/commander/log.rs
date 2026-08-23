@@ -7,14 +7,12 @@ It is mostly used in the [log_tab][crate::ui::log_tab] module.
 
 use std::fmt::Display;
 use std::process::Child;
-use std::sync::LazyLock;
 
 use anyhow::Context;
 use anyhow::Result;
-use anyhow::anyhow;
 use anyhow::bail;
 use itertools::Itertools;
-use regex::Regex;
+use serde::Deserialize;
 use thiserror::Error;
 use tracing::instrument;
 
@@ -27,7 +25,9 @@ use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
 use crate::env::DiffFormat;
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+/// A change as [HEAD_TEMPLATE] describes it. The field names are the ones
+/// the template writes.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Deserialize)]
 pub struct Head {
     pub change_id: ChangeId,
     pub commit_id: CommitId,
@@ -58,37 +58,37 @@ impl Display for HeadParseError {
     }
 }
 
-// Template which outputs `[change_id|commit_id|divergent]`. Used to parse data from log and other
-// commands which supports templating.
-const HEAD_TEMPLATE: &str =
-    r#""[" ++ change_id ++ "|" ++ commit_id ++ "|" ++ divergent ++ "|" ++ immutable ++ "]""#;
-const HEAD_TEMPLATE_NL: &str = r#""[" ++ change_id ++ "|" ++ commit_id ++ "|" ++ divergent ++ "|" ++ immutable ++ "]" ++ "\n""#;
-// Regex to parse HEAD_TEMPLATE
-static HEAD_TEMPLATE_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[(.*)\|(.*)\|(.*)\|(.*)\]").unwrap());
+/// Template writing a [Head] as a JSON object, for `jj log` and the other
+/// commands that take a template. `escape_json()` keeps a value that needs
+/// quoting from ending the object early, or the line.
+const HEAD_TEMPLATE: &str = r#"
+    '{"change_id":' ++ stringify(change_id).escape_json()
+    ++ ',"commit_id":' ++ stringify(commit_id).escape_json()
+    ++ ',"divergent":' ++ divergent
+    ++ ',"immutable":' ++ immutable
+    ++ '}'
+"#;
+/// [HEAD_TEMPLATE] with a newline behind it, so that output holding more
+/// than one head has one object per line.
+const HEAD_TEMPLATE_NL: &str = r#"
+    '{"change_id":' ++ stringify(change_id).escape_json()
+    ++ ',"commit_id":' ++ stringify(commit_id).escape_json()
+    ++ ',"divergent":' ++ divergent
+    ++ ',"immutable":' ++ immutable
+    ++ '}'
+    ++ "\n"
+"#;
 
-// Parse a head with HEAD_TEMPLATE.
+/// Parse the [Head] one line of [HEAD_TEMPLATE] output describes.
+///
+/// jj draws the graph in front of what the template writes, so the object
+/// starts at the first brace of the line. A line the graph draws for edges
+/// alone carries no template output, and neither does one for an elided
+/// revision, so those have no brace and no head.
 fn parse_head(text: &str) -> Result<Head> {
-    let captured = HEAD_TEMPLATE_REGEX.captures(text);
-    captured
-        .as_ref()
-        .map_or(Err(anyhow!(HeadParseError(text.to_owned()))), |captured| {
-            if let (Some(change_id), Some(commit_id), Some(divergent), Some(immutable)) = (
-                captured.get(1),
-                captured.get(2),
-                captured.get(3),
-                captured.get(4),
-            ) {
-                Ok(Head {
-                    change_id: ChangeId(change_id.as_str().to_string()),
-                    commit_id: CommitId(commit_id.as_str().to_string()),
-                    divergent: divergent.as_str() == "true",
-                    immutable: immutable.as_str() == "true",
-                })
-            } else {
-                bail!(HeadParseError(text.to_owned()))
-            }
-        })
+    text.find('{')
+        .and_then(|start| serde_json::from_str(&text[start..]).ok())
+        .ok_or_else(|| HeadParseError(text.to_owned()).into())
 }
 
 impl Commander {
@@ -133,7 +133,7 @@ impl Commander {
             .run()?;
 
         // Extract the log one more time, but this time use a template
-        // where each line begins with Head information. Since jj has
+        // which describes the head behind each line. Since jj has
         // 2 lines per change, there will also be two lines with head info.
         // The number of lines in graph and the number of items in graph_heads
         // should be identical.
@@ -143,7 +143,7 @@ impl Commander {
                     "log",
                     "--template",
                     // Match builtin_log_compact with 2 lines per change
-                    &format!(r#"{HEAD_TEMPLATE} ++ " " ++ bookmarks ++"\n" ++ {HEAD_TEMPLATE}"#),
+                    &format!(r#"{HEAD_TEMPLATE} ++ "\n" ++ {HEAD_TEMPLATE}"#),
                 ],
                 args,
             ]
@@ -319,6 +319,51 @@ mod tests {
 
     use super::*;
     use crate::commander::tests::TestRepo;
+
+    fn head(change_id: &str, commit_id: &str, divergent: bool, immutable: bool) -> Head {
+        Head {
+            change_id: ChangeId(change_id.to_owned()),
+            commit_id: CommitId(commit_id.to_owned()),
+            divergent,
+            immutable,
+        }
+    }
+
+    #[test]
+    fn parse_head_reads_a_record_of_its_own() -> Result<()> {
+        assert_eq!(
+            parse_head(
+                r#"{"change_id":"kxq","commit_id":"1f2e","divergent":false,"immutable":true}"#
+            )?,
+            head("kxq", "1f2e", false, true)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_head_reads_a_record_behind_the_graph() -> Result<()> {
+        assert_eq!(
+            parse_head(
+                r#"│ ├─╮  {"change_id":"kxq","commit_id":"1f2e","divergent":true,"immutable":false}"#
+            )?,
+            head("kxq", "1f2e", true, false)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_graph_line_without_a_record_has_no_head() {
+        assert!(parse_head("│ ├─╯").is_err());
+        assert!(parse_head("~  (elided revisions)").is_err());
+        assert!(parse_head("").is_err());
+    }
+
+    #[test]
+    fn a_record_missing_a_field_is_no_head() {
+        assert!(parse_head(r#"{"change_id":"kxq","commit_id":"1f2e"}"#).is_err());
+    }
 
     #[test]
     fn get_log() -> Result<()> {
