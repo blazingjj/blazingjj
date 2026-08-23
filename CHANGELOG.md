@@ -46,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outside dismisses it
 - The new-change dialog now asks where to put the change, so it can also be
   inserted before or after the selected one rather than only as its child
+- Work done outside the app, such as a jj command run in another terminal, is
+  picked up on its own while the terminal window has no focus
+- `blazingjj.poll-interval` to set how often the app checks for it, or `0` to
+  have it only check when asked
+- The header's `R: refresh` hint turns red when the current tab has gone
+  stale and the app is not going to catch it up on its own
 
 ### Changed
 

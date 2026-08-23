@@ -72,6 +72,9 @@ You can optionally configure the following options through your jj config:
   - If `blazingjj.bookmark-template` is not set but `templates.git_push_bookmark` is, the latter will be used
 - `blazingjj.layout`: Changes the layout of the main and details panel. Can be `horizontal` (default) or `vertical`
 - `blazingjj.layout-percent`: Changes the layout split of the main page. Should be number between 0 and 100. Defaults to `50`
+- `blazingjj.poll-interval`: Seconds between checks for work done outside the app. Set to `0` to only check when asked. Defaults to `1`
+  - What is found is picked up while the terminal window has no focus; while it has focus, the header's `R: refresh` hint turns red instead, as refreshing what is being read moves it
+  - A terminal that does not report focus changes counts as always focused, so there the hint is all you get
 
 Example: `jj config set --user blazingjj.diff-format "color-words"` (for storing in [user config file](https://martinvonz.github.io/jj/latest/config/#user-config-file), repo config is also supported)
 

@@ -170,8 +170,9 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
 
         changed |= app.refresh_view()?;
 
-        // Waking up to find that nothing has happened must not cost a
-        // frame, or the app would rebuild the whole display for it.
+        // Waking up on a timer to find nothing has happened must not
+        // cost a frame, or an app nobody is touching would rebuild the
+        // whole display every poll interval.
         if changed || !quiet {
             terminal.draw(|f| {
                 let _ = app.draw(f, f.area());
@@ -193,12 +194,14 @@ fn input_to_app(app: &mut App) -> Result<Handled> {
     const FOREVER: Duration = Duration::from_secs(24 * 3600);
 
     // Something that counts up on its own needs a frame every 100ms.
-    // Everything else is delivered on the event channel, so there is
-    // nothing to wake up for.
+    // Otherwise the app may be due to check for work done outside it.
+    // With neither, everything is delivered on the event channel, so
+    // there is nothing to wake up for.
     let wait_duration = if app.needs_periodic_redraw() {
         Duration::from_millis(100)
     } else {
-        FOREVER
+        app.time_until_poll()
+            .map_or(FOREVER, |until| until.min(FOREVER))
     };
 
     // Handle all pending events in the queue.

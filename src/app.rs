@@ -129,7 +129,7 @@ impl<'a> App<'a> {
             },
             global_keybinds,
 
-            repo_watch: RepoWatch::new(Instant::now()),
+            repo_watch: RepoWatch::new(get_env().jj_config.poll_interval(), Instant::now()),
 
             running,
             event_source,
@@ -165,25 +165,51 @@ impl<'a> App<'a> {
     }
 
     pub fn set_tab(&mut self, tab: TabId) {
+        // Asking for the tab already on screen is not asking for it to
+        // move.
+        if tab == self.current_tab {
+            return;
+        }
+
         info!("Setting tab to {}", tab);
         self.current_tab = tab;
+        // The user is not reading the tab they are switching to yet, so
+        // nothing moves under them if we bring it up to date.
+        self.repo_watch.catching_up();
     }
 
-    /// Start a check of what the repo is at if one is called for, and
-    /// read the current tab if it is stale. Returns whether anything on
-    /// screen changed.
-    pub fn refresh_view(&mut self) -> Result<bool> {
-        let moment = Moment {
+    /// How long until the app next checks for work done outside it, or
+    /// None if there is nothing to wake up for.
+    pub fn time_until_poll(&self) -> Option<Duration> {
+        self.repo_watch.time_until_poll(self.moment())
+    }
+
+    fn moment(&self) -> Moment {
+        Moment {
             at: Instant::now(),
             checking: self.background_tasks.is_running(&TaskSlot::RepoOpId),
             room: self.background_tasks.has_room(),
-        };
-        if let Some(check) = self.repo_watch.check_to_start(moment) {
+        }
+    }
+
+    /// Start a check of what the repo is at if one is called for, and
+    /// catch the current tab up unless refreshing it now would move what
+    /// the user is reading. Returns whether anything on screen changed.
+    pub fn refresh_view(&mut self) -> Result<bool> {
+        // A popup covers the tab a check would read for, and keeps the
+        // loop running for its own sake.
+        if self.popup.is_some() {
+            return Ok(false);
+        }
+
+        if let Some(check) = self.repo_watch.check_to_start(self.moment()) {
             self.submit_repo_check(check);
         }
 
-        if !self.get_current_tab().is_stale() {
-            return Ok(false);
+        let stale = self.get_current_tab().is_stale();
+        let hint_changed = self.repo_watch.leave_stale(stale);
+        if self.repo_watch.waiting_for_refresh() || !stale {
+            return Ok(hint_changed);
         }
 
         self.get_current_tab().refresh()?;
@@ -276,7 +302,10 @@ impl<'a> App<'a> {
                 // Whatever asks for this has likely moved the repo, and
                 // snapshotted while at it, so the other tabs want
                 // checking without delay but not another snapshot.
-                self.repo_watch.ask_check(Check::default());
+                self.repo_watch.ask_check(Check {
+                    snapshot: false,
+                    ours: true,
+                });
             }
         }
 
@@ -338,16 +367,28 @@ impl<'a> App<'a> {
             f.render_widget(tabs, header_chunks[0]);
         }
         {
-            let tabs = Paragraph::new("q: quit | ?: help | R: refresh | 1-4: change tab")
-                .fg(Color::DarkGray)
-                .block(
-                    Block::bordered()
-                        .title(" blazingjj ")
-                        .border_type(BorderType::Rounded)
-                        .fg(Color::default()),
-                );
+            // The app is not going to pick it up, so light up the key
+            // that does.
+            let refresh_style = if self.repo_watch.waiting_for_refresh() {
+                Style::default().fg(Color::Red)
+            } else {
+                Style::default()
+            };
 
-            f.render_widget(tabs, header_chunks[1]);
+            let hints = Paragraph::new(Line::from(vec![
+                Span::raw("q: quit | ?: help | "),
+                Span::styled("R: refresh", refresh_style),
+                Span::raw(" | 1-4: change tab"),
+            ]))
+            .fg(Color::DarkGray)
+            .block(
+                Block::bordered()
+                    .title(" blazingjj ")
+                    .border_type(BorderType::Rounded)
+                    .fg(Color::default()),
+            );
+
+            f.render_widget(hints, header_chunks[1]);
         }
 
         self.get_current_tab().draw(f, chunks[1])?;
@@ -432,11 +473,22 @@ impl<'a> App<'a> {
         };
         trace!("Processing user input");
 
-        // Coming back to the window is worth a check, as the repo may
-        // well have moved while we were not being watched.
-        if event == event::Event::FocusGained {
-            self.repo_watch.ask_check(Check { snapshot: true });
-            return Ok(Handled::Nothing);
+        match event {
+            // Coming back to the window is worth a check, as the repo
+            // may well have moved while we were not being watched.
+            event::Event::FocusGained => {
+                self.repo_watch.set_focus(true);
+                self.repo_watch.ask_check(Check {
+                    snapshot: true,
+                    ours: false,
+                });
+                return Ok(Handled::Nothing);
+            }
+            event::Event::FocusLost => {
+                self.repo_watch.set_focus(false);
+                return Ok(Handled::Nothing);
+            }
+            _ => {}
         }
 
         if let Some(popup) = self.popup.as_mut() {
@@ -493,7 +545,10 @@ impl<'a> App<'a> {
                                 self.get_current_tab().focus_current()?;
                             }
                             GlobalEvent::Refresh => {
-                                self.repo_watch.ask_check(Check { snapshot: true });
+                                self.repo_watch.ask_check(Check {
+                                    snapshot: true,
+                                    ours: true,
+                                });
                                 self.get_current_tab().drop_caches();
                                 self.handle_action(AppAction::RefreshTab)?;
                             }
