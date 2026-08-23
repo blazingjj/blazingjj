@@ -164,6 +164,9 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
     app.launch_input_channel();
     loop {
         app.update()?;
+
+        app.refresh_current_tab()?;
+
         terminal.draw(|f| {
             let _ = app.draw(f, f.area());
         })?;

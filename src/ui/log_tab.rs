@@ -114,6 +114,8 @@ pub struct LogTab<'a> {
     config: JjConfig,
     pane_divider: PaneDivider,
     keybinds: LogTabKeybinds,
+
+    stale: bool,
 }
 
 /// A background process for fetching 'jj show' and a thread for signalling
@@ -144,7 +146,7 @@ The main functions are:
 
 * [refresh_log_output](LogTab::refresh_log_output) - Update the log panel
   by running `jj log`, and update the details panel.
-  (called by set_head)
+  (called by refresh)
 
 * [sync_head_output](LogTab::sync_head_output) - Make right panel show
   what left panel selected.
@@ -164,10 +166,8 @@ The main functions are:
 */
 impl<'a> LogTab<'a> {
     #[instrument(level = "info", name = "Initializing log tab", parent = None, skip())]
-    pub fn new(app_event_sender: Sender<AppEvent>) -> Result<Self> {
+    pub fn new(app_event_sender: Sender<AppEvent>, head: Head) -> Self {
         let diff_format = get_env().jj_config.diff_format();
-
-        let head = new_commander().get_current_head()?;
 
         const NO_WIDTH: usize = 0;
         let head_key = CommitShowKey::new(head.clone(), diff_format.clone(), NO_WIDTH);
@@ -184,12 +184,12 @@ impl<'a> LogTab<'a> {
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
 
-        Ok(Self {
+        Self {
             app_event_sender,
 
             log_revset_textarea: None,
 
-            log_panel: LogPanel::new()?,
+            log_panel: LogPanel::new(head.clone()),
 
             head,
             head_panel: DetailsPanel::new(),
@@ -215,13 +215,16 @@ impl<'a> LogTab<'a> {
             config,
             pane_divider,
             keybinds,
-        })
+
+            stale: true,
+        }
     }
 
-    /// Set cursor and update log panel and diff panel
+    /// Move the cursor, updating the details panel. The log itself is
+    /// left as it was.
     pub fn set_head(&mut self, head: Head) {
         self.log_panel.set_head(head);
-        self.refresh_log_output();
+        self.sync_head_output();
     }
 
     /// Update the log panel and diff panel. This will also refresh
@@ -480,7 +483,10 @@ impl<'a> LogTab<'a> {
                 AppAction::SetPopup(Box::new(DescribePopup::new(self.head.clone(), vec![]))),
             ])));
         }
-        Ok(Some(AppAction::ChangeHead(self.head.clone())))
+        Ok(Some(AppAction::Multiple(vec![
+            AppAction::ChangeHead(self.head.clone()),
+            AppAction::RefreshTab,
+        ])))
     }
 
     fn handle_abandon(&mut self) -> Result<ComponentInputResult> {
@@ -543,9 +549,12 @@ impl<'a> LogTab<'a> {
         self.set_head(new_selection.clone());
         // If selection was moved, tell the application
         if new_selection != old_selection {
-            Ok(Some(AppAction::ChangeHead(self.head.clone())))
+            Ok(Some(AppAction::Multiple(vec![
+                AppAction::ChangeHead(self.head.clone()),
+                AppAction::RefreshTab,
+            ])))
         } else {
-            Ok(None)
+            Ok(Some(AppAction::RefreshTab))
         }
     }
 
@@ -563,7 +572,7 @@ impl<'a> LogTab<'a> {
             }
             LogTabEvent::Duplicate => {
                 let _ = new_commander().run_duplicate(&self.head.change_id.to_string());
-                self.refresh_log_output();
+                return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
             }
 
             LogTabEvent::CreateNew { describe } => {
@@ -665,8 +674,11 @@ impl<'a> LogTab<'a> {
             LogTabEvent::Absorb => {
                 new_commander().run_absorb(self.head.commit_id.as_str())?;
                 self.set_head(new_commander().get_head_latest(&self.head)?);
-                return Ok(ComponentInputResult::HandledAction(AppAction::ChangeHead(
-                    self.head.clone(),
+                return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
+                    vec![
+                        AppAction::ChangeHead(self.head.clone()),
+                        AppAction::RefreshTab,
+                    ],
                 )));
             }
             LogTabEvent::Describe => {
@@ -766,9 +778,18 @@ impl<'a> LogTab<'a> {
 
 impl Tab for LogTab<'_> {
     fn refresh(&mut self) -> Result<()> {
-        let latest_head = new_commander().get_head_latest(&self.head)?;
-        self.set_head(latest_head);
+        if self.stale {
+            let latest_head = new_commander().get_head_latest(&self.head)?;
+            self.log_panel.set_head(latest_head);
+            self.refresh_log_output();
+            self.stale = false;
+        }
+
         Ok(())
+    }
+
+    fn mark_stale(&mut self) {
+        self.stale = true;
     }
 
     fn drop_caches(&mut self) {
@@ -826,8 +847,10 @@ impl Component for LogTab<'_> {
                 EDIT_POPUP_ID => {
                     new_commander()
                         .run_edit(self.head.commit_id.as_str(), self.edit_ignore_immutable)?;
-                    self.refresh_log_output();
-                    return Ok(Some(AppAction::ChangeHead(self.head.clone())));
+                    return Ok(Some(AppAction::Multiple(vec![
+                        AppAction::ChangeHead(self.head.clone()),
+                        AppAction::RefreshTab,
+                    ])));
                 }
                 ABANDON_POPUP_ID => {
                     return self.execute_abandon();
@@ -840,7 +863,10 @@ impl Component for LogTab<'_> {
                         .commit_id;
                     new_commander().run_squash(target_id.as_str(), self.squash_ignore_immutable)?;
                     self.set_head(new_commander().get_current_head()?);
-                    return Ok(Some(AppAction::ChangeHead(self.head.clone())));
+                    return Ok(Some(AppAction::Multiple(vec![
+                        AppAction::ChangeHead(self.head.clone()),
+                        AppAction::RefreshTab,
+                    ])));
                 }
                 _ => {}
             }

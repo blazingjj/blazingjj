@@ -35,7 +35,7 @@ pub struct Head {
     pub immutable: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct LogOutput {
     pub graph: String,
     // Maps graph line -> heads
