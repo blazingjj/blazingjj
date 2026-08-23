@@ -72,12 +72,15 @@ pub trait Component {
 
 /// A top-level tab, showing what it reads from the repo.
 pub trait Tab: Component {
-    /// Read whatever this tab shows afresh from the repo if it is stale,
-    /// leaving it no longer stale. Does nothing otherwise.
+    /// Read whatever this tab shows afresh from the repo, leaving it no
+    /// longer stale.
     fn refresh(&mut self) -> Result<()>;
 
     /// Have the next [refresh](Tab::refresh) read the repo.
     fn mark_stale(&mut self);
+
+    /// Whether the next [refresh](Tab::refresh) will read the repo.
+    fn is_stale(&self) -> bool;
 
     /// Discard whatever this tab has cached, so that the next read goes
     /// to the repo.

@@ -217,17 +217,19 @@ impl BookmarksTab {
 
 impl Tab for BookmarksTab {
     fn refresh(&mut self) -> Result<()> {
-        if self.stale {
-            self.refresh_bookmarks();
-            self.refresh_bookmark();
-            self.stale = false;
-        }
+        self.refresh_bookmarks();
+        self.refresh_bookmark();
+        self.stale = false;
 
         Ok(())
     }
 
     fn mark_stale(&mut self) {
         self.stale = true;
+    }
+
+    fn is_stale(&self) -> bool {
+        self.stale
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {

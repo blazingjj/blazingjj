@@ -153,8 +153,9 @@ impl<'a> App<'a> {
     }
 
     /// Mark every tab stale if the repo has moved since the last check,
-    /// then read the current tab if it is stale.
-    pub fn refresh_view(&mut self) -> Result<()> {
+    /// then read the current tab if it is stale. Returns whether
+    /// anything on screen changed.
+    pub fn refresh_view(&mut self) -> Result<bool> {
         if self.check_repo_moved() {
             trace!("The repo has moved, so every tab is stale");
             for tab in TabId::VALUES {
@@ -162,7 +163,13 @@ impl<'a> App<'a> {
             }
         }
 
-        self.get_current_tab().refresh()
+        if !self.get_current_tab().is_stale() {
+            return Ok(false);
+        }
+
+        self.get_current_tab().refresh()?;
+
+        Ok(true)
     }
 
     /// Ask for the next check to read the repo without waiting out
@@ -253,8 +260,12 @@ impl<'a> App<'a> {
         Ok(())
     }
 
+    /// Returns whether anything that shows may have changed.
     #[instrument(level = "trace", skip(self))]
-    pub fn update(&mut self) -> Result<()> {
+    pub fn update(&mut self) -> Result<bool> {
+        // A popup animates, so it wants a frame whatever it says.
+        let mut changed = self.popup.is_some();
+
         if let Some(popup) = self.popup.as_mut()
             && let Some(component_action) = popup.update()?
         {
@@ -263,9 +274,10 @@ impl<'a> App<'a> {
 
         if let Some(component_action) = self.get_current_tab().update()? {
             self.handle_action(component_action)?;
+            changed = true;
         }
 
-        Ok(())
+        Ok(changed)
     }
 
     #[instrument(level = "trace", skip(self, f))]
