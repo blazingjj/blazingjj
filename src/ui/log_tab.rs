@@ -245,15 +245,14 @@ impl<'a> LogTab<'a> {
         let inner_width = self.head_panel.columns() as usize;
         let key = CommitShowKey::new(self.head.clone(), self.diff_format.clone(), inner_width);
 
-        let content_changed = self.head_key != key;
-
-        // Only update if content actually changed to prevent scroll jumping
-        // The next draw requests `jj show` for the new key if it is not
-        // already cached.
-        if content_changed {
-            self.head_key = key;
+        // Only selecting a different change starts over at the top
+        if self.head_key.id.change_id != key.id.change_id {
             self.head_panel.scroll_to(0);
         }
+
+        // The next draw requests `jj show` for the new key if it is not
+        // already cached.
+        self.head_key = key;
     }
 
     //
