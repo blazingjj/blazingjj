@@ -49,6 +49,9 @@ impl CommitShowKey {
 /// A structure that allows fast rendering of document with millions of lines
 pub struct CommitShowValue {
     key: CommitShowKey,
+    /// Rank in the order the cache received its documents in.
+    /// Assigned by [insert_document](CommitShowCache::insert_document)
+    serial: u64,
     jj_output: LargeString,
 }
 
@@ -57,6 +60,7 @@ impl CommitShowValue {
     pub fn new(key: CommitShowKey, value: String) -> Self {
         Self {
             key,
+            serial: 0,
             jj_output: LargeString::new(value),
         }
     }
@@ -77,10 +81,12 @@ pub struct CommitShowCache {
     /// These commits will be discarded, once an active commit
     /// with same change id is in the cache. The output is not a set
     /// for simplicity. We don't care about old divergent changes and
-    /// pick one at random.
+    /// keep only the newest of them.
     old_commits: HashMap<ChangeId, CommitShowKey>,
     /// The cache of jj show output
     commit_document: HashMap<CommitShowKey, CommitShowValue>,
+    /// Serial to hand to the next document
+    next_serial: u64,
 }
 
 impl CommitShowCache {
@@ -90,6 +96,7 @@ impl CommitShowCache {
             active_commits: HashMap::new(),
             old_commits: HashMap::new(),
             commit_document: HashMap::new(),
+            next_serial: 0,
         }
     }
     /// Declare which commits should be kept. Any commit outside this set
@@ -111,15 +118,33 @@ impl CommitShowCache {
                 .insert(key);
         }
 
-        // Construct map of old_commits from ChangeId to CommitShowKey
-        // with all heads in the cache, that is not marked as an active commit
+        // Everything else in the cache is an old commit. Of those we keep
+        // the newest per change id, which is the one that resembles the
+        // active document it stands in for the most.
+        let is_active = |key: &CommitShowKey| {
+            self.active_commits
+                .get(&key.id.change_id)
+                .is_some_and(|active_keys| active_keys.contains(key))
+        };
+        let mut old_values: Vec<&CommitShowValue> = self
+            .commit_document
+            .values()
+            .filter(|value| !is_active(&value.key))
+            .collect();
+        old_values.sort_unstable_by_key(|value| value.serial);
+
         self.old_commits = HashMap::new();
-        for key in self.commit_document.keys() {
-            // All cached values should either be an active or old commit.
-            if !self.active_commits.contains_key(&key.id.change_id) {
-                self.old_commits
-                    .insert(key.id.change_id.clone(), key.clone());
+        let mut surplus = Vec::new();
+        for value in old_values {
+            if let Some(replaced) = self
+                .old_commits
+                .insert(value.key.id.change_id.clone(), value.key.clone())
+            {
+                surplus.push(replaced);
             }
+        }
+        for key in surplus {
+            self.commit_document.remove(&key);
         }
     }
 
@@ -161,12 +186,134 @@ impl CommitShowCache {
 
     /// Move the specified value into the cache as the active value
     /// of the key. Will remove any old values with the same change id.
-    pub fn insert_document(&mut self, value: CommitShowValue) {
+    pub fn insert_document(&mut self, mut value: CommitShowValue) {
+        value.serial = self.next_serial;
+        self.next_serial += 1;
         let key = &value.key;
         if let Some(old_key) = self.old_commits.get(&key.id.change_id) {
             self.commit_document.remove(old_key);
             self.old_commits.remove(&key.id.change_id);
         }
         self.commit_document.insert(key.clone(), value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commander::ids::CommitId;
+
+    fn head(change_id: &str, commit_id: &str) -> Head {
+        Head {
+            change_id: ChangeId(change_id.to_owned()),
+            commit_id: CommitId(commit_id.to_owned()),
+            divergent: false,
+            immutable: false,
+        }
+    }
+
+    fn key(change_id: &str, commit_id: &str) -> CommitShowKey {
+        CommitShowKey::new(head(change_id, commit_id), DiffFormat::ColorWords, 0)
+    }
+
+    /// A key of the only format that renders at a given width
+    fn tool_key(change_id: &str, commit_id: &str, width: usize) -> CommitShowKey {
+        CommitShowKey::new(
+            head(change_id, commit_id),
+            DiffFormat::DiffTool(None),
+            width,
+        )
+    }
+
+    fn insert(cache: &mut CommitShowCache, key: &CommitShowKey, text: &str) {
+        cache.insert_document(CommitShowValue::new(key.clone(), text.to_owned()));
+    }
+
+    fn text_of(value: Option<&CommitShowValue>) -> String {
+        value.unwrap().value().render(0, 1).to_string()
+    }
+
+    #[test]
+    fn rewritten_commit_keeps_showing_its_previous_output() {
+        let mut cache = CommitShowCache::new();
+        let old = key("abc", "111");
+        cache.set_active(vec![old.id.clone()], &old);
+        insert(&mut cache, &old, "old output");
+
+        let new = key("abc", "222");
+        cache.set_active(vec![new.id.clone()], &new);
+
+        assert!(!cache.has_exact_match(&new));
+        assert_eq!(text_of(cache.get(&new)), "old output");
+    }
+
+    #[test]
+    fn new_output_replaces_the_previous_one() {
+        let mut cache = CommitShowCache::new();
+        let old = key("abc", "111");
+        insert(&mut cache, &old, "old output");
+
+        let new = key("abc", "222");
+        cache.set_active(vec![new.id.clone()], &new);
+        insert(&mut cache, &new, "new output");
+
+        assert_eq!(text_of(cache.get(&new)), "new output");
+        assert_eq!(cache.commit_document.len(), 1);
+    }
+
+    #[test]
+    fn output_rendered_for_another_width_is_kept() {
+        let mut cache = CommitShowCache::new();
+        let narrow = tool_key("abc", "111", 80);
+        cache.set_active(vec![narrow.id.clone()], &narrow);
+        insert(&mut cache, &narrow, "narrow output");
+
+        let wide = tool_key("abc", "111", 100);
+        cache.set_active(vec![wide.id.clone()], &wide);
+
+        assert!(!cache.has_exact_match(&wide));
+        assert_eq!(text_of(cache.get(&wide)), "narrow output");
+    }
+
+    #[test]
+    fn dirty_output_is_kept_until_it_is_rebuilt() {
+        let mut cache = CommitShowCache::new();
+        let active = key("abc", "111");
+        cache.set_active(vec![active.id.clone()], &active);
+        insert(&mut cache, &active, "stale output");
+
+        cache.mark_dirty();
+        cache.set_active(vec![active.id.clone()], &active);
+
+        assert!(!cache.has_exact_match(&active));
+        assert_eq!(text_of(cache.get(&active)), "stale output");
+    }
+
+    #[test]
+    fn only_the_newest_output_of_a_change_is_kept() {
+        let mut cache = CommitShowCache::new();
+        insert(&mut cache, &key("abc", "111"), "first output");
+        insert(&mut cache, &key("abc", "222"), "second output");
+
+        let new = key("abc", "333");
+        cache.set_active(vec![new.id.clone()], &new);
+
+        assert_eq!(text_of(cache.get(&new)), "second output");
+        assert_eq!(cache.commit_document.len(), 1);
+    }
+
+    #[test]
+    fn divergent_commits_of_a_change_are_both_active() {
+        let mut cache = CommitShowCache::new();
+        let first = key("abc", "111");
+        let second = key("abc", "222");
+        cache.set_active(vec![first.id.clone(), second.id.clone()], &first);
+        insert(&mut cache, &first, "first output");
+        insert(&mut cache, &second, "second output");
+
+        cache.set_active(vec![first.id.clone(), second.id.clone()], &first);
+
+        assert_eq!(text_of(cache.get(&first)), "first output");
+        assert_eq!(text_of(cache.get(&second)), "second output");
     }
 }
