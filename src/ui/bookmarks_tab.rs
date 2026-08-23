@@ -19,6 +19,8 @@ use crate::commander::new_commander;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::keybinds::BookmarksTabEvent;
+use crate::keybinds::BookmarksTabKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -75,6 +77,7 @@ pub struct BookmarksTab {
     diff_format: DiffFormat,
 
     config: JjConfig,
+    keybinds: BookmarksTabKeybinds,
     pane_divider: PaneDivider,
 
     stale: bool,
@@ -119,6 +122,7 @@ impl BookmarksTab {
 
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
+        let keybinds = BookmarksTabKeybinds::default();
 
         Self {
             bookmarks_output: Ok(Vec::new()),
@@ -148,6 +152,7 @@ impl BookmarksTab {
             diff_format: get_env().jj_config.diff_format(),
 
             config,
+            keybinds,
             pane_divider,
 
             stale: true,
@@ -237,17 +242,7 @@ impl Tab for BookmarksTab {
     }
 
     fn make_main_panel_help(&self) -> Vec<(String, String)> {
-        vec![
-            ("a".to_owned(), "show all remotes".to_owned()),
-            ("c".to_owned(), "create bookmark".to_owned()),
-            ("r".to_owned(), "rename bookmark".to_owned()),
-            ("d/f".to_owned(), "delete/forget bookmark".to_owned()),
-            ("t/T".to_owned(), "track/untrack bookmark".to_owned()),
-            ("Enter".to_owned(), "view in log".to_owned()),
-            ("n".to_owned(), "new from bookmark".to_owned()),
-            ("N".to_owned(), "new and describe".to_owned()),
-            ("e".to_owned(), "edit bookmark".to_owned()),
-        ]
+        self.keybinds.make_help()
     }
 
     fn make_details_panel_help(&self) -> Vec<(String, String)> {
@@ -500,23 +495,23 @@ impl Component for BookmarksTab {
                 return Ok(ComponentInputResult::Handled);
             }
 
-            match key.code {
-                KeyCode::Char('w') => {
+            match self.keybinds.match_event(key) {
+                BookmarksTabEvent::ToggleDiffFormat => {
                     self.diff_format = self.diff_format.get_next(self.config.diff_tool());
                     self.refresh_bookmark();
                 }
-                KeyCode::Char('a') => {
+                BookmarksTabEvent::ToggleShowAll => {
                     self.show_all = !self.show_all;
                     self.refresh_bookmarks();
                 }
-                KeyCode::Char('c') => {
+                BookmarksTabEvent::CreateBookmark => {
                     return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
                         Box::new(BookmarkNamePopup::new_create(
                             self.bookmark_name_popup_tx.clone(),
                         )),
                     )));
                 }
-                KeyCode::Char('r') => {
+                BookmarksTabEvent::RenameBookmark => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
                         let old_name = bookmark.name.clone();
                         return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
@@ -527,7 +522,7 @@ impl Component for BookmarksTab {
                         )));
                     }
                 }
-                KeyCode::Char('d') => {
+                BookmarksTabEvent::DeleteBookmark => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
                         self.delete = Some(DeleteBookmark {
                             name: bookmark.name.clone(),
@@ -547,7 +542,7 @@ impl Component for BookmarksTab {
                             .open();
                     }
                 }
-                KeyCode::Char('f') => {
+                BookmarksTabEvent::ForgetBookmark => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
                         self.forget = Some(ForgetBookmark {
                             name: bookmark.name.clone(),
@@ -568,7 +563,7 @@ impl Component for BookmarksTab {
                     }
                 }
                 // TODO: Ask for confirmation?
-                KeyCode::Char('t') => {
+                BookmarksTabEvent::TrackBookmark => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
                         && bookmark.remote.is_some()
                         && bookmark.present
@@ -577,7 +572,7 @@ impl Component for BookmarksTab {
                         return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
                     }
                 }
-                KeyCode::Char('T') => {
+                BookmarksTabEvent::UntrackBookmark => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
                         && bookmark.remote.is_some()
                         && bookmark.present
@@ -586,7 +581,7 @@ impl Component for BookmarksTab {
                         return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
                     }
                 }
-                KeyCode::Char('n') | KeyCode::Char('N') => {
+                BookmarksTabEvent::NewChange { describe } => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
                         && bookmark.present
                     {
@@ -604,42 +599,41 @@ impl Component for BookmarksTab {
                             .with_listener(Some(self.popup_tx.clone()))
                             .open();
 
-                        self.describe_after_new = key.code == KeyCode::Char('N');
+                        self.describe_after_new = describe;
                     }
                 }
-                KeyCode::Char('e') | KeyCode::Char('E') => {
-                    if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
-                        let ignore_immutable = key.code == KeyCode::Char('E');
-                        if bookmark.present {
-                            if new_commander().check_revision_immutable(&bookmark.to_string())?
-                                && !ignore_immutable
-                            {
-                                return Ok(ComponentInputResult::HandledAction(
-                                    AppAction::SetPopup(Box::new(MessagePopup::new(
-                                        "Edit",
-                                        "The change cannot be edited because it is immutable.",
-                                    ))),
-                                ));
-                            }
-
-                            self.popup = ConfirmDialogState::new(
-                                EDIT_POPUP_ID,
-                                Span::styled(" Edit ", Style::new().bold().cyan()),
-                                Text::from(vec![
-                                    Line::from("Are you sure you want to edit an existing change?"),
-                                    Line::from(format!("Bookmark: {bookmark}")),
-                                ]),
-                            );
-                            self.popup
-                                .with_yes_button(ButtonLabel::YES.clone())
-                                .with_no_button(ButtonLabel::NO.clone())
-                                .with_listener(Some(self.popup_tx.clone()))
-                                .open();
-                            self.edit_ignore_immutable = ignore_immutable;
+                BookmarksTabEvent::EditChange { ignore_immutable } => {
+                    if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
+                        && bookmark.present
+                    {
+                        if new_commander().check_revision_immutable(&bookmark.to_string())?
+                            && !ignore_immutable
+                        {
+                            return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                                Box::new(MessagePopup::new(
+                                    "Edit",
+                                    "The change cannot be edited because it is immutable.",
+                                )),
+                            )));
                         }
+
+                        self.popup = ConfirmDialogState::new(
+                            EDIT_POPUP_ID,
+                            Span::styled(" Edit ", Style::new().bold().cyan()),
+                            Text::from(vec![
+                                Line::from("Are you sure you want to edit an existing change?"),
+                                Line::from(format!("Bookmark: {bookmark}")),
+                            ]),
+                        );
+                        self.popup
+                            .with_yes_button(ButtonLabel::YES.clone())
+                            .with_no_button(ButtonLabel::NO.clone())
+                            .with_listener(Some(self.popup_tx.clone()))
+                            .open();
+                        self.edit_ignore_immutable = ignore_immutable;
                     }
                 }
-                KeyCode::Enter => {
+                BookmarksTabEvent::ViewInLog => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
                         && bookmark.present
                     {
@@ -648,7 +642,7 @@ impl Component for BookmarksTab {
                         )));
                     }
                 }
-                _ => return Ok(ComponentInputResult::NotHandled),
+                BookmarksTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
             };
         }
 
