@@ -182,7 +182,12 @@ impl<'a> App<'a> {
             return false;
         }
 
-        let result = new_commander().get_operation_id(self.ignore_working_copy);
+        let mut commander = new_commander();
+        if self.ignore_working_copy {
+            commander.ignore_working_copy();
+        }
+
+        let result = commander.get_operation_id();
         self.next_op_id_check = Instant::now() + OP_ID_CHECK_INTERVAL;
 
         let operation_id = match result {

@@ -112,7 +112,8 @@ impl Commander {
     }
 
     /// Get log. Returns human readable log and mapping to log line to head.
-    /// Maps to `jj log`
+    /// Leaves the working copy alone.
+    /// Maps to `jj log --ignore-working-copy`
     #[instrument(level = "trace", skip(self))]
     pub fn get_log(&self, revset: &Option<String>) -> Result<LogOutput, CommandError> {
         let mut args = vec![];
@@ -130,6 +131,7 @@ impl Commander {
             ]
             .concat())
             .color()
+            .ignore_working_copy()
             .run()?;
 
         // Extract the log one more time, but this time use a template
@@ -148,6 +150,7 @@ impl Commander {
                 args,
             ]
             .concat())
+            .ignore_working_copy()
             .run()?
             .lines()
             .map(|line| parse_head(line).ok())

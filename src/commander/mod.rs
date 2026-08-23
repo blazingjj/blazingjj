@@ -115,6 +115,10 @@ pub struct Commander {
     /// command this commander runs, since it describes the output device
     /// rather than any single command.
     columns: Option<usize>,
+    /// Whether every command this commander runs leaves the working copy
+    /// alone, for a caller that must not record an operation whatever it
+    /// ends up asking.
+    ignore_working_copy: bool,
 
     // Used for testing
     pub jj_config_toml: Option<Vec<String>>,
@@ -132,6 +136,7 @@ impl Commander {
         Self {
             env: env.clone(),
             columns: None,
+            ignore_working_copy: false,
             jj_config_toml: None,
             force_no_color: false,
         }
@@ -145,6 +150,14 @@ impl Commander {
         if columns >= MIN_SETTABLE_WIDTH {
             self.columns = Some(columns);
         }
+    }
+
+    /// Leave the working copy alone in every command this commander runs,
+    /// so nothing it asks can record an operation. For a caller whose
+    /// whole read has to leave the repo where it found it, rather than
+    /// one command that happens not to need a snapshot.
+    pub fn ignore_working_copy(&mut self) {
+        self.ignore_working_copy = true;
     }
 
     /// Start building a single jj invocation with the given arguments.
@@ -167,7 +180,7 @@ impl Commander {
             args: args.into_iter().map(|s| s.as_ref().to_owned()).collect(),
             color: false,
             quiet: true,
-            ignore_working_copy: false,
+            ignore_working_copy: self.ignore_working_copy,
             stdin: None,
             env_var,
         }
@@ -225,8 +238,8 @@ pub struct JjCommand<'a> {
     color: bool,
     /// Whether to pass `--quiet`. On by default.
     quiet: bool,
-    /// Whether to pass `--ignore-working-copy`. Off by default, so a
-    /// command sees the files as they are now.
+    /// Whether to pass `--ignore-working-copy`. Off unless the commander
+    /// already asks for it, so a command sees the files as they are now.
     ignore_working_copy: bool,
     /// Data to feed the command on standard input, if any.
     stdin: Option<String>,
@@ -254,9 +267,9 @@ impl JjCommand<'_> {
     /// Pass `--ignore-working-copy`, so the command reads the repo as it
     /// stands without snapshotting the files first.
     ///
-    /// Off by default. Use it where a stale answer beats an operation of
-    /// our own: reads that are meant to leave the repo where the caller
-    /// found it.
+    /// Off unless the commander already asks for it. Use it where a stale
+    /// answer beats an operation of our own: reads that are meant to
+    /// leave the repo where the caller found it.
     pub fn ignore_working_copy(mut self) -> Self {
         self.ignore_working_copy = true;
         self
