@@ -76,6 +76,8 @@ pub struct BookmarksTab {
 
     config: JjConfig,
     pane_divider: PaneDivider,
+
+    stale: bool,
 }
 
 fn get_current_bookmark_index(
@@ -109,49 +111,25 @@ fn get_current_bookmark_index(
 }
 
 impl BookmarksTab {
+    /// A stale tab holding no bookmarks yet.
     #[instrument(level = "info", name = "Initializing bookmarks tab", parent = None, skip())]
-    pub fn new() -> Result<Self> {
-        let diff_format = get_env().jj_config.diff_format();
-
-        let show_all = false;
-
-        let bookmarks_output = new_commander().get_bookmarks(show_all);
-        let bookmark = bookmarks_output
-            .as_ref()
-            .ok()
-            .and_then(|bookmarks_output| bookmarks_output.first())
-            .map(|bookmarks_output| bookmarks_output.to_owned());
-
-        let bookmarks_list_state = ListState::default().with_selected(get_current_bookmark_index(
-            bookmark.as_ref(),
-            &bookmarks_output,
-        ));
-
-        let bookmark_output = bookmark.as_ref().and_then(|bookmark| match bookmark {
-            BookmarkLine::Parsed { bookmark, .. } => Some(
-                new_commander()
-                    .get_bookmark_show(bookmark, &diff_format, true)
-                    .map(|diff| tabs_to_spaces(&diff)),
-            ),
-            _ => None,
-        });
-
+    pub fn new() -> Self {
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (bookmark_name_popup_tx, bookmark_name_popup_rx) = std::sync::mpsc::channel();
 
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
 
-        Ok(Self {
-            bookmarks_output,
-            bookmark,
-            bookmarks_list_state,
+        Self {
+            bookmarks_output: Ok(Vec::new()),
+            bookmark: None,
+            bookmarks_list_state: ListState::default(),
             bookmarks_height: 0,
 
-            show_all,
+            show_all: false,
 
             bookmark_panel: DetailsPanel::new(),
-            bookmark_output,
+            bookmark_output: None,
 
             delete: None,
             forget: None,
@@ -167,11 +145,13 @@ impl BookmarksTab {
             bookmark_name_popup_tx,
             bookmark_name_popup_rx,
 
-            diff_format,
+            diff_format: get_env().jj_config.diff_format(),
 
             config,
             pane_divider,
-        })
+
+            stale: true,
+        }
     }
 
     pub fn get_current_bookmark_index(&self) -> Option<usize> {
@@ -180,6 +160,17 @@ impl BookmarksTab {
 
     pub fn refresh_bookmarks(&mut self) {
         self.bookmarks_output = new_commander().get_bookmarks(self.show_all);
+
+        // The selected bookmark may be gone, deleted from here or from
+        // anywhere else, so fall back to the first one.
+        if self.get_current_bookmark_index().is_none() {
+            self.bookmark = self
+                .bookmarks_output
+                .as_ref()
+                .ok()
+                .and_then(|bookmarks| bookmarks.first())
+                .map(|bookmark| bookmark.to_owned());
+        }
     }
 
     pub fn refresh_bookmark(&mut self) {
@@ -221,9 +212,17 @@ impl BookmarksTab {
 
 impl Tab for BookmarksTab {
     fn refresh(&mut self) -> Result<()> {
-        self.refresh_bookmarks();
-        self.refresh_bookmark();
+        if self.stale {
+            self.refresh_bookmarks();
+            self.refresh_bookmark();
+            self.stale = false;
+        }
+
         Ok(())
+    }
+
+    fn mark_stale(&mut self) {
+        self.stale = true;
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
@@ -278,15 +277,7 @@ impl Component for BookmarksTab {
                 DELETE_BRANCH_POPUP_ID => {
                     if let Some(delete) = self.delete.as_ref() {
                         match new_commander().delete_bookmark(&delete.name) {
-                            Ok(_) => {
-                                self.refresh_bookmarks();
-                                let bookmarks = Vec::new();
-                                let bookmarks =
-                                    self.bookmarks_output.as_ref().unwrap_or(&bookmarks);
-                                self.bookmark =
-                                    bookmarks.first().map(|bookmark| bookmark.to_owned());
-                                self.refresh_bookmark();
-                            }
+                            Ok(_) => return Ok(Some(AppAction::RefreshTab)),
                             Err(err) => {
                                 return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
                                     "Delete error",
@@ -299,15 +290,7 @@ impl Component for BookmarksTab {
                 FORGET_BRANCH_POPUP_ID => {
                     if let Some(forget) = self.forget.as_ref() {
                         match new_commander().forget_bookmark(&forget.name) {
-                            Ok(_) => {
-                                self.refresh_bookmarks();
-                                let bookmarks = Vec::new();
-                                let bookmarks =
-                                    self.bookmarks_output.as_ref().unwrap_or(&bookmarks);
-                                self.bookmark =
-                                    bookmarks.first().map(|bookmark| bookmark.to_owned());
-                                self.refresh_bookmark();
-                            }
+                            Ok(_) => return Ok(Some(AppAction::RefreshTab)),
                             Err(err) => {
                                 return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
                                     "Forget error",
@@ -591,8 +574,7 @@ impl Component for BookmarksTab {
                         && bookmark.present
                     {
                         new_commander().track_bookmark(bookmark)?;
-                        self.refresh_bookmarks();
-                        self.refresh_bookmark();
+                        return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
                     }
                 }
                 KeyCode::Char('T') => {
@@ -601,8 +583,7 @@ impl Component for BookmarksTab {
                         && bookmark.present
                     {
                         new_commander().untrack_bookmark(bookmark)?;
-                        self.refresh_bookmarks();
-                        self.refresh_bookmark();
+                        return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
                     }
                 }
                 KeyCode::Char('n') | KeyCode::Char('N') => {

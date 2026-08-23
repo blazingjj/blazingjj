@@ -106,33 +106,20 @@ fn get_head_index(head: &Head, log_output: &Result<LogOutput, CommandError>) -> 
 }
 
 impl<'a> LogPanel<'a> {
-    pub fn new() -> Result<Self> {
-        let log_revset = new_commander().env.default_revset.clone();
-        let log_output = new_commander().get_log(&log_revset);
-        let head = new_commander().get_current_head()?;
-
-        let log_list_state = ListState::default().with_selected(get_head_index(&head, &log_output));
-
+    /// A panel showing `head` selected in an empty log.
+    pub fn new(head: Head) -> Self {
         let mut keybinds = LogTabKeybinds::default();
         if let Some(keybinds_config) = new_commander().env.jj_config.keybinds() {
             keybinds.extend_from_config(keybinds_config);
         }
 
-        let log_output_text = match log_output.as_ref() {
-            Ok(log_output) => log_output
-                .graph
-                .into_text()
-                .unwrap_or(Text::from("Could not turn text into TUI text (coloring)")),
-            Err(_) => Text::default(),
-        };
-
-        Ok(Self {
-            log_output_text,
-            log_output,
-            log_list_state,
+        Self {
+            log_output_text: Text::default(),
+            log_output: Ok(LogOutput::default()),
+            log_list_state: ListState::default(),
             log_rect: Rect::ZERO,
 
-            log_revset,
+            log_revset: new_commander().env.default_revset.clone(),
 
             head,
             marked_heads: HashSet::new(),
@@ -140,7 +127,7 @@ impl<'a> LogPanel<'a> {
             panel_rect: Rect::ZERO,
 
             config: get_env().jj_config.clone(),
-        })
+        }
     }
 
     //

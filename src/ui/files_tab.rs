@@ -45,6 +45,8 @@ pub struct FilesTab {
 
     config: JjConfig,
     pane_divider: PaneDivider,
+
+    stale: bool,
 }
 
 fn get_current_file_index(
@@ -63,55 +65,32 @@ fn get_current_file_index(
 }
 
 impl FilesTab {
+    /// A stale tab at `current_head`, holding no files yet.
     #[instrument(level = "info", name = "Initializing files tab", parent = None, skip())]
-    pub fn new(head: &Head) -> Result<Self> {
-        let head = head.clone();
-        let is_current_head = head == new_commander().get_current_head()?;
-
-        let diff_format = get_env().jj_config.diff_format();
-
-        let files_output = new_commander().get_files(&head);
-        let conflicts_output = new_commander().get_conflicts(&head.commit_id)?;
-        let current_file = files_output
-            .as_ref()
-            .ok()
-            .and_then(|files_output| files_output.first())
-            .map(|file| file.to_owned());
-        let diff_output = current_file
-            .as_ref()
-            .map(|current_change| {
-                new_commander().get_file_diff(&head, current_change, &diff_format, true)
-            })
-            .map_or(Ok(None), |r| {
-                r.map(|diff| diff.map(|diff| tabs_to_spaces(&diff)))
-            });
-
-        let files_list_state = ListState::default().with_selected(get_current_file_index(
-            current_file.as_ref(),
-            files_output.as_ref(),
-        ));
-
+    pub fn new(current_head: &Head) -> Self {
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
 
-        Ok(Self {
-            head,
-            is_current_head,
+        Self {
+            head: current_head.clone(),
+            is_current_head: true,
 
-            files_output,
-            file: current_file,
-            files_list_state,
+            files_output: Ok(Vec::new()),
+            file: None,
+            files_list_state: ListState::default(),
             files_height: 0,
 
-            conflicts_output,
+            conflicts_output: Vec::new(),
 
-            diff_output,
-            diff_format,
+            diff_output: Ok(None),
+            diff_format: get_env().jj_config.diff_format(),
             diff_panel: DetailsPanel::new(),
 
             config,
             pane_divider,
-        })
+
+            stale: true,
+        }
     }
 
     pub fn set_head(&mut self, head: &Head) -> Result<()> {
@@ -137,6 +116,16 @@ impl FilesTab {
     pub fn refresh_files(&mut self) -> Result<()> {
         self.files_output = new_commander().get_files(&self.head);
         self.conflicts_output = new_commander().get_conflicts(&self.head.commit_id)?;
+
+        if self.file.is_none() {
+            self.file = self
+                .files_output
+                .as_ref()
+                .ok()
+                .and_then(|files_output| files_output.first())
+                .map(|file| file.to_owned());
+        }
+
         Ok(())
     }
 
@@ -154,6 +143,14 @@ impl FilesTab {
                 r.map(|diff| diff.map(|diff| tabs_to_spaces(&diff)))
             });
         self.diff_panel.scroll_to(0);
+        Ok(())
+    }
+
+    /// Move to the working copy commit, dropping the selection, without
+    /// reading the files there.
+    fn follow_current_head(&mut self) -> Result<()> {
+        self.head = new_commander().get_current_head()?;
+        self.file = None;
         Ok(())
     }
 
@@ -196,11 +193,19 @@ impl FilesTab {
 
 impl Tab for FilesTab {
     fn refresh(&mut self) -> Result<()> {
-        self.is_current_head = self.head == new_commander().get_current_head()?;
-        self.head = new_commander().get_head_latest(&self.head)?;
-        self.refresh_files()?;
-        self.refresh_diff()?;
+        if self.stale {
+            self.is_current_head = self.head == new_commander().get_current_head()?;
+            self.head = new_commander().get_head_latest(&self.head)?;
+            self.refresh_files()?;
+            self.refresh_diff()?;
+            self.stale = false;
+        }
+
         Ok(())
+    }
+
+    fn mark_stale(&mut self) {
+        self.stale = true;
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
@@ -393,7 +398,8 @@ impl Component for FilesTab {
                             )),
                         )));
                     }
-                    self.set_head(&new_commander().get_current_head()?)?;
+                    self.follow_current_head()?;
+                    return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
                 }
                 KeyCode::Char('r') => {
                     if let Err(err) = self.restore_file() {
@@ -401,7 +407,8 @@ impl Component for FilesTab {
                             Box::new(MessagePopup::new("Can't restore file", err.to_string())),
                         )));
                     }
-                    self.set_head(&new_commander().get_current_head()?)?;
+                    self.follow_current_head()?;
+                    return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
                 }
                 _ => return Ok(ComponentInputResult::NotHandled),
             };

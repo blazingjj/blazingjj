@@ -90,9 +90,9 @@ impl<'a> App<'a> {
 
         Ok(App {
             current_tab: TabId::Log,
-            log: LogTab::new(event_source.clone_event_sender())?,
-            files: FilesTab::new(&current_head)?,
-            bookmarks: BookmarksTab::new()?,
+            log: LogTab::new(event_source.clone_event_sender(), current_head.clone()),
+            files: FilesTab::new(&current_head),
+            bookmarks: BookmarksTab::new(),
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
@@ -108,7 +108,7 @@ impl<'a> App<'a> {
         self.get_tab(self.current_tab)
     }
 
-    pub fn set_next_tab_with_offset(&mut self, offset: i64) -> Result<()> {
+    pub fn set_next_tab_with_offset(&mut self, offset: i64) {
         let current_index = TabId::VALUES
             .iter()
             .position(|&t| t == self.current_tab)
@@ -116,7 +116,7 @@ impl<'a> App<'a> {
         let new_index = (current_index as i64 + TabId::VALUES.len() as i64 + offset) as usize
             % TabId::VALUES.len();
         let new_tab: TabId = TabId::VALUES[new_index];
-        self.set_tab(new_tab)
+        self.set_tab(new_tab);
     }
 
     fn open_help(&mut self) -> Result<()> {
@@ -131,11 +131,14 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    pub fn set_tab(&mut self, tab: TabId) -> Result<()> {
+    pub fn set_tab(&mut self, tab: TabId) {
         info!("Setting tab to {}", tab);
         self.current_tab = tab;
-        self.get_current_tab().refresh()?;
-        Ok(())
+    }
+
+    /// Read the current tab if it is stale.
+    pub fn refresh_current_tab(&mut self) -> Result<()> {
+        self.get_current_tab().refresh()
     }
 
     pub fn get_tab(&mut self, tab: TabId) -> &mut dyn Tab {
@@ -151,12 +154,12 @@ impl<'a> App<'a> {
     pub fn handle_action(&mut self, app_action: AppAction) -> Result<()> {
         match app_action {
             AppAction::ViewFiles(head) => {
-                self.set_tab(TabId::Files)?;
+                self.set_tab(TabId::Files);
                 self.files.set_head(&head)?;
             }
             AppAction::ViewLog(head) => {
                 self.log.set_head(head);
-                self.set_tab(TabId::Log)?;
+                self.set_tab(TabId::Log);
             }
             AppAction::ChangeHead(head) => {
                 self.files.set_head(&head)?;
@@ -177,7 +180,7 @@ impl<'a> App<'a> {
                 }
             }
             AppAction::RefreshTab => {
-                self.set_tab(self.current_tab)?;
+                self.get_current_tab().mark_stale();
             }
         }
 
@@ -318,7 +321,7 @@ impl<'a> App<'a> {
                 }
             };
         } else if event == event::Event::FocusGained {
-            self.get_current_tab().refresh()?;
+            self.get_current_tab().mark_stale();
         } else {
             match self.get_current_tab().input(event.clone())? {
                 ComponentInputResult::HandledAction(app_action) => {
@@ -351,11 +354,11 @@ impl<'a> App<'a> {
                                 self.get_current_tab().drop_caches();
                                 self.handle_action(AppAction::RefreshTab)?;
                             }
-                            GlobalEvent::NextTab => self.set_next_tab_with_offset(1)?,
-                            GlobalEvent::PrevTab => self.set_next_tab_with_offset(-1)?,
-                            GlobalEvent::LogTab => self.set_tab(TabId::Log)?,
-                            GlobalEvent::FilesTab => self.set_tab(TabId::Files)?,
-                            GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks)?,
+                            GlobalEvent::NextTab => self.set_next_tab_with_offset(1),
+                            GlobalEvent::PrevTab => self.set_next_tab_with_offset(-1),
+                            GlobalEvent::LogTab => self.set_tab(TabId::Log),
+                            GlobalEvent::FilesTab => self.set_tab(TabId::Files),
+                            GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks),
                             GlobalEvent::CommandPopup => {
                                 self.popup = Some(Box::new(CommandPopup::new()));
                             }
