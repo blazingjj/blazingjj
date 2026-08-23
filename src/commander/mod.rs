@@ -27,6 +27,7 @@ pub mod files;
 pub mod ids;
 pub mod jj;
 pub mod log;
+pub mod operation;
 
 use std::ffi::OsStr;
 use std::ffi::OsString;
