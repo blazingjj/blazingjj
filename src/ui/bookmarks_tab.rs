@@ -27,6 +27,7 @@ use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
+use crate::ui::Tab;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
@@ -234,7 +235,7 @@ impl BookmarksTab<'_> {
     }
 }
 
-impl Component for BookmarksTab<'_> {
+impl Tab for BookmarksTab<'_> {
     fn refresh(&mut self) -> Result<()> {
         self.refresh_bookmarks();
         self.refresh_bookmark();
@@ -281,7 +282,9 @@ impl Component for BookmarksTab<'_> {
             ("W".to_owned(), "toggle wrapping".to_owned()),
         ]
     }
+}
 
+impl Component for BookmarksTab<'_> {
     fn update(&mut self) -> Result<Option<AppAction>> {
         // Check for popup action
         if let Ok(res) = self.popup_rx.try_recv()

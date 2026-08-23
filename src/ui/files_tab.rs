@@ -21,6 +21,7 @@ use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
+use crate::ui::Tab;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
@@ -193,7 +194,7 @@ impl FilesTab {
     }
 }
 
-impl Component for FilesTab {
+impl Tab for FilesTab {
     fn refresh(&mut self) -> Result<()> {
         self.is_current_head = self.head == new_commander().get_current_head()?;
         self.head = new_commander().get_head_latest(&self.head)?;
@@ -238,7 +239,9 @@ impl Component for FilesTab {
             ("W".to_owned(), "toggle wrapping".to_owned()),
         ]
     }
+}
 
+impl Component for FilesTab {
     fn draw(
         &mut self,
         f: &mut ratatui::prelude::Frame<'_>,
