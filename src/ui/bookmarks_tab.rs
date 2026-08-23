@@ -5,11 +5,8 @@ use anyhow::Result;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
-use ratatui::crossterm::event::KeyModifiers;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
-use ratatui_textarea::CursorMove;
-use ratatui_textarea::TextArea;
 use tracing::instrument;
 use tui_confirm_dialog::ButtonLabel;
 use tui_confirm_dialog::ConfirmDialog;
@@ -27,24 +24,13 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
+use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::TextContent;
 use crate::ui::utils::PaneDivider;
-use crate::ui::utils::centered_rect_line_height;
 use crate::ui::utils::tabs_to_spaces;
-
-struct CreateBookmark<'a> {
-    textarea: TextArea<'a>,
-    error: Option<anyhow::Error>,
-}
-
-struct RenameBookmark<'a> {
-    textarea: TextArea<'a>,
-    name: String,
-    error: Option<anyhow::Error>,
-}
 
 struct DeleteBookmark {
     name: String,
@@ -60,7 +46,7 @@ const NEW_POPUP_ID: u16 = 3;
 const EDIT_POPUP_ID: u16 = 4;
 
 /// Bookmarks tab. Shows bookmarks in main panel and selected bookmark current change in details panel.
-pub struct BookmarksTab<'a> {
+pub struct BookmarksTab {
     bookmarks_output: Result<Vec<BookmarkLine>, CommandError>,
     bookmarks_list_state: ListState,
     bookmarks_height: u16,
@@ -72,8 +58,6 @@ pub struct BookmarksTab<'a> {
     bookmark_panel: DetailsPanel,
     bookmark_output: Option<Result<String, CommandError>>,
 
-    create: Option<CreateBookmark<'a>>,
-    rename: Option<RenameBookmark<'a>>,
     delete: Option<DeleteBookmark>,
     forget: Option<ForgetBookmark>,
 
@@ -84,6 +68,9 @@ pub struct BookmarksTab<'a> {
     popup: ConfirmDialogState,
     popup_tx: std::sync::mpsc::Sender<Listener>,
     popup_rx: std::sync::mpsc::Receiver<Listener>,
+
+    bookmark_name_popup_tx: std::sync::mpsc::Sender<String>,
+    bookmark_name_popup_rx: std::sync::mpsc::Receiver<String>,
 
     diff_format: DiffFormat,
 
@@ -121,7 +108,7 @@ fn get_current_bookmark_index(
     }
 }
 
-impl BookmarksTab<'_> {
+impl BookmarksTab {
     #[instrument(level = "info", name = "Initializing bookmarks tab", parent = None, skip())]
     pub fn new() -> Result<Self> {
         let diff_format = get_env().jj_config.diff_format();
@@ -150,6 +137,7 @@ impl BookmarksTab<'_> {
         });
 
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
+        let (bookmark_name_popup_tx, bookmark_name_popup_rx) = std::sync::mpsc::channel();
 
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
@@ -165,8 +153,6 @@ impl BookmarksTab<'_> {
             bookmark_panel: DetailsPanel::new(),
             bookmark_output,
 
-            create: None,
-            rename: None,
             delete: None,
             forget: None,
 
@@ -177,6 +163,9 @@ impl BookmarksTab<'_> {
             popup: ConfirmDialogState::default(),
             popup_tx,
             popup_rx,
+
+            bookmark_name_popup_tx,
+            bookmark_name_popup_rx,
 
             diff_format,
 
@@ -230,7 +219,7 @@ impl BookmarksTab<'_> {
     }
 }
 
-impl Tab for BookmarksTab<'_> {
+impl Tab for BookmarksTab {
     fn refresh(&mut self) -> Result<()> {
         self.refresh_bookmarks();
         self.refresh_bookmark();
@@ -279,7 +268,7 @@ impl Tab for BookmarksTab<'_> {
     }
 }
 
-impl Component for BookmarksTab<'_> {
+impl Component for BookmarksTab {
     fn update(&mut self) -> Result<Option<AppAction>> {
         // Check for popup action
         if let Ok(res) = self.popup_rx.try_recv()
@@ -353,6 +342,19 @@ impl Component for BookmarksTab<'_> {
                 }
                 _ => {}
             }
+        }
+
+        if let Ok(name) = self.bookmark_name_popup_rx.try_recv() {
+            self.refresh_bookmarks();
+            if let Some(bookmark) = self.bookmarks_output.as_ref().ok().and_then(|list| {
+                list.iter().find(|b| match b {
+                    BookmarkLine::Unparsable(_) => false,
+                    BookmarkLine::Parsed { bookmark, .. } => bookmark.name == name,
+                })
+            }) {
+                self.bookmark = Some(bookmark.clone());
+            }
+            self.refresh_bookmark();
         }
 
         Ok(None)
@@ -493,241 +495,10 @@ impl Component for BookmarksTab<'_> {
             f.render_stateful_widget(popup, area, &mut self.popup);
         }
 
-        // Draw create textarea
-        {
-            if let Some(create) = self.create.as_mut() {
-                let block = Block::bordered()
-                    .title(Span::styled(
-                        " Create bookmark ",
-                        Style::new().bold().cyan(),
-                    ))
-                    .title_alignment(Alignment::Center)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Green));
-                let error_lines = create
-                    .error
-                    .as_ref()
-                    .map(|error| error.to_string().into_text().unwrap().lines);
-                let error_height = if let Some(error_lines) = error_lines.as_ref() {
-                    error_lines.len() + 1
-                } else {
-                    0
-                };
-                let area = centered_rect_line_height(area, 30, 5 + error_height as u16);
-                f.render_widget(Clear, area);
-                f.render_widget(&block, area);
-
-                let popup_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Fill(1),
-                        Constraint::Length(error_height as u16),
-                        Constraint::Length(2),
-                    ])
-                    .split(block.inner(area));
-
-                f.render_widget(&create.textarea, popup_chunks[0]);
-
-                if let Some(error_lines) = error_lines {
-                    let help = Paragraph::new(error_lines).block(
-                        Block::default()
-                            .borders(Borders::TOP)
-                            .border_type(BorderType::Rounded)
-                            .border_style(Style::default().fg(Color::DarkGray)),
-                    );
-
-                    f.render_widget(help, popup_chunks[1]);
-                }
-
-                let help = Paragraph::new(vec!["Ctrl+s: save | Escape: cancel".into()])
-                    .fg(Color::DarkGray)
-                    .alignment(Alignment::Center)
-                    .block(
-                        Block::default()
-                            .borders(Borders::TOP)
-                            .border_type(BorderType::Rounded)
-                            .border_style(Style::default().fg(Color::DarkGray)),
-                    );
-
-                f.render_widget(help, popup_chunks[2]);
-            }
-        }
-
-        // Draw rename textarea
-        {
-            if let Some(rename) = self.rename.as_mut() {
-                let block = Block::bordered()
-                    .title(Span::styled(
-                        " Rename bookmark ",
-                        Style::new().bold().cyan(),
-                    ))
-                    .title_alignment(Alignment::Center)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Green));
-                let error_lines = rename
-                    .error
-                    .as_ref()
-                    .map(|error| error.to_string().into_text().unwrap().lines);
-                let error_height = if let Some(error_lines) = error_lines.as_ref() {
-                    error_lines.len() + 1
-                } else {
-                    0
-                };
-                let area = centered_rect_line_height(area, 30, 5 + error_height as u16);
-                f.render_widget(Clear, area);
-                f.render_widget(&block, area);
-
-                let popup_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Fill(1),
-                        Constraint::Length(error_height as u16),
-                        Constraint::Length(2),
-                    ])
-                    .split(block.inner(area));
-
-                f.render_widget(&rename.textarea, popup_chunks[0]);
-
-                if let Some(error_lines) = error_lines {
-                    let help = Paragraph::new(error_lines).block(
-                        Block::default()
-                            .borders(Borders::TOP)
-                            .border_type(BorderType::Rounded)
-                            .border_style(Style::default().fg(Color::DarkGray)),
-                    );
-
-                    f.render_widget(help, popup_chunks[1]);
-                }
-
-                let help = Paragraph::new(vec!["Ctrl+s: save | Escape: cancel".into()])
-                    .fg(Color::DarkGray)
-                    .alignment(Alignment::Center)
-                    .block(
-                        Block::default()
-                            .borders(Borders::TOP)
-                            .border_type(BorderType::Rounded)
-                            .border_style(Style::default().fg(Color::DarkGray)),
-                    );
-
-                f.render_widget(help, popup_chunks[2]);
-            }
-        }
-
         Ok(())
     }
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
-        if let Some(create) = self.create.as_mut() {
-            if let Event::Key(key) = event {
-                match key.code {
-                    _ if (key.code == KeyCode::Char('s')
-                        && key.modifiers.contains(KeyModifiers::CONTROL))
-                        || (key.code == KeyCode::Enter) =>
-                    {
-                        let name = create.textarea.lines().join("\n");
-
-                        if name.trim().is_empty() {
-                            create.error =
-                                Some(anyhow::Error::msg("Bookmark name cannot be empty"));
-                            return Ok(ComponentInputResult::Handled);
-                        }
-
-                        if let Err(err) = new_commander().create_bookmark(&name) {
-                            create.error = Some(anyhow::Error::new(err));
-                            return Ok(ComponentInputResult::Handled);
-                        }
-
-                        self.create = None;
-                        self.refresh_bookmarks();
-
-                        // Select new bookmark
-                        if let Some(bookmark) =
-                            self.bookmarks_output
-                                .as_ref()
-                                .ok()
-                                .and_then(|bookmarks_output| {
-                                    bookmarks_output.iter().find(|bookmark| match bookmark {
-                                        BookmarkLine::Unparsable(_) => false,
-                                        BookmarkLine::Parsed { bookmark, .. } => {
-                                            bookmark.name == name
-                                        }
-                                    })
-                                })
-                        {
-                            self.bookmark = Some(bookmark.clone());
-                        }
-
-                        self.refresh_bookmark();
-
-                        return Ok(ComponentInputResult::Handled);
-                    }
-                    KeyCode::Esc => {
-                        self.create = None;
-                        return Ok(ComponentInputResult::Handled);
-                    }
-                    _ => {}
-                }
-            }
-            create.textarea.input(event);
-            return Ok(ComponentInputResult::Handled);
-        }
-
-        if let Some(rename) = self.rename.as_mut() {
-            if let Event::Key(key) = event {
-                match key.code {
-                    _ if (key.code == KeyCode::Char('s')
-                        && key.modifiers.contains(KeyModifiers::CONTROL))
-                        || (key.code == KeyCode::Enter) =>
-                    {
-                        let new = rename.textarea.lines().join("\n");
-
-                        if new.trim().is_empty() {
-                            rename.error =
-                                Some(anyhow::Error::msg("Bookmark name cannot be empty"));
-                            return Ok(ComponentInputResult::Handled);
-                        }
-
-                        let old = rename.name.clone();
-
-                        if let Err(err) = new_commander().rename_bookmark(&old, &new) {
-                            rename.error = Some(anyhow::Error::new(err));
-                            return Ok(ComponentInputResult::Handled);
-                        }
-                        self.rename = None;
-                        self.refresh_bookmarks();
-
-                        // Select new bookmark
-                        if let Some(bookmark) =
-                            self.bookmarks_output
-                                .as_ref()
-                                .ok()
-                                .and_then(|bookmarks_output| {
-                                    bookmarks_output.iter().find(|bookmark| match bookmark {
-                                        BookmarkLine::Unparsable(_) => false,
-                                        BookmarkLine::Parsed { bookmark, .. } => {
-                                            bookmark.name == new
-                                        }
-                                    })
-                                })
-                        {
-                            self.bookmark = Some(bookmark.clone());
-                        }
-
-                        self.refresh_bookmark();
-
-                        return Ok(ComponentInputResult::Handled);
-                    }
-                    KeyCode::Esc => {
-                        self.rename = None;
-                        return Ok(ComponentInputResult::Handled);
-                    }
-                    _ => {}
-                }
-            }
-            rename.textarea.input(event);
-            return Ok(ComponentInputResult::Handled);
-        }
-
         if let Event::Key(key) = event {
             if key.kind != KeyEventKind::Press {
                 return Ok(ComponentInputResult::Handled);
@@ -756,23 +527,21 @@ impl Component for BookmarksTab<'_> {
                     self.refresh_bookmarks();
                 }
                 KeyCode::Char('c') => {
-                    let textarea = TextArea::default();
-                    self.create = Some(CreateBookmark {
-                        textarea,
-                        error: None,
-                    });
-                    return Ok(ComponentInputResult::Handled);
+                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                        Box::new(BookmarkNamePopup::new_create(
+                            self.bookmark_name_popup_tx.clone(),
+                        )),
+                    )));
                 }
                 KeyCode::Char('r') => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
-                        let mut textarea = TextArea::new(vec![bookmark.name.clone()]);
-                        textarea.move_cursor(CursorMove::End);
-                        self.rename = Some(RenameBookmark {
-                            textarea,
-                            name: bookmark.name.clone(),
-                            error: None,
-                        });
-                        return Ok(ComponentInputResult::Handled);
+                        let old_name = bookmark.name.clone();
+                        return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                            Box::new(BookmarkNamePopup::new_rename(
+                                old_name,
+                                self.bookmark_name_popup_tx.clone(),
+                            )),
+                        )));
                     }
                 }
                 KeyCode::Char('d') => {
