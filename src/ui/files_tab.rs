@@ -3,7 +3,6 @@ use std::vec;
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
-use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -17,6 +16,8 @@ use crate::commander::new_commander;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::keybinds::FilesTabEvent;
+use crate::keybinds::FilesTabKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -44,6 +45,7 @@ pub struct FilesTab {
     diff_format: DiffFormat,
 
     config: JjConfig,
+    keybinds: FilesTabKeybinds,
     pane_divider: PaneDivider,
 
     stale: bool,
@@ -70,6 +72,7 @@ impl FilesTab {
     pub fn new(current_head: &Head) -> Self {
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
+        let keybinds = FilesTabKeybinds::default();
 
         Self {
             head: current_head.clone(),
@@ -87,6 +90,7 @@ impl FilesTab {
             diff_panel: DetailsPanel::new(),
 
             config,
+            keybinds,
             pane_divider,
 
             stale: true,
@@ -223,10 +227,7 @@ impl Tab for FilesTab {
     }
 
     fn make_main_panel_help(&self) -> Vec<(String, String)> {
-        vec![
-            ("x".to_owned(), "untrack file".to_owned()),
-            ("r".to_owned(), "restore file".to_owned()),
-        ]
+        self.keybinds.make_help()
     }
 
     fn make_details_panel_help(&self) -> Vec<(String, String)> {
@@ -383,12 +384,12 @@ impl Component for FilesTab {
                 return Ok(ComponentInputResult::Handled);
             }
 
-            match key.code {
-                KeyCode::Char('w') => {
+            match self.keybinds.match_event(key) {
+                FilesTabEvent::ToggleDiffFormat => {
                     self.diff_format = self.diff_format.get_next(self.config.diff_tool());
                     self.refresh_diff()?;
                 }
-                KeyCode::Char('x') => {
+                FilesTabEvent::Untrack => {
                     // this works even for deleted files because jj doesn't return error in that case
                     if self.untrack_file().is_err() {
                         return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
@@ -401,7 +402,7 @@ impl Component for FilesTab {
                     self.follow_current_head()?;
                     return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
                 }
-                KeyCode::Char('r') => {
+                FilesTabEvent::Restore => {
                     if let Err(err) = self.restore_file() {
                         return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
                             Box::new(MessagePopup::new("Can't restore file", err.to_string())),
@@ -410,7 +411,7 @@ impl Component for FilesTab {
                     self.follow_current_head()?;
                     return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
                 }
-                _ => return Ok(ComponentInputResult::NotHandled),
+                FilesTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
             };
         }
 
