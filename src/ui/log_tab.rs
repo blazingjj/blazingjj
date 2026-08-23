@@ -61,6 +61,12 @@ const EDIT_POPUP_ID: u16 = 2;
 const ABANDON_POPUP_ID: u16 = 3;
 const SQUASH_POPUP_ID: u16 = 4;
 
+/// How long the details panel hides that 'jj show' is running: it keeps
+/// showing the change it already has and, if it has none, stays empty
+/// until the request it waits for has taken this long. Each request
+/// gets its own grace, so moving on keeps the panel quiet.
+const LOADING_GRACE: Duration = Duration::from_secs(1);
+
 /// Log tab. Shows `jj log` in main panel and shows selected change details of in details panel.
 pub struct LogTab<'a> {
     /// Channel for app events
@@ -77,6 +83,10 @@ pub struct LogTab<'a> {
 
     /// The selected change content key in the cache
     head_key: CommitShowKey,
+
+    /// The content key the details panel currently renders. This lags
+    /// behind `head_key` while we wait for 'jj show'
+    shown_key: Option<CommitShowKey>,
 
     /// Cached change content
     commit_show_cache: CommitShowCache,
@@ -184,6 +194,7 @@ impl<'a> LogTab<'a> {
             head,
             head_panel: DetailsPanel::new(),
             head_key,
+            shown_key: None,
 
             commit_show_cache,
             pending_jj_show: None,
@@ -240,17 +251,24 @@ impl<'a> LogTab<'a> {
 
         // TODO use shared function to build key, so width can be cleared if not needed
         let inner_width = self.head_panel.columns() as usize;
-        let key = CommitShowKey::new(self.head.clone(), self.diff_format.clone(), inner_width);
-
-        let content_changed = self.head_key != key;
-
-        // Only update if content actually changed to prevent scroll jumping
         // The next draw requests `jj show` for the new key if it is not
-        // already cached.
-        if content_changed {
-            self.head_key = key;
-            self.head_panel.scroll_to(0);
+        // already cached, and moves the panel over once it has content.
+        self.head_key =
+            CommitShowKey::new(self.head.clone(), self.diff_format.clone(), inner_width);
+    }
+
+    /// The content the details panel is to render. This is the selected
+    /// change as soon as the cache can serve it, and the change the panel
+    /// already shows while we briefly wait for 'jj show'.
+    fn key_to_render(&self) -> Option<CommitShowKey> {
+        if self.commit_show_cache.get(&self.head_key).is_some() {
+            return Some(self.head_key.clone());
         }
+        let pending = self.pending_jj_show.as_ref()?;
+        if pending.timer.elapsed() < LOADING_GRACE {
+            return self.shown_key.clone();
+        }
+        None
     }
 
     //
@@ -846,14 +864,22 @@ impl Component for LogTab<'_> {
         if !self.commit_show_cache.has_exact_match(&self.head_key) {
             self.request_jj_show(self.head_key.clone());
         }
-        if let Some(content) = self.commit_show_cache.get(&self.head_key) {
+        if let Some(key) = self.key_to_render()
+            && let Some(content) = self.commit_show_cache.get(&key)
+        {
+            // Read a change from its top, but stay put while it is only
+            // being rewritten under us
+            if self.shown_key.as_ref().map(|shown| &shown.id.change_id) != Some(&key.id.change_id) {
+                self.head_panel.scroll_to(0);
+            }
             self.head_panel
                 .render_context::<LargeStringContent>(content.value())
-                .title(format!(" Details for {} ", self.head.change_id))
-                .draw(f, chunks[1])
+                .title(format!(" Details for {} ", key.id.change_id))
+                .draw(f, chunks[1]);
+            self.shown_key = Some(key);
         } else if let Some(pjj) = &self.pending_jj_show {
             let duration = pjj.timer.elapsed();
-            let message = if duration < Duration::from_secs(1) {
+            let message = if duration < LOADING_GRACE {
                 "".to_string()
             } else {
                 let mut sec = duration.as_secs();
