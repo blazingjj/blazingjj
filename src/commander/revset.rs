@@ -52,6 +52,11 @@ impl Revset {
         Self::union(revsets).unwrap_or_else(|| fallback.into())
     }
 
+    /// Whether this names more than one revision.
+    pub fn is_union(&self) -> bool {
+        self.0.contains(" | ")
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -101,6 +106,14 @@ mod tests {
             Revset::union(&ids),
             Some(Revset::expression("abc | def | ghi"))
         );
+    }
+
+    #[test]
+    fn is_union_only_for_several_revsets() {
+        let one = [CommitId("abc".to_owned())];
+        let two = [CommitId("abc".to_owned()), CommitId("def".to_owned())];
+        assert!(!Revset::union(&one).unwrap().is_union());
+        assert!(Revset::union(&two).unwrap().is_union());
     }
 
     #[test]

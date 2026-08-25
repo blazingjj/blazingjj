@@ -628,11 +628,7 @@ pub fn describe(head: &Head) -> Result<AppAction> {
 /// Asking to rebase `sources`, or the working copy commit when none are
 /// marked, onto `destination`.
 pub fn rebase(sources: &[CommitId], destination: &Head) -> Result<AppAction> {
-    let sources = if sources.is_empty() {
-        vec![new_commander().get_current_head()?.commit_id]
-    } else {
-        sources.to_vec()
-    };
+    let sources = Revset::union_or(sources, &new_commander().get_current_head()?.commit_id);
 
     Ok(AppAction::SetPopup(Box::new(RebasePopup::new(
         sources,

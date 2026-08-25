@@ -41,7 +41,6 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidget;
 
 use crate::app::command::Command;
-use crate::commander::ids::CommitId;
 use crate::commander::jj::RebaseSource;
 use crate::commander::jj::RebaseTarget;
 use crate::commander::log::Head;
@@ -63,7 +62,7 @@ pub struct RebasePopup {
     pub keybinds: Keybinds,
     popup_keybinds: PopupKeybinds,
 
-    pub source_revs: Vec<CommitId>,
+    pub source_revs: Revset,
     pub target_rev: Head,
 
     pub source_mode: CutOption,
@@ -71,7 +70,7 @@ pub struct RebasePopup {
 }
 
 impl RebasePopup {
-    pub fn new(source_revs: Vec<CommitId>, target_rev: Head) -> Self {
+    pub fn new(source_revs: Revset, target_rev: Head) -> Self {
         Self {
             keybinds: Keybinds::new(),
             popup_keybinds: PopupKeybinds::dialog(),
@@ -82,11 +81,10 @@ impl RebasePopup {
         }
     }
 
-    /// The rebase the popup is currently configured to ask for, or [None]
-    /// when it has no source to move.
-    fn command(&self) -> Option<Command> {
-        Some(Command::Rebase {
-            source: Revset::union(&self.source_revs)?,
+    /// The rebase the popup is currently configured to ask for.
+    fn command(&self) -> Command {
+        Command::Rebase {
+            source: self.source_revs.clone(),
             source_mode: match self.source_mode {
                 CutOption::IncludeDescendants => RebaseSource::Descendants,
                 CutOption::IncludeBranch => RebaseSource::Branch,
@@ -98,7 +96,7 @@ impl RebasePopup {
                 PasteOption::InsertAfter => RebaseTarget::After,
                 PasteOption::InsertBefore => RebaseTarget::Before,
             },
-        })
+        }
     }
 }
 
@@ -144,12 +142,11 @@ impl Component for RebasePopup {
             CutOption::IncludeBranch => 1,
             CutOption::SingleRevision => 2,
         };
-        let src_label = match self.source_revs.as_slice() {
-            [only] => {
-                let prefix: String = only.as_str().chars().take(8).collect();
-                format!("Source {prefix}")
-            }
-            many => format!("Source: {} tagged changes", many.len()),
+        let src_label = if self.source_revs.is_union() {
+            "Source: the tagged changes".to_owned()
+        } else {
+            let prefix: String = self.source_revs.as_str().chars().take(8).collect();
+            format!("Source {prefix}")
         };
         frame.render_widget(Paragraph::new(Span::raw(src_label)), chunks[0]);
         frame.render_stateful_widget(RadioButton::new(src_options), chunks[1], &mut src_select);
@@ -192,10 +189,8 @@ impl Component for RebasePopup {
 
         match self.popup_keybinds.match_event(key) {
             PopupEvent::Accept => {
-                let mut actions = vec![AppAction::ClosePopup];
-                actions.extend(self.command().map(AppAction::Run));
                 return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                    actions,
+                    vec![AppAction::ClosePopup, AppAction::Run(self.command())],
                 )));
             }
             PopupEvent::Cancel => {
