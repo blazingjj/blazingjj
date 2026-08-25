@@ -88,10 +88,8 @@ impl Component for DescribePopup<'_> {
         {
             match (key.code, key.modifiers) {
                 (KeyCode::Char('s'), m) if m.contains(KeyModifiers::CONTROL) => {
-                    new_commander().run_describe(
-                        self.head.commit_id.as_str(),
-                        &self.textarea.lines().join("\n"),
-                    )?;
+                    new_commander()
+                        .run_describe(&self.head.commit_id, &self.textarea.lines().join("\n"))?;
                     let latest = new_commander().get_head_latest(&self.head)?;
                     return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
                         vec![AppAction::PopupDone, AppAction::ViewLog(latest)],

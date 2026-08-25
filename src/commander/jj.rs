@@ -35,10 +35,14 @@ impl Commander {
             .context("Failed executing jj duplicate")
     }
 
-    /// Edit change. Maps to `jj edit <commit>`
-    #[instrument(level = "trace", skip(self))]
-    pub fn run_edit(&self, revision: &str, ignore_immutable: bool) -> Result<()> {
-        let mut args = vec!["edit", revision];
+    /// Edit change. Maps to `jj edit <revset>`.
+    pub fn run_edit(&self, revset: impl Into<Revset>, ignore_immutable: bool) -> Result<()> {
+        self.run_edit_inner(revset.into().as_str(), ignore_immutable)
+    }
+
+    #[instrument(level = "trace", name = "run_edit", skip(self))]
+    fn run_edit_inner(&self, revset: &str, ignore_immutable: bool) -> Result<()> {
+        let mut args = vec!["edit", revset];
         if ignore_immutable {
             args.push("--ignore-immutable");
         }
@@ -58,13 +62,17 @@ impl Commander {
             .context("Failed executing jj abandon")
     }
 
-    /// Describe change. Maps to `jj describe <revision> --stdin`
+    /// Describe change. Maps to `jj describe <revset> --stdin`
     ///
     /// The message is passed on stdin rather than via `-m`, since jj would
     /// otherwise mistake a message starting with a dash for a flag.
-    #[instrument(level = "trace", skip(self))]
-    pub fn run_describe(&self, revision: &str, message: &str) -> Result<()> {
-        self.jj(["describe", revision, "--stdin"])
+    pub fn run_describe(&self, revset: impl Into<Revset>, message: &str) -> Result<()> {
+        self.run_describe_inner(revset.into().as_str(), message)
+    }
+
+    #[instrument(level = "trace", name = "run_describe", skip(self))]
+    fn run_describe_inner(&self, revset: &str, message: &str) -> Result<()> {
+        self.jj(["describe", revset, "--stdin"])
             .stdin(message)
             .run_void()
             .context("Failed executing jj describe")
@@ -112,10 +120,14 @@ impl Commander {
             .context("Failed executing jj squash")
     }
 
-    /// Absorb a change's diff into its mutable ancestors. Maps to `jj absorb --from <revision>`
-    #[instrument(level = "trace", skip(self))]
-    pub fn run_absorb(&self, revision: &str) -> Result<()> {
-        self.jj(["absorb", "--from", revision])
+    /// Absorb a change's diff into its mutable ancestors. Maps to `jj absorb --from <revset>`.
+    pub fn run_absorb(&self, revset: impl Into<Revset>) -> Result<()> {
+        self.run_absorb_inner(revset.into().as_str())
+    }
+
+    #[instrument(level = "trace", name = "run_absorb", skip(self))]
+    fn run_absorb_inner(&self, revset: &str) -> Result<()> {
+        self.jj(["absorb", "--from", revset])
             .run_void()
             .context("Failed executing jj absorb")
     }
@@ -259,9 +271,7 @@ mod tests {
         let head = test_repo.commander.get_current_head()?;
         test_repo.commander.run_new(&head.commit_id)?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
-        test_repo
-            .commander
-            .run_edit(head.commit_id.as_str(), false)?;
+        test_repo.commander.run_edit(&head.commit_id, false)?;
         assert_eq!(head, test_repo.commander.get_current_head()?);
 
         Ok(())
@@ -283,9 +293,7 @@ mod tests {
         let test_repo = TestRepo::new()?;
 
         let head = test_repo.commander.get_current_head()?;
-        test_repo
-            .commander
-            .run_describe(head.commit_id.as_str(), "AAA")?;
+        test_repo.commander.run_describe(&head.commit_id, "AAA")?;
 
         let head = test_repo.commander.get_current_head()?.commit_id;
         assert_eq!(test_repo.commander.get_commit_description(&head)?, "AAA");
@@ -299,9 +307,7 @@ mod tests {
 
         // A message starting with a dash must not be mistaken for a flag.
         let head = test_repo.commander.get_current_head()?;
-        test_repo
-            .commander
-            .run_describe(head.commit_id.as_str(), "-AAA")?;
+        test_repo.commander.run_describe(&head.commit_id, "-AAA")?;
 
         let head = test_repo.commander.get_current_head()?.commit_id;
         assert_eq!(test_repo.commander.get_commit_description(&head)?, "-AAA");
