@@ -86,8 +86,6 @@ impl RebasePopup {
 
     /// Run the command that the popup is currently configured to do
     fn run_command(&self) -> Result<()> {
-        let src_rev = self.source_rev.commit_id.as_str();
-        let tgt_rev = self.target_rev.commit_id.as_str();
         let src_mode = match self.source_mode {
             CutOption::IncludeDescendants => "-s",
             CutOption::IncludeBranch => "-b",
@@ -98,7 +96,12 @@ impl RebasePopup {
             PasteOption::InsertAfter => "-A",
             PasteOption::InsertBefore => "-B",
         };
-        new_commander().run_rebase(src_mode, src_rev, tgt_mode, tgt_rev)?;
+        new_commander().run_rebase(
+            src_mode,
+            &self.source_rev.commit_id,
+            tgt_mode,
+            &self.target_rev.commit_id,
+        )?;
         Ok(())
     }
 }

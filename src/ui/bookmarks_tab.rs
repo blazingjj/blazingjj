@@ -16,6 +16,7 @@ use tui_confirm_dialog::Listener;
 use crate::commander::CommandError;
 use crate::commander::bookmarks::BookmarkLine;
 use crate::commander::new_commander;
+use crate::commander::revset::Revset;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::env::get_env;
@@ -299,7 +300,7 @@ impl Component for BookmarksTab {
                 }
                 NEW_POPUP_ID => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
-                        new_commander().run_new([bookmark.to_string().as_str()])?;
+                        new_commander().run_new(Revset::expression(bookmark.to_string()))?;
                         let head = new_commander().get_current_head()?;
                         if self.describe_after_new {
                             self.describe_after_new = false;
