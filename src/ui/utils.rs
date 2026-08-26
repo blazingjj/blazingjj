@@ -1,4 +1,7 @@
 mod large_string;
+
+use std::time::Duration;
+
 pub use large_string::LargeString;
 mod timer;
 use ratatui::crossterm::event::MouseButton;
@@ -174,6 +177,25 @@ pub fn centered_rect_fixed(area: Rect, width: u16, height: u16) -> Rect {
     }
 }
 
+/// What a panel shows instead of its content while `command` is still
+/// running, given how long the wait has been going on. A wait shorter
+/// than `grace` stays blank, since a message that flashes by is only
+/// noise.
+pub fn waiting_message(waited: Option<Duration>, command: &str, grace: Duration) -> String {
+    let Some(waited) = waited else {
+        return String::new();
+    };
+    if waited < grace {
+        return String::new();
+    }
+    let seconds = waited.as_secs();
+    format!(
+        "Waiting for '{command}' .. {:02}:{:02}",
+        seconds / 60,
+        seconds % 60
+    )
+}
+
 /// replaces tabs in a string by spaces
 ///
 /// ratatui doesn't work well displaying tabs, so any
@@ -235,4 +257,33 @@ pub fn tabs_to_spaces(line: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const GRACE: Duration = Duration::from_secs(1);
+
+    #[test]
+    fn nothing_is_waited_for() {
+        assert_eq!(waiting_message(None, "jj show", GRACE), "");
+    }
+
+    #[test]
+    fn a_short_wait_stays_blank() {
+        assert_eq!(waiting_message(Some(Duration::ZERO), "jj show", GRACE), "");
+    }
+
+    #[test]
+    fn a_long_wait_names_the_command_and_its_runtime() {
+        assert_eq!(
+            waiting_message(Some(Duration::from_secs(1)), "jj show", GRACE),
+            "Waiting for 'jj show' .. 00:01"
+        );
+        assert_eq!(
+            waiting_message(Some(Duration::from_secs(62)), "jj diff", GRACE),
+            "Waiting for 'jj diff' .. 01:02"
+        );
+    }
 }

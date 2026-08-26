@@ -57,6 +57,7 @@ use crate::ui::utils::PaneDivider;
 use crate::ui::utils::Timer;
 use crate::ui::utils::centered_rect_line_height;
 use crate::ui::utils::tabs_to_spaces;
+use crate::ui::utils::waiting_message;
 
 const NEW_POPUP_ID: u16 = 1;
 const EDIT_POPUP_ID: u16 = 2;
@@ -913,18 +914,13 @@ impl Component for LogTab<'_> {
                 .title(format!(" Details for {} ", key.id.change_id))
                 .draw(f, chunks[1]);
             self.shown_key = Some(key);
-        } else if let Some(pjj) = &self.pending_jj_show {
-            let duration = pjj.timer.elapsed();
-            let message = if duration < LOADING_GRACE {
-                "".to_string()
-            } else {
-                let mut sec = duration.as_secs();
-                let min = sec / 60;
-                sec %= 60;
-                format!("Waiting for 'jj show' .. {:02}:{:02}", min, sec)
-            };
+        } else if let Some(pjs) = &self.pending_jj_show {
             self.head_panel
-                .render_context::<TextContent>(message)
+                .render_context::<TextContent>(waiting_message(
+                    Some(pjs.timer.elapsed()),
+                    "jj show",
+                    LOADING_GRACE,
+                ))
                 .title(format!(" Details for {} ", self.head.change_id))
                 .draw(f, chunks[1])
         }
