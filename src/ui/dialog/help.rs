@@ -1,5 +1,6 @@
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::MouseEventKind;
 use ratatui::crossterm::event::{self};
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -67,6 +68,11 @@ impl HelpPopup {
 
         Table::new(rows, widths).block(Block::new().title(Span::from(title).bold()))
     }
+
+    fn do_scroll(&mut self, delta: isize) {
+        let max = self.max_scroll as isize;
+        self.scroll = (self.scroll as isize + delta).clamp(0, max) as usize;
+    }
 }
 
 impl Component for HelpPopup {
@@ -124,28 +130,51 @@ impl Component for HelpPopup {
     }
 
     fn input(&mut self, event: Event) -> anyhow::Result<ComponentInputResult> {
-        if let Event::Key(key) = event
-            && key.kind == event::KeyEventKind::Press
-        {
-            match key.code {
-                KeyCode::Char('j') => self.scroll = (self.scroll + 1).min(self.max_scroll),
-                KeyCode::Char('k') => self.scroll = self.scroll.saturating_sub(1),
-                _ => return Ok(ComponentInputResult::NotHandled),
+        match event {
+            Event::Key(key) if key.kind == event::KeyEventKind::Press => {
+                let delta = match key.code {
+                    KeyCode::Char('j') => 1,
+                    KeyCode::Char('k') => -1,
+                    _ => return Ok(ComponentInputResult::NotHandled),
+                };
+
+                self.do_scroll(delta);
+                Ok(ComponentInputResult::Handled)
             }
-
-            return Ok(ComponentInputResult::Handled);
+            Event::Mouse(mouse) => match mouse.kind {
+                MouseEventKind::ScrollDown => {
+                    self.do_scroll(3);
+                    Ok(ComponentInputResult::Handled)
+                }
+                MouseEventKind::ScrollUp => {
+                    self.do_scroll(-3);
+                    Ok(ComponentInputResult::Handled)
+                }
+                _ => Ok(ComponentInputResult::NotHandled),
+            },
+            _ => Ok(ComponentInputResult::NotHandled),
         }
-
-        Ok(ComponentInputResult::NotHandled)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use ratatui::crossterm::event::KeyModifiers;
+    use ratatui::crossterm::event::MouseEvent;
+
     use super::*;
 
     fn area(height: u16) -> Rect {
         Rect::new(0, 0, 40, height)
+    }
+
+    fn wheel(kind: MouseEventKind) -> Event {
+        Event::Mouse(MouseEvent {
+            kind,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::empty(),
+        })
     }
 
     #[test]
@@ -178,6 +207,22 @@ mod tests {
                 .input(Event::Key(KeyCode::Char('k').into()))
                 .expect("scrolling up should be handled");
         }
+        assert_eq!(popup.scroll, 0);
+    }
+
+    #[test]
+    fn test_the_wheel_scrolls_more_than_a_row_at_a_time() {
+        let mut popup = HelpPopup::new(vec![], vec![], vec![]);
+        popup.max_scroll = 10;
+
+        popup
+            .input(wheel(MouseEventKind::ScrollDown))
+            .expect("scrolling down should be handled");
+        assert_eq!(popup.scroll, 3);
+
+        popup
+            .input(wheel(MouseEventKind::ScrollUp))
+            .expect("scrolling up should be handled");
         assert_eq!(popup.scroll, 0);
     }
 }
