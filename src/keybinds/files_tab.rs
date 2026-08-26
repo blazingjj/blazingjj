@@ -14,7 +14,6 @@ pub struct FilesTabKeybinds {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum FilesTabEvent {
-    ToggleDiffFormat,
     Untrack,
     Restore,
 
@@ -26,7 +25,6 @@ impl Default for FilesTabKeybinds {
         let mut keys = KeybindsStore::<FilesTabEvent>::default();
         set_keybinds!(
             keys,
-            FilesTabEvent::ToggleDiffFormat => "w",
             FilesTabEvent::Untrack => "x",
             FilesTabEvent::Restore => "r",
         );
