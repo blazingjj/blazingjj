@@ -9,7 +9,6 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
-use std::time::Instant;
 
 use ratatui::crossterm;
 use tracing::error;
@@ -32,10 +31,6 @@ pub struct EventSource {
     // Channel for app events
     app_event_sender: mpsc::Sender<AppEvent>,
     app_event_receiver: mpsc::Receiver<AppEvent>,
-
-    // Consumer data
-    last_event_recv: Instant,
-    last_event_none: bool,
 }
 
 impl EventSource {
@@ -45,8 +40,6 @@ impl EventSource {
             running,
             app_event_sender: tx,
             app_event_receiver: rx,
-            last_event_recv: Instant::now(),
-            last_event_none: false,
         }
     }
 
@@ -93,32 +86,18 @@ impl EventSource {
     }
 
     /// Receive an AppEvent if one is waiting.
-    /// If no event is waiting, it will return None which represents
-    /// an idle event. There will be at least IDLE_TIMEOUT between two
-    /// consecutive idle events. Ordinary events are returned immediately.
-    pub fn try_recv(&mut self, timeout: Duration) -> Option<AppEvent> {
-        // Get event
-        // NOTE: This loop seems redundant, but a later patch will
-        // add code related to file system notifications.
-        #[allow(clippy::never_loop)]
-        let result = loop {
-            // Wait for event. While waiting the watcher thread is allowed to
-            // trigger a redraw.
-            let result = self.app_event_receiver.recv_timeout(timeout);
-            break result;
-        };
-
-        // Check for app event
-        if let Ok(event) = result {
-            trace!("try_recv - received app event");
-            self.last_event_recv = Instant::now();
-            self.last_event_none = false;
-            return Some(event);
+    /// If no event arrives within the timeout, it will return None which
+    /// represents an idle event, triggering a redraw in the main loop.
+    pub fn try_recv(&self, timeout: Duration) -> Option<AppEvent> {
+        match self.app_event_receiver.recv_timeout(timeout) {
+            Ok(event) => {
+                trace!("try_recv - received app event");
+                Some(event)
+            }
+            Err(_) => {
+                trace!("try_recv - no event");
+                None
+            }
         }
-
-        // No event found. This will trigger a redraw in the main loop
-        self.last_event_none = true;
-        trace!("try_recv - no event");
-        None
     }
 }
