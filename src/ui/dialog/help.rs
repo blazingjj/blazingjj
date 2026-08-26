@@ -38,6 +38,17 @@ fn description_width(items: &[(String, String)]) -> u16 {
         .unwrap_or(0) as u16
 }
 
+/// How much wider and taller than its contents a `block` is, in the `area` it
+/// has to draw itself in. Its border is not all of it, it also pads.
+fn chrome(block: &Block, area: Rect) -> [u16; 2] {
+    let inner = block.inner(area);
+
+    [
+        area.width.saturating_sub(inner.width),
+        area.height.saturating_sub(inner.height),
+    ]
+}
+
 /// Where a part of the popup's contents that is `height` rows tall and starts
 /// at row `top` of them lands in `viewport`, and how many of its rows `scroll`
 /// has taken off the top. `None` once it has scrolled out of view entirely.
@@ -131,17 +142,20 @@ impl Component for HelpPopup {
             + COLUMN_SPACING
             + description_width(&self.details_items).max(description_width(&self.global_items));
 
-        // The two halves and the separator between them, plus the block border
-        let width = (left_width + SEPARATOR_WIDTH + right_width + 2).min(area.width);
         // Each table takes a line for its title, the right half one for its rule
         let left_height = self.main_items.len() as u16 + 1;
         let right_height = self.details_items.len() as u16 + self.global_items.len() as u16 + 3;
-        let height = (left_height.max(right_height) + 2).min(area.height);
+
+        let block = create_popup_block("Help");
+        let [extra_width, extra_height] = chrome(&block, area);
+        // The two halves and the separator between them
+        let contents_width = left_width + SEPARATOR_WIDTH + right_width;
+        let width = (contents_width + extra_width).min(area.width);
+        let height = (left_height.max(right_height) + extra_height).min(area.height);
 
         let area = centered_rect_fixed(area, width, height);
         f.render_widget(Clear, area);
 
-        let block = create_popup_block("Help");
         let block_inner = block.inner(area);
         f.render_widget(&block, area);
 
