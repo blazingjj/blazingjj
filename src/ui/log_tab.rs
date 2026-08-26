@@ -123,6 +123,8 @@ pub struct LogTab<'a> {
 struct PendingJjShow {
     /// The requested key
     key: CommitShowKey,
+    /// The render width the output is requested at
+    width: usize,
     /// The child process executing 'jj show'
     child: Child,
     /// The thread reading stdout from child process
@@ -169,8 +171,7 @@ impl<'a> LogTab<'a> {
     pub fn new(app_event_sender: Sender<AppEvent>, head: Head) -> Self {
         let diff_format = get_env().jj_config.diff_format();
 
-        const NO_WIDTH: usize = 0;
-        let head_key = CommitShowKey::new(head.clone(), diff_format.clone(), NO_WIDTH);
+        let head_key = CommitShowKey::new(head.clone(), diff_format.clone());
 
         let commit_show_cache = CommitShowCache::new();
 
@@ -252,12 +253,17 @@ impl<'a> LogTab<'a> {
         // generate different output for some keys. We probably need
         // a forced cache clear function.
 
-        // TODO use shared function to build key, so width can be cleared if not needed
-        let inner_width = self.head_panel.columns() as usize;
         // The next draw requests `jj show` for the new key if it is not
         // already cached, and moves the panel over once it has content.
-        self.head_key =
-            CommitShowKey::new(self.head.clone(), self.diff_format.clone(), inner_width);
+        self.head_key = CommitShowKey::new(self.head.clone(), self.diff_format.clone());
+    }
+
+    /// The width the details panel renders the selected change at. The
+    /// panel reports the width it got in the last frame, so this is only
+    /// meaningful once it has been drawn.
+    fn head_width(&self) -> usize {
+        self.diff_format
+            .render_width(self.head_panel.columns() as usize)
     }
 
     /// The content the details panel is to render. This is the selected
@@ -288,20 +294,17 @@ impl<'a> LogTab<'a> {
     /// the changes there as active. For non-active changes, keep at most
     /// one commit.
     fn update_cache_active_commits(&mut self) {
-        let key = CommitShowKey::new(
-            self.head.clone(),
-            self.diff_format.clone(),
-            self.head_panel.columns() as usize,
-        );
         let active_heads = self.log_panel.log_heads();
-        self.commit_show_cache.set_active(active_heads, &key);
+        self.commit_show_cache
+            .set_active(active_heads, &self.diff_format);
     }
 
     /// Launch of a child process for 'jj show'
-    fn request_jj_show(&mut self, launch_key: CommitShowKey) {
+    fn request_jj_show(&mut self, launch_key: CommitShowKey, launch_width: usize) {
         // Ignore request for already pending key
         if let Some(pjs) = self.pending_jj_show.as_ref()
             && pjs.key == launch_key
+            && pjs.width == launch_width
         {
             return;
         }
@@ -317,14 +320,14 @@ impl<'a> LogTab<'a> {
 
         // Lanuch new child process that runs 'jj show'
         let mut commander = new_commander();
-        commander.limit_width(launch_key.width);
+        commander.limit_width(launch_width);
         let launch_child =
             commander.spawn_commit_show(&launch_key.id.commit_id, &launch_key.format, true);
         let mut launch_child = match launch_child {
             Ok(child) => child,
             Err(err) => {
                 error!("Unable to spawn 'jj show': {err}");
-                self.show_error_in_details_panel(launch_key, err.to_string());
+                self.show_error_in_details_panel(launch_key, launch_width, err.to_string());
                 return;
             }
         };
@@ -338,6 +341,7 @@ impl<'a> LogTab<'a> {
 
         let pjs = PendingJjShow {
             key: launch_key,
+            width: launch_width,
             child: launch_child,
             stdout_reader,
             stderr_reader,
@@ -387,7 +391,11 @@ impl<'a> LogTab<'a> {
         // error instead of caching an empty document for the commit.
         if !status.success() {
             error!("'jj show' exited with status {status}:\n{stderr}");
-            self.show_error_in_details_panel(pjs.key, format!("jj show failed:\n\n{stderr}"));
+            self.show_error_in_details_panel(
+                pjs.key,
+                pjs.width,
+                format!("jj show failed:\n\n{stderr}"),
+            );
             return;
         }
         if !stderr.is_empty() {
@@ -395,7 +403,7 @@ impl<'a> LogTab<'a> {
         }
 
         let text = tabs_to_spaces(&String::from_utf8_lossy(&stdout));
-        let value = CommitShowValue::new(pjs.key, text);
+        let value = CommitShowValue::new(pjs.key, pjs.width, text);
         self.commit_show_cache.insert_document(value);
 
         // Note: self.pending_jj_show.take() has already cleared the
@@ -404,9 +412,9 @@ impl<'a> LogTab<'a> {
 
     /// Cache `message` as the content for `key`, so the details panel
     /// shows it instead of staying blank.
-    fn show_error_in_details_panel(&mut self, key: CommitShowKey, message: String) {
+    fn show_error_in_details_panel(&mut self, key: CommitShowKey, width: usize, message: String) {
         self.commit_show_cache
-            .insert_document(CommitShowValue::new(key, message));
+            .insert_document(CommitShowValue::new(key, width, message));
     }
 }
 
@@ -894,8 +902,9 @@ impl Component for LogTab<'_> {
 
         // Draw change details
         self.try_read_jj_show_output();
-        if !self.commit_show_cache.has_exact_match(&self.head_key) {
-            self.request_jj_show(self.head_key.clone());
+        let head_width = self.head_width();
+        if !self.commit_show_cache.is_fresh(&self.head_key, head_width) {
+            self.request_jj_show(self.head_key.clone(), head_width);
         }
         if let Some(key) = self.key_to_render()
             && let Some(content) = self.commit_show_cache.get(&key)

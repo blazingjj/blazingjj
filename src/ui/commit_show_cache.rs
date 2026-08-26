@@ -17,31 +17,18 @@ use crate::commander::log::Head;
 use crate::env::DiffFormat;
 use crate::ui::utils::LargeString;
 
-/// 'jj show' output depends on all these values
+/// The change and formatting a 'jj show' output belongs to
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct CommitShowKey {
     /// Commit id of shown change
     pub id: Head,
     /// Formatting used to render change
     pub format: DiffFormat,
-    /// Render width.
-    /// Set to 0 for all except format=DiffTool.
-    /// For DiffTool it is set to the inner with of the details panel,
-    /// which is given to the tool via the COLUMNS environment variable.
-    pub width: usize,
 }
 
 impl CommitShowKey {
-    /// Create a new key. If DiffFormat is not DiffTool, then width
-    /// will be set to zero.
-    pub fn new(id: Head, format: DiffFormat, width: usize) -> Self {
-        // Keep with only for the DiffTool format
-        let width = if let DiffFormat::DiffTool(_) = format {
-            width
-        } else {
-            0
-        };
-        Self { id, format, width }
+    pub fn new(id: Head, format: DiffFormat) -> Self {
+        Self { id, format }
     }
 }
 
@@ -49,6 +36,10 @@ impl CommitShowKey {
 /// A structure that allows fast rendering of document with millions of lines
 pub struct CommitShowValue {
     key: CommitShowKey,
+    /// The render width this output was produced at
+    width: usize,
+    /// Whether the repo may have moved on since this output was produced
+    dirty: bool,
     /// Rank in the order the cache received its documents in.
     /// Assigned by [insert_document](CommitShowCache::insert_document)
     serial: u64,
@@ -57,15 +48,23 @@ pub struct CommitShowValue {
 
 impl CommitShowValue {
     /// Index value, and store both key and value
-    pub fn new(key: CommitShowKey, value: String) -> Self {
+    pub fn new(key: CommitShowKey, width: usize, value: String) -> Self {
         Self {
             key,
+            width,
+            dirty: false,
             serial: 0,
             jj_output: LargeString::new(value),
         }
     }
     pub fn value(&self) -> &LargeString {
         &self.jj_output
+    }
+
+    /// Whether this output is still what a panel of the given render
+    /// width is to show
+    fn is_fresh(&self, width: usize) -> bool {
+        !self.dirty && self.width == width
     }
 }
 
@@ -99,18 +98,15 @@ impl CommitShowCache {
             next_serial: 0,
         }
     }
-    /// Declare which commits should be kept. Any commit outside this set
-    /// that shares change id with this set will be kept until the correct
-    /// commit is available.
-    ///   The Head of the key is replaced with each head
-    /// from active_heads before inserting in active commits.
-    pub fn set_active(&mut self, active_heads: Vec<Head>, key: &CommitShowKey) {
+    /// Declare which commits should be kept, as rendered in the given
+    /// format. Any commit outside this set that shares change id with this
+    /// set will be kept until the correct commit is available.
+    pub fn set_active(&mut self, active_heads: Vec<Head>, format: &DiffFormat) {
         // Construct map of active_commits from ChangeId to HashSet<CommitShowKey>
         // containing all visible heads
         self.active_commits = HashMap::new();
         for head in active_heads {
-            let mut key = key.clone();
-            key.id = head;
+            let key = CommitShowKey::new(head, format.clone());
             let change_id = key.id.change_id.clone();
             self.active_commits
                 .entry(change_id)
@@ -148,33 +144,27 @@ impl CommitShowCache {
         }
     }
 
-    /// Mark all active heads as dirty by changing their width to 1.
-    /// This way they will all be seen as old next time [set_active](Self.set_active) is called.
+    /// Mark every cached output as dirty, so that it is rendered again
+    /// the next time it is asked for.
     pub fn mark_dirty(&mut self) {
-        // Collect all keys for active commits
-        // std::mem::take moves the map out of self and leaves an empty one in its place
-        let active_commits = std::mem::take(&mut self.active_commits);
-        let active_keys: Vec<CommitShowKey> = active_commits.values().flatten().cloned().collect();
-        // Mark document as dirty
-        for ac_key in active_keys {
-            let Some(mut value) = self.commit_document.remove(&ac_key) else {
-                continue;
-            };
-            value.key.width = 1;
-            self.insert_document(value);
+        for value in self.commit_document.values_mut() {
+            value.dirty = true;
         }
     }
 
-    /// Return true if the key is present as active
-    pub fn has_exact_match(&self, key: &CommitShowKey) -> bool {
-        self.commit_document.contains_key(key)
+    /// Return true if the cache holds the output for the key, rendered
+    /// at the given width and not outdated since.
+    pub fn is_fresh(&self, key: &CommitShowKey, width: usize) -> bool {
+        self.commit_document
+            .get(key)
+            .is_some_and(|value| value.is_fresh(width))
     }
 
     /// Search for best match of the provided key.
     pub fn get(&self, key: &CommitShowKey) -> Option<&CommitShowValue> {
         // Look for direct hit via CommitId
-        if self.has_exact_match(key) {
-            return self.commit_document.get(key);
+        if let Some(value) = self.commit_document.get(key) {
+            return Some(value);
         }
         // Look for indirect hit via ChangeId
         if let Some(old_key) = self.old_commits.get(&key.id.change_id) {
@@ -212,21 +202,20 @@ mod tests {
         }
     }
 
-    fn key(change_id: &str, commit_id: &str) -> CommitShowKey {
-        CommitShowKey::new(head(change_id, commit_id), DiffFormat::ColorWords, 0)
-    }
+    /// The width of a format that renders the same however wide the panel
+    /// showing it is
+    const NO_WIDTH: usize = 0;
 
-    /// A key of the only format that renders at a given width
-    fn tool_key(change_id: &str, commit_id: &str, width: usize) -> CommitShowKey {
-        CommitShowKey::new(
-            head(change_id, commit_id),
-            DiffFormat::DiffTool(None),
-            width,
-        )
+    fn key(change_id: &str, commit_id: &str) -> CommitShowKey {
+        CommitShowKey::new(head(change_id, commit_id), DiffFormat::ColorWords)
     }
 
     fn insert(cache: &mut CommitShowCache, key: &CommitShowKey, text: &str) {
-        cache.insert_document(CommitShowValue::new(key.clone(), text.to_owned()));
+        insert_at(cache, key, NO_WIDTH, text);
+    }
+
+    fn insert_at(cache: &mut CommitShowCache, key: &CommitShowKey, width: usize, text: &str) {
+        cache.insert_document(CommitShowValue::new(key.clone(), width, text.to_owned()));
     }
 
     fn text_of(value: Option<&CommitShowValue>) -> String {
@@ -237,13 +226,13 @@ mod tests {
     fn rewritten_commit_keeps_showing_its_previous_output() {
         let mut cache = CommitShowCache::new();
         let old = key("abc", "111");
-        cache.set_active(vec![old.id.clone()], &old);
+        cache.set_active(vec![old.id.clone()], &old.format);
         insert(&mut cache, &old, "old output");
 
         let new = key("abc", "222");
-        cache.set_active(vec![new.id.clone()], &new);
+        cache.set_active(vec![new.id.clone()], &new.format);
 
-        assert!(!cache.has_exact_match(&new));
+        assert!(!cache.is_fresh(&new, NO_WIDTH));
         assert_eq!(text_of(cache.get(&new)), "old output");
     }
 
@@ -254,7 +243,7 @@ mod tests {
         insert(&mut cache, &old, "old output");
 
         let new = key("abc", "222");
-        cache.set_active(vec![new.id.clone()], &new);
+        cache.set_active(vec![new.id.clone()], &new.format);
         insert(&mut cache, &new, "new output");
 
         assert_eq!(text_of(cache.get(&new)), "new output");
@@ -264,28 +253,24 @@ mod tests {
     #[test]
     fn output_rendered_for_another_width_is_kept() {
         let mut cache = CommitShowCache::new();
-        let narrow = tool_key("abc", "111", 80);
-        cache.set_active(vec![narrow.id.clone()], &narrow);
-        insert(&mut cache, &narrow, "narrow output");
+        let diff_tool = CommitShowKey::new(head("abc", "111"), DiffFormat::DiffTool(None));
+        cache.set_active(vec![diff_tool.id.clone()], &diff_tool.format);
+        insert_at(&mut cache, &diff_tool, 80, "narrow output");
 
-        let wide = tool_key("abc", "111", 100);
-        cache.set_active(vec![wide.id.clone()], &wide);
-
-        assert!(!cache.has_exact_match(&wide));
-        assert_eq!(text_of(cache.get(&wide)), "narrow output");
+        assert!(!cache.is_fresh(&diff_tool, 100));
+        assert_eq!(text_of(cache.get(&diff_tool)), "narrow output");
     }
 
     #[test]
     fn dirty_output_is_kept_until_it_is_rebuilt() {
         let mut cache = CommitShowCache::new();
         let active = key("abc", "111");
-        cache.set_active(vec![active.id.clone()], &active);
+        cache.set_active(vec![active.id.clone()], &active.format);
         insert(&mut cache, &active, "stale output");
 
         cache.mark_dirty();
-        cache.set_active(vec![active.id.clone()], &active);
 
-        assert!(!cache.has_exact_match(&active));
+        assert!(!cache.is_fresh(&active, NO_WIDTH));
         assert_eq!(text_of(cache.get(&active)), "stale output");
     }
 
@@ -296,7 +281,7 @@ mod tests {
         insert(&mut cache, &key("abc", "222"), "second output");
 
         let new = key("abc", "333");
-        cache.set_active(vec![new.id.clone()], &new);
+        cache.set_active(vec![new.id.clone()], &new.format);
 
         assert_eq!(text_of(cache.get(&new)), "second output");
         assert_eq!(cache.commit_document.len(), 1);
@@ -307,11 +292,11 @@ mod tests {
         let mut cache = CommitShowCache::new();
         let first = key("abc", "111");
         let second = key("abc", "222");
-        cache.set_active(vec![first.id.clone(), second.id.clone()], &first);
+        cache.set_active(vec![first.id.clone(), second.id.clone()], &first.format);
         insert(&mut cache, &first, "first output");
         insert(&mut cache, &second, "second output");
 
-        cache.set_active(vec![first.id.clone(), second.id.clone()], &first);
+        cache.set_active(vec![first.id.clone(), second.id.clone()], &first.format);
 
         assert_eq!(text_of(cache.get(&first)), "first output");
         assert_eq!(text_of(cache.get(&second)), "second output");
