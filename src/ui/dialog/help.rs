@@ -49,6 +49,21 @@ fn max_scroll(tables: [(usize, Rect); 3]) -> usize {
         .unwrap_or(0)
 }
 
+/// How to split the `height` available to two stacked tables of `top` and
+/// `bottom` rows between them, leaving a line between the tables. Tables that
+/// do not both fit shrink in proportion to their length, so that neither is
+/// left without rows to scroll through.
+fn stacked_heights(height: u16, top: u16, bottom: u16) -> [u16; 2] {
+    let available = height.saturating_sub(1);
+    let total = top + bottom;
+    if total <= available {
+        return [top, bottom];
+    }
+
+    let top = (u32::from(available) * u32::from(top) / u32::from(total)) as u16;
+    [top, available - top]
+}
+
 pub struct HelpPopup {
     pub main_items: Vec<(String, String)>,
     pub details_items: Vec<(String, String)>,
@@ -134,12 +149,19 @@ impl Component for HelpPopup {
             ])
             .split(block_inner);
 
+        // Each table spends its first row on its title.
+        let [details_height, global_height] = stacked_heights(
+            chunks[2].height,
+            self.details_items.len() as u16 + 1,
+            self.global_items.len() as u16 + 1,
+        );
+
         let right_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(self.details_items.len() as u16 + 1),
+                Constraint::Length(details_height),
                 Constraint::Length(1),
-                Constraint::Fill(1),
+                Constraint::Length(global_height),
             ])
             .split(chunks[2]);
 
@@ -234,6 +256,17 @@ mod tests {
         assert_eq!(max_scroll([(3, area(22)), (5, area(6)), (14, area(9))]), 6);
         // The main panel overflows further than the global list does.
         assert_eq!(max_scroll([(30, area(22)), (5, area(6)), (14, area(9))]), 9);
+    }
+
+    #[test]
+    fn test_stacked_tables_get_their_rows_when_they_fit() {
+        assert_eq!(stacked_heights(20, 6, 8), [6, 8]);
+    }
+
+    #[test]
+    fn test_stacked_tables_shrink_in_proportion() {
+        assert_eq!(stacked_heights(10, 6, 12), [3, 6]);
+        assert_eq!(stacked_heights(0, 6, 12), [0, 0]);
     }
 
     #[test]
