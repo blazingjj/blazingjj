@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each of them within its own box
 - The help popup no longer cuts the last two characters off its longest
   descriptions
+- The help popup now stacks all three keybinding lists in a single column when
+  the terminal is too narrow to hold two of them side by side
 - Describing a commit with a message starting with a dash no longer fails
 - A copied file in the files list is now colored like the other changes
 - Running a command from the log tab no longer moves the selection to the
