@@ -308,8 +308,10 @@ impl Component for BookmarksTab {
                 }
                 EDIT_POPUP_ID => {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
-                        new_commander()
-                            .run_edit(&bookmark.to_string(), self.edit_ignore_immutable)?;
+                        new_commander().run_edit(
+                            Revset::expression(bookmark.to_string()),
+                            self.edit_ignore_immutable,
+                        )?;
                         let head = new_commander().get_current_head()?;
                         return Ok(Some(AppAction::ViewLog(head)));
                     }

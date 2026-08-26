@@ -687,7 +687,7 @@ impl<'a> LogTab<'a> {
                 return self.handle_abandon();
             }
             LogTabEvent::Absorb => {
-                new_commander().run_absorb(self.head.commit_id.as_str())?;
+                new_commander().run_absorb(&self.head.commit_id)?;
                 self.set_head(new_commander().get_head_latest(&self.head)?);
                 return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
                     vec![
@@ -855,8 +855,7 @@ impl Component for LogTab<'_> {
                     return self.execute_new();
                 }
                 EDIT_POPUP_ID => {
-                    new_commander()
-                        .run_edit(self.head.commit_id.as_str(), self.edit_ignore_immutable)?;
+                    new_commander().run_edit(&self.head.commit_id, self.edit_ignore_immutable)?;
                     return Ok(Some(AppAction::Multiple(vec![
                         AppAction::ChangeHead(self.head.clone()),
                         AppAction::RefreshTab,
