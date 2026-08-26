@@ -38,38 +38,32 @@ fn description_width(items: &[(String, String)]) -> u16 {
         .unwrap_or(0) as u16
 }
 
-/// How far the tables have to scroll for the last item of the longest one to
-/// come into view.
-fn max_scroll(tables: [(usize, Rect); 3]) -> usize {
-    tables
-        .into_iter()
-        // A table spends its first row on its title.
-        .map(|(items, area)| items.saturating_sub(area.height.saturating_sub(1) as usize))
-        .max()
-        .unwrap_or(0)
-}
+/// Where a part of the popup's contents that is `height` rows tall and starts
+/// at row `top` of them lands in `viewport`, and how many of its rows `scroll`
+/// has taken off the top. `None` once it has scrolled out of view entirely.
+fn place(viewport: Rect, scroll: u16, top: u16, height: u16) -> Option<(Rect, u16)> {
+    let skipped = scroll.saturating_sub(top);
+    let y = viewport.y + top.saturating_sub(scroll);
+    let height = height
+        .saturating_sub(skipped)
+        .min(viewport.bottom().saturating_sub(y));
 
-/// How to split the `height` available to two stacked tables of `top` and
-/// `bottom` rows between them, leaving a line between the tables. Tables that
-/// do not both fit shrink in proportion to their length, so that neither is
-/// left without rows to scroll through.
-fn stacked_heights(height: u16, top: u16, bottom: u16) -> [u16; 2] {
-    let available = height.saturating_sub(1);
-    let total = top + bottom;
-    if total <= available {
-        return [top, bottom];
-    }
-
-    let top = (u32::from(available) * u32::from(top) / u32::from(total)) as u16;
-    [top, available - top]
+    (height > 0).then_some((
+        Rect {
+            y,
+            height,
+            ..viewport
+        },
+        skipped,
+    ))
 }
 
 pub struct HelpPopup {
     pub main_items: Vec<(String, String)>,
     pub details_items: Vec<(String, String)>,
     pub global_items: Vec<(String, String)>,
-    max_scroll: usize,
-    scroll: usize,
+    max_scroll: u16,
+    scroll: u16,
 }
 
 impl HelpPopup {
@@ -88,26 +82,37 @@ impl HelpPopup {
         }
     }
 
-    fn create_table(&self, items: &[(String, String)], title: String, key_width: u16) -> Table<'_> {
+    /// A table of `items` under its `title`, with `skipped` of its rows taken
+    /// off the top. The title is the first of those rows.
+    fn create_table(
+        &self,
+        items: &[(String, String)],
+        title: &'static str,
+        key_width: u16,
+        skipped: u16,
+    ) -> Table<'_> {
         let rows: Vec<Row> = items
             .iter()
-            .skip(self.scroll)
+            .skip(skipped.saturating_sub(1) as usize)
             .map(|(key, description)| Row::new([description.clone(), key.clone()]))
             .collect();
         let widths = [Constraint::Fill(1), Constraint::Length(key_width)];
+        let table = Table::new(rows, widths).column_spacing(COLUMN_SPACING);
 
-        Table::new(rows, widths)
-            .column_spacing(COLUMN_SPACING)
-            .block(
-                Block::new()
-                    .title(Span::from(title).bold().underlined())
-                    .title_alignment(Alignment::Center),
-            )
+        if skipped > 0 {
+            return table;
+        }
+
+        table.block(
+            Block::new()
+                .title(Span::from(title).bold().underlined())
+                .title_alignment(Alignment::Center),
+        )
     }
 
-    fn do_scroll(&mut self, delta: isize) {
-        let max = self.max_scroll as isize;
-        self.scroll = (self.scroll as isize + delta).clamp(0, max) as usize;
+    fn do_scroll(&mut self, delta: i32) {
+        let max = i32::from(self.max_scroll);
+        self.scroll = (i32::from(self.scroll) + delta).clamp(0, max) as u16;
     }
 }
 
@@ -149,27 +154,9 @@ impl Component for HelpPopup {
             ])
             .split(block_inner);
 
-        // Each table spends its first row on its title.
-        let [details_height, global_height] = stacked_heights(
-            chunks[2].height,
-            self.details_items.len() as u16 + 1,
-            self.global_items.len() as u16 + 1,
-        );
-
-        let right_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(details_height),
-                Constraint::Length(1),
-                Constraint::Length(global_height),
-            ])
-            .split(chunks[2]);
-
-        self.max_scroll = max_scroll([
-            (self.main_items.len(), chunks[0]),
-            (self.details_items.len(), right_chunks[0]),
-            (self.global_items.len(), right_chunks[2]),
-        ]);
+        self.max_scroll = left_height
+            .max(right_height)
+            .saturating_sub(block_inner.height);
         self.scroll = self.scroll.min(self.max_scroll);
 
         f.render_widget(
@@ -179,20 +166,37 @@ impl Component for HelpPopup {
                 ..chunks[1]
             },
         );
-        f.render_widget(Block::new().borders(Borders::TOP), right_chunks[1]);
 
-        f.render_widget(
-            self.create_table(&self.main_items, "Main panel".into(), left_key_width),
-            chunks[0],
-        );
-        f.render_widget(
-            self.create_table(&self.details_items, "Details panel".into(), right_key_width),
-            right_chunks[0],
-        );
-        f.render_widget(
-            self.create_table(&self.global_items, "Global".into(), right_key_width),
-            right_chunks[2],
-        );
+        if let Some((area, skipped)) = place(chunks[0], self.scroll, 0, left_height) {
+            let table = self.create_table(&self.main_items, "Main panel", left_key_width, skipped);
+            f.render_widget(table, area);
+        }
+
+        // Both halves scroll as one, so the right one lays its two tables and
+        // the rule between them out at their full height and lets the scroll
+        // take them out of view.
+        let details_height = self.details_items.len() as u16 + 1;
+        if let Some((area, skipped)) = place(chunks[2], self.scroll, 0, details_height) {
+            let table = self.create_table(
+                &self.details_items,
+                "Details panel",
+                right_key_width,
+                skipped,
+            );
+            f.render_widget(table, area);
+        }
+        if let Some((area, _)) = place(chunks[2], self.scroll, details_height, 1) {
+            f.render_widget(Block::new().borders(Borders::TOP), area);
+        }
+        if let Some((area, skipped)) = place(
+            chunks[2],
+            self.scroll,
+            details_height + 1,
+            self.global_items.len() as u16 + 1,
+        ) {
+            let table = self.create_table(&self.global_items, "Global", right_key_width, skipped);
+            f.render_widget(table, area);
+        }
 
         Ok(())
     }
@@ -236,6 +240,10 @@ mod tests {
         Rect::new(0, 0, 40, height)
     }
 
+    fn rect(y: u16, height: u16) -> Rect {
+        Rect::new(0, y, 40, height)
+    }
+
     fn wheel(kind: MouseEventKind) -> Event {
         Event::Mouse(MouseEvent {
             kind,
@@ -246,27 +254,23 @@ mod tests {
     }
 
     #[test]
-    fn test_no_scroll_when_every_table_fits() {
-        assert_eq!(max_scroll([(3, area(10)), (5, area(6)), (14, area(15))]), 0);
+    fn test_unscrolled_contents_keep_their_place() {
+        assert_eq!(place(area(10), 0, 0, 6), Some((rect(0, 6), 0)));
+        // What does not fit is cut off at the bottom of the viewport.
+        assert_eq!(place(area(10), 0, 8, 5), Some((rect(8, 2), 0)));
     }
 
     #[test]
-    fn test_scroll_follows_the_table_that_overflows_most() {
-        // The global list is 14 items in 9 rows, one of which holds its title.
-        assert_eq!(max_scroll([(3, area(22)), (5, area(6)), (14, area(9))]), 6);
-        // The main panel overflows further than the global list does.
-        assert_eq!(max_scroll([(30, area(22)), (5, area(6)), (14, area(9))]), 9);
+    fn test_scrolling_takes_rows_off_the_top() {
+        // The scroll eats into a part of the contents ...
+        assert_eq!(place(area(10), 3, 0, 6), Some((rect(0, 3), 3)));
+        // ... only once it has consumed everything above it.
+        assert_eq!(place(area(10), 3, 5, 4), Some((rect(2, 4), 0)));
     }
 
     #[test]
-    fn test_stacked_tables_get_their_rows_when_they_fit() {
-        assert_eq!(stacked_heights(20, 6, 8), [6, 8]);
-    }
-
-    #[test]
-    fn test_stacked_tables_shrink_in_proportion() {
-        assert_eq!(stacked_heights(10, 6, 12), [3, 6]);
-        assert_eq!(stacked_heights(0, 6, 12), [0, 0]);
+    fn test_parts_scrolled_past_are_gone() {
+        assert_eq!(place(area(10), 8, 0, 6), None);
     }
 
     #[test]
