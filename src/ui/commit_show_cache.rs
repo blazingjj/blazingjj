@@ -32,6 +32,37 @@ impl CommitShowKey {
     }
 }
 
+/// A 'jj show' to run: the output to produce, and the width to produce it
+/// at. Two requests that differ only in a width neither format nor tool
+/// acts on are the same request.
+#[derive(PartialEq, Eq, Hash, Clone)]
+pub struct CommitShowRequest {
+    key: CommitShowKey,
+    width: usize,
+}
+
+impl CommitShowRequest {
+    /// A request for the details panel of the given width.
+    pub fn new(key: CommitShowKey, panel_width: usize) -> Self {
+        let width = key.format.render_width(panel_width);
+        Self { key, width }
+    }
+
+    pub fn key(&self) -> &CommitShowKey {
+        &self.key
+    }
+
+    /// The width the output is to be rendered at
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// The output this request produced, ready for the cache.
+    pub fn into_value(self, output: String) -> CommitShowValue {
+        CommitShowValue::new(self.key, self.width, output)
+    }
+}
+
 /// The output from 'jj show' in a form that is fast to render a subset of
 /// A structure that allows fast rendering of document with millions of lines
 pub struct CommitShowValue {
@@ -152,12 +183,12 @@ impl CommitShowCache {
         }
     }
 
-    /// Return true if the cache holds the output for the key, rendered
-    /// at the given width and not outdated since.
-    pub fn is_fresh(&self, key: &CommitShowKey, width: usize) -> bool {
+    /// Return true if the cache holds what the request asks for, rendered
+    /// at the width it asks for and not outdated since.
+    pub fn is_fresh(&self, request: &CommitShowRequest) -> bool {
         self.commit_document
-            .get(key)
-            .is_some_and(|value| value.is_fresh(width))
+            .get(&request.key)
+            .is_some_and(|value| value.is_fresh(request.width))
     }
 
     /// Search for best match of the provided key.
@@ -202,12 +233,17 @@ mod tests {
         }
     }
 
-    /// The width of a format that renders the same however wide the panel
-    /// showing it is
+    const PANEL_WIDTH: usize = 80;
+
+    /// The width of a format whose output does not depend on it
     const NO_WIDTH: usize = 0;
 
     fn key(change_id: &str, commit_id: &str) -> CommitShowKey {
         CommitShowKey::new(head(change_id, commit_id), DiffFormat::ColorWords)
+    }
+
+    fn request(key: &CommitShowKey, panel_width: usize) -> CommitShowRequest {
+        CommitShowRequest::new(key.clone(), panel_width)
     }
 
     fn insert(cache: &mut CommitShowCache, key: &CommitShowKey, text: &str) {
@@ -232,7 +268,7 @@ mod tests {
         let new = key("abc", "222");
         cache.set_active(vec![new.id.clone()], &new.format);
 
-        assert!(!cache.is_fresh(&new, NO_WIDTH));
+        assert!(!cache.is_fresh(&request(&new, PANEL_WIDTH)));
         assert_eq!(text_of(cache.get(&new)), "old output");
     }
 
@@ -255,10 +291,20 @@ mod tests {
         let mut cache = CommitShowCache::new();
         let diff_tool = CommitShowKey::new(head("abc", "111"), DiffFormat::DiffTool(None));
         cache.set_active(vec![diff_tool.id.clone()], &diff_tool.format);
-        insert_at(&mut cache, &diff_tool, 80, "narrow output");
+        insert_at(&mut cache, &diff_tool, PANEL_WIDTH, "narrow output");
 
-        assert!(!cache.is_fresh(&diff_tool, 100));
+        assert!(!cache.is_fresh(&request(&diff_tool, PANEL_WIDTH * 2)));
         assert_eq!(text_of(cache.get(&diff_tool)), "narrow output");
+    }
+
+    #[test]
+    fn output_that_does_not_depend_on_the_width_survives_a_resize() {
+        let mut cache = CommitShowCache::new();
+        let color_words = key("abc", "111");
+        insert(&mut cache, &color_words, "output");
+
+        assert!(cache.is_fresh(&request(&color_words, PANEL_WIDTH)));
+        assert!(cache.is_fresh(&request(&color_words, PANEL_WIDTH * 2)));
     }
 
     #[test]
@@ -270,7 +316,7 @@ mod tests {
 
         cache.mark_dirty();
 
-        assert!(!cache.is_fresh(&active, NO_WIDTH));
+        assert!(!cache.is_fresh(&request(&active, PANEL_WIDTH)));
         assert_eq!(text_of(cache.get(&active)), "stale output");
     }
 
