@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   again for a repo that has not changed
 - Resizing the details panel no longer empties it while an external diff tool
   renders the change again
+- With `diff-format = "stat"`, the histogram is now scaled to the panel rather
+  than to the whole terminal
 
 ## [0.8.0] - 2026-04-19
 

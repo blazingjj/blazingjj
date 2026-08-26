@@ -177,7 +177,7 @@ pub enum DiffFormat {
     ColorWords,
     Git,
     DiffTool(Option<String>),
-    // Unused
+    // Configuration only, [DiffFormat::get_next] does not cycle through these
     Summary,
     Stat,
 }
@@ -198,15 +198,18 @@ impl DiffFormat {
     }
 
     /// How wide output in this format is rendered, given the width of the
-    /// panel showing it. Only an external diff tool is told the width, via
-    /// the COLUMNS environment variable. jj's own formats produce the same
-    /// output whatever the width, and the panel wraps or scrolls it.
+    /// panel showing it. The width reaches an external diff tool through the
+    /// COLUMNS environment variable, and `--stat` scales its histogram to
+    /// it; the other formats produce the same output whatever the width,
+    /// and the panel wraps or scrolls it.
     ///
     /// A width too narrow to be passed on makes no difference either, so it
     /// comes out as no width at all rather than as a value of its own.
     pub fn render_width(&self, panel_width: usize) -> usize {
         match self {
-            DiffFormat::DiffTool(_) if panel_width >= MIN_SETTABLE_WIDTH => panel_width,
+            DiffFormat::DiffTool(_) | DiffFormat::Stat if panel_width >= MIN_SETTABLE_WIDTH => {
+                panel_width
+            }
             _ => 0,
         }
     }
@@ -237,22 +240,16 @@ mod tests {
     const PANEL_WIDTH: usize = 80;
 
     #[test]
-    fn only_a_diff_tool_is_told_the_panel_width() {
-        assert_eq!(
-            DiffFormat::DiffTool(Some("difft".to_owned())).render_width(PANEL_WIDTH),
-            PANEL_WIDTH
-        );
-        assert_eq!(
-            DiffFormat::DiffTool(None).render_width(PANEL_WIDTH),
-            PANEL_WIDTH
-        );
-
+    fn only_formats_that_scale_are_told_the_panel_width() {
         for format in [
-            DiffFormat::ColorWords,
-            DiffFormat::Git,
-            DiffFormat::Summary,
+            DiffFormat::DiffTool(Some("difft".to_owned())),
+            DiffFormat::DiffTool(None),
             DiffFormat::Stat,
         ] {
+            assert_eq!(format.render_width(PANEL_WIDTH), PANEL_WIDTH, "{format:?}");
+        }
+
+        for format in [DiffFormat::ColorWords, DiffFormat::Git, DiffFormat::Summary] {
             assert_eq!(format.render_width(PANEL_WIDTH), 0, "{format:?}");
         }
     }
