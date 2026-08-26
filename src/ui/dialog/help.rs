@@ -18,7 +18,7 @@ use ratatui::widgets::Table;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::styles::create_popup_block;
-use crate::ui::utils::centered_rect;
+use crate::ui::utils::centered_rect_fixed;
 
 /// Space between the description and the key column of a table
 const COLUMN_SPACING: u16 = 4;
@@ -28,6 +28,14 @@ const SEPARATOR_WIDTH: u16 = 3;
 
 fn key_width(items: &[(String, String)]) -> u16 {
     items.iter().map(|(key, _)| key.len()).max().unwrap_or(0) as u16
+}
+
+fn description_width(items: &[(String, String)]) -> u16 {
+    items
+        .iter()
+        .map(|(_, description)| description.len())
+        .max()
+        .unwrap_or(0) as u16
 }
 
 /// How far the tables have to scroll for the last item of the longest one to
@@ -65,13 +73,13 @@ impl HelpPopup {
         }
     }
 
-    fn create_table(&self, items: &[(String, String)], title: String) -> Table<'_> {
+    fn create_table(&self, items: &[(String, String)], title: String, key_width: u16) -> Table<'_> {
         let rows: Vec<Row> = items
             .iter()
             .skip(self.scroll)
             .map(|(key, description)| Row::new([description.clone(), key.clone()]))
             .collect();
-        let widths = [Constraint::Fill(1), Constraint::Length(key_width(items))];
+        let widths = [Constraint::Fill(1), Constraint::Length(key_width)];
 
         Table::new(rows, widths)
             .column_spacing(COLUMN_SPACING)
@@ -94,7 +102,23 @@ impl Component for HelpPopup {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> anyhow::Result<()> {
-        let area = centered_rect(area, 60, 60);
+        let left_key_width = key_width(&self.main_items);
+        let left_width = left_key_width + COLUMN_SPACING + description_width(&self.main_items);
+
+        // The stacked tables share a key column so that their rows line up
+        let right_key_width = key_width(&self.details_items).max(key_width(&self.global_items));
+        let right_width = right_key_width
+            + COLUMN_SPACING
+            + description_width(&self.details_items).max(description_width(&self.global_items));
+
+        // The two halves and the separator between them, plus the block border
+        let width = (left_width + SEPARATOR_WIDTH + right_width + 2).min(area.width);
+        // Each table takes a line for its title, the right half one for its rule
+        let left_height = self.main_items.len() as u16 + 1;
+        let right_height = self.details_items.len() as u16 + self.global_items.len() as u16 + 3;
+        let height = (left_height.max(right_height) + 2).min(area.height);
+
+        let area = centered_rect_fixed(area, width, height);
         f.render_widget(Clear, area);
 
         let block = create_popup_block("Help");
@@ -104,9 +128,9 @@ impl Component for HelpPopup {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Fill(1),
+                Constraint::Length(left_width),
                 Constraint::Length(SEPARATOR_WIDTH),
-                Constraint::Fill(1),
+                Constraint::Length(right_width),
             ])
             .split(block_inner);
 
@@ -136,15 +160,15 @@ impl Component for HelpPopup {
         f.render_widget(Block::new().borders(Borders::TOP), right_chunks[1]);
 
         f.render_widget(
-            self.create_table(&self.main_items, "Main panel".into()),
+            self.create_table(&self.main_items, "Main panel".into(), left_key_width),
             chunks[0],
         );
         f.render_widget(
-            self.create_table(&self.details_items, "Details panel".into()),
+            self.create_table(&self.details_items, "Details panel".into(), right_key_width),
             right_chunks[0],
         );
         f.render_widget(
-            self.create_table(&self.global_items, "Global".into()),
+            self.create_table(&self.global_items, "Global".into(), right_key_width),
             right_chunks[2],
         );
 
