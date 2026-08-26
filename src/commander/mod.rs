@@ -38,6 +38,8 @@ use std::process::Child;
 use std::process::Command;
 use std::process::Stdio;
 use std::string::FromUtf8Error;
+use std::thread;
+use std::thread::JoinHandle;
 
 use ansi_to_tui::IntoText;
 use anyhow::Context;
@@ -330,21 +332,9 @@ impl JjCommand<'_> {
             Some(input) => {
                 command.stdin(Stdio::piped());
                 let mut child = command.spawn()?;
-                let mut stdin = child.stdin.take().expect("stdin was piped");
-                // Write on a separate thread while we drain the child's output,
-                // so neither side deadlocks on a full pipe buffer. Dropping the
-                // handle closes the pipe, signalling EOF to the child.
-                let writer = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
+                let writer = spawn_stdin_writer(&mut child, input);
                 let output = child.wait_with_output()?;
-                // Ignore a broken pipe (child exited early); the status check
-                // below surfaces the real error.
-                writer
-                    .join()
-                    .expect("stdin writer thread panicked")
-                    .or_else(|err| match err.kind() {
-                        io::ErrorKind::BrokenPipe => Ok(()),
-                        _ => Err(err),
-                    })?;
+                join_stdin_writer(writer)?;
                 output
             }
             None => command.spawn()?.wait_with_output()?,
@@ -383,6 +373,24 @@ impl JjCommand<'_> {
         command.current_dir(&self.commander.env.root);
         command.envs(self.env_var.iter().cloned());
         command
+    }
+}
+
+/// Feed `input` to a child's standard input from a thread of its own, so
+/// neither side deadlocks on a full pipe buffer. Dropping the handle closes
+/// the pipe, signalling EOF to the child.
+fn spawn_stdin_writer(child: &mut Child, input: String) -> JoinHandle<io::Result<()>> {
+    let mut stdin = child.stdin.take().expect("stdin was piped");
+    thread::spawn(move || stdin.write_all(input.as_bytes()))
+}
+
+/// Collect the outcome of a [spawn_stdin_writer] thread. A broken pipe means
+/// the child exited before reading its input, which the caller's status check
+/// describes better than this would.
+fn join_stdin_writer(writer: JoinHandle<io::Result<()>>) -> Result<(), CommandError> {
+    match writer.join().expect("stdin writer thread panicked") {
+        Err(err) if err.kind() != io::ErrorKind::BrokenPipe => Err(err.into()),
+        _ => Ok(()),
     }
 }
 
