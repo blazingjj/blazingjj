@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The keybindings shared by all tabs are now configured under `[blazingjj.keybinds]`:
   `focus-current`, `refresh` and `open-help` move there from
   `[blazingjj.keybinds.log-tab]`, which also loses its `scroll-*` overrides
-+- jj 0.37.0 or newer is now required
+- jj 0.37.0 or newer is now required
 
 ### Added
 
