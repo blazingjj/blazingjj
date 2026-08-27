@@ -61,6 +61,8 @@ pub enum TaskSlot {
     /// same change at once, and each keeps its own copy of the output, so
     /// the tab is part of the slot.
     CommitShow(TabId, CommitShowRequest),
+    GitPush,
+    GitFetch,
 }
 
 /// Which run of a slot a task is. Unique for the lifetime of the app,
@@ -107,6 +109,8 @@ struct RunningTask {
     id: TaskId,
     slot: TaskSlot,
     cancel: CancelToken,
+    /// Whether we may kill this task to make room for newer work.
+    evictable: bool,
 }
 
 impl BackgroundTasks {
@@ -145,6 +149,22 @@ impl BackgroundTasks {
     /// flight. If we later need room for newer work, the task may be
     /// killed, in which case its result is discarded.
     pub fn submit<F>(&self, slot: TaskSlot, task: F)
+    where
+        F: FnOnce(&CancelToken) -> TaskOutput + Send + 'static,
+    {
+        self.start(slot, true, task);
+    }
+
+    /// Like [Self::submit], but the task keeps its slot until it is done
+    /// and is never killed to make room.
+    pub fn submit_uninterruptible<F>(&self, slot: TaskSlot, task: F)
+    where
+        F: FnOnce() -> TaskOutput + Send + 'static,
+    {
+        self.start(slot, false, move |_cancel| task());
+    }
+
+    fn start<F>(&self, slot: TaskSlot, evictable: bool, task: F)
     where
         F: FnOnce(&CancelToken) -> TaskOutput + Send + 'static,
     {
@@ -188,7 +208,12 @@ impl BackgroundTasks {
             });
 
         match thread {
-            Ok(_) => running.tasks.push(RunningTask { id, slot, cancel }),
+            Ok(_) => running.tasks.push(RunningTask {
+                id,
+                slot,
+                cancel,
+                evictable,
+            }),
             // The consumer is waiting for this slot, so it has to hear
             // about the failure rather than wait for a result forever.
             Err(err) => {
@@ -223,12 +248,18 @@ impl BackgroundTasks {
     }
 }
 
-/// Kill tasks until there is room for one more. The tasks are in
-/// submission order, so the first one has had the longest to produce
-/// something and is the one we can least expect to still be wanted.
+/// Kill tasks that may be killed until there is room for one more. The
+/// tasks are in submission order, so the first one that may be killed has
+/// had the longest to produce something and is the one we can least expect
+/// to still be wanted. Leaves us over [MAX_RUNNING] when none of them may
+/// be killed.
 fn evict_for_room(running: &mut Vec<RunningTask>) {
     while running.len() >= MAX_RUNNING {
-        let task = running.remove(0);
+        let Some(index) = running.iter().position(|task| task.evictable) else {
+            break;
+        };
+
+        let task = running.remove(index);
         debug!("Killing slow task to make room: {:?}", task.slot);
         task.cancel.cancel();
     }
@@ -374,6 +405,50 @@ mod tests {
 
         assert!(!tasks.contains(&slot(0)), "oldest task should be evicted");
         assert!(tasks.contains(&slot(1)), "younger tasks should be left be");
+        assert_eq!(tasks.running_count(), MAX_RUNNING);
+    }
+
+    #[test]
+    fn never_evicts_an_uninterruptible_task() {
+        let (tasks, _receiver) = tasks();
+        let mut gates: Vec<_> = (0..MAX_RUNNING)
+            .map(|index| {
+                let (gate, task) = gated_task();
+                tasks.submit_uninterruptible(slot(index), task);
+                gate
+            })
+            .collect();
+
+        let (gate, task) = gated_task();
+        gates.push(gate);
+        tasks.submit(slot(MAX_RUNNING), move |_cancel| task());
+
+        assert_eq!(tasks.running_count(), MAX_RUNNING + 1);
+        assert!(tasks.contains(&slot(0)));
+    }
+
+    #[test]
+    fn evicts_the_oldest_task_behind_an_uninterruptible_one() {
+        let (tasks, _receiver) = tasks();
+        // A push is the oldest task, so making room has to look past it
+        // instead of giving up on the one task it may not kill.
+        let (push_gate, push) = gated_task();
+        tasks.submit_uninterruptible(TaskSlot::GitPush, push);
+        let mut gates: Vec<_> = (1..MAX_RUNNING)
+            .map(|index| {
+                let (gate, task) = gated_task();
+                tasks.submit(slot(index), move |_cancel| task());
+                gate
+            })
+            .collect();
+        gates.push(push_gate);
+
+        let (gate, task) = gated_task();
+        gates.push(gate);
+        tasks.submit(slot(MAX_RUNNING), move |_cancel| task());
+
+        assert!(tasks.contains(&TaskSlot::GitPush), "a push is never killed");
+        assert!(!tasks.contains(&slot(1)), "oldest task should be evicted");
         assert_eq!(tasks.running_count(), MAX_RUNNING);
     }
 

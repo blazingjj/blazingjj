@@ -375,8 +375,18 @@ impl<'a> App<'a> {
     fn handle_task_result(&mut self, result: TaskResult) -> Result<()> {
         self.background_tasks.finish(&result);
 
-        let consumer: &mut dyn Component = match result.slot {
-            TaskSlot::CommitShow(tab, _) => self.get_tab(tab),
+        let consumer: Option<&mut dyn Component> = match result.slot {
+            TaskSlot::CommitShow(tab, _) => Some(self.get_tab(tab)),
+            // The cast reborrows the popup for the body rather than for
+            // the lifetime the app is tied to.
+            TaskSlot::GitPush | TaskSlot::GitFetch => self
+                .popup
+                .as_deref_mut()
+                .map(|popup| popup as &mut dyn Component),
+        };
+        let Some(consumer) = consumer else {
+            trace!("Dropping task result, its consumer is gone");
+            return Ok(());
         };
 
         if let Some(app_action) = consumer.task_done(result)? {

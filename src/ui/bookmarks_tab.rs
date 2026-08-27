@@ -351,8 +351,9 @@ impl Component for BookmarksTab {
     }
 
     fn task_done(&mut self, result: TaskResult) -> Result<Option<AppAction>> {
-        let TaskSlot::CommitShow(_, request) = result.slot;
-        self.bookmark_panel.task_done(request, result.output);
+        if let TaskSlot::CommitShow(_, request) = result.slot {
+            self.bookmark_panel.task_done(request, result.output);
+        }
         Ok(None)
     }
 
