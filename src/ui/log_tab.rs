@@ -814,7 +814,7 @@ impl Tab for LogTab<'_> {
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
-        let half_page = self.log_panel.visible_heads() as isize / 2;
+        let half_page = self.log_panel.visible_heads() / 2;
         self.log_panel.scroll_relative(match scroll {
             Scroll::Down => 1,
             Scroll::Up => -1,
@@ -1043,6 +1043,11 @@ impl Component for LogTab<'_> {
                 &mut [&mut self.log_panel, &mut self.head_panel],
             ) {
                 MouseInput::Scroll(delta) => self.log_panel.scroll_relative(delta),
+                MouseInput::Select(index) => {
+                    if let Some(head) = self.log_panel.head_at_log_line(index) {
+                        self.log_panel.set_head(head);
+                    }
+                }
                 MouseInput::Handled => {}
                 MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }
