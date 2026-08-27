@@ -1,7 +1,10 @@
+mod commit_show;
+mod commit_show_cache;
 mod details_panel;
 mod list_pane;
 mod log_panel;
 
+pub use commit_show::CommitShowPanel;
 pub use details_panel::DetailsPanel;
 pub use details_panel::LargeStringContent;
 pub use details_panel::TextContent;

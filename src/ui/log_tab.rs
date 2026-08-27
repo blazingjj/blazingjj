@@ -1,11 +1,6 @@
 #![expect(clippy::borrow_interior_mutable_const)]
 
-use std::io::Read;
-use std::process::Child;
 use std::sync::mpsc::Sender;
-use std::thread;
-use std::thread::JoinHandle;
-use std::time::Duration;
 
 use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
@@ -16,10 +11,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
-use tracing::debug;
-use tracing::error;
 use tracing::instrument;
-use tracing::warn;
 use tui_confirm_dialog::ButtonLabel;
 use tui_confirm_dialog::ConfirmDialog;
 use tui_confirm_dialog::ConfirmDialogState;
@@ -28,7 +20,6 @@ use tui_confirm_dialog::Listener;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
-use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::event::AppEvent;
@@ -41,42 +32,25 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
-use crate::ui::commit_show_cache::CommitShowCache;
-use crate::ui::commit_show_cache::CommitShowKey;
-use crate::ui::commit_show_cache::CommitShowRequest;
 use crate::ui::dialog::BookmarkSetPopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
-use crate::ui::panel::DetailsPanel;
-use crate::ui::panel::LargeStringContent;
+use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::LogPanel;
 use crate::ui::panel::MouseInput;
-use crate::ui::panel::TextContent;
 use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
-use crate::ui::utils::Timer;
 use crate::ui::utils::centered_rect_line_height;
-use crate::ui::utils::tabs_to_spaces;
-use crate::ui::utils::waiting_message;
 
 const NEW_POPUP_ID: u16 = 1;
 const EDIT_POPUP_ID: u16 = 2;
 const ABANDON_POPUP_ID: u16 = 3;
 const SQUASH_POPUP_ID: u16 = 4;
 
-/// How long the details panel hides that 'jj show' is running: it keeps
-/// showing the change it already has and, if it has none, stays empty
-/// until the request it waits for has taken this long. Each request
-/// gets its own grace, so moving on keeps the panel quiet.
-const LOADING_GRACE: Duration = Duration::from_secs(1);
-
 /// Log tab. Shows `jj log` in main panel and shows selected change details of in details panel.
 pub struct LogTab<'a> {
-    /// Channel for app events
-    app_event_sender: Sender<AppEvent>,
-
     /// The revset filter to apply to jj log
     log_revset_textarea: Option<TextArea<'a>>,
 
@@ -84,26 +58,11 @@ pub struct LogTab<'a> {
     log_panel: LogPanel<'a>,
 
     /// The panel showing change content to the right
-    head_panel: DetailsPanel,
-
-    /// The selected change content key in the cache
-    head_key: CommitShowKey,
-
-    /// The content key the details panel currently renders. This lags
-    /// behind `head_key` while we wait for 'jj show'
-    shown_key: Option<CommitShowKey>,
-
-    /// Cached change content
-    commit_show_cache: CommitShowCache,
-
-    /// Child process for computing 'jj show'
-    pending_jj_show: Option<PendingJjShow>,
+    head_panel: CommitShowPanel,
 
     /// The currently selected change. It is a copy of `self.log_panel.head`,
     /// so if these differ, we need to update `self.head`
     head: Head,
-
-    diff_format: DiffFormat,
 
     popup: ConfirmDialogState,
     popup_tx: std::sync::mpsc::Sender<Listener>,
@@ -124,21 +83,6 @@ pub struct LogTab<'a> {
     stale: bool,
 }
 
-/// A background process for fetching 'jj show' and a thread for signalling
-/// the UI while waiting
-struct PendingJjShow {
-    /// The 'jj show' the child was launched for
-    request: CommitShowRequest,
-    /// The child process executing 'jj show'
-    child: Child,
-    /// The thread reading stdout from child process
-    stdout_reader: JoinHandle<Vec<u8>>,
-    /// The thread reading stderr from child process
-    stderr_reader: JoinHandle<Vec<u8>>,
-    /// A timer used to signal the application while child is running
-    timer: Timer<AppEvent>,
-}
-
 /**
 # Supporting functions
 Normally the event handling code would call
@@ -157,28 +101,10 @@ The main functions are:
 * [sync_head_output](LogTab::sync_head_output) - Make right panel show
   what left panel selected.
   (called by refresh_log_output)
-
-* [refresh_head_output](LogTab::refresh_head_output) - Update content of
-  right panel
-  (called by sync_head_output)
-
-* [request_jj_show](LogTab::request_jj_show) - Spawn `jj show` for a commit,
-  replacing any request that is still running
-  (called by refresh_head_output)
-
-* [try_read_jj_show_output](LogTab::try_read_jj_show_output) - Move the
-  output of a finished `jj show` into the cache
-  (called by refresh_head_output)
 */
 impl<'a> LogTab<'a> {
     #[instrument(level = "info", name = "Initializing log tab", parent = None, skip())]
     pub fn new(app_event_sender: Sender<AppEvent>, head: Head) -> Self {
-        let diff_format = get_env().jj_config.diff_format();
-
-        let head_key = CommitShowKey::new(head.clone(), diff_format.clone());
-
-        let commit_show_cache = CommitShowCache::new();
-
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
 
         let mut keybinds = LogTabKeybinds::default();
@@ -197,21 +123,12 @@ impl<'a> LogTab<'a> {
         let pane_divider = PaneDivider::new(config.layout_percent());
 
         Self {
-            app_event_sender,
-
             log_revset_textarea: None,
 
             log_panel: LogPanel::new(head.clone()),
 
             head,
-            head_panel: DetailsPanel::new(),
-            head_key,
-            shown_key: None,
-
-            commit_show_cache,
-            pending_jj_show: None,
-
-            diff_format,
+            head_panel: CommitShowPanel::new(app_event_sender),
 
             popup: ConfirmDialogState::default(),
             popup_tx,
@@ -244,199 +161,16 @@ impl<'a> LogTab<'a> {
     /// the diff cache.
     fn refresh_log_output(&mut self) {
         self.log_panel.refresh_log_output();
-        self.update_cache_active_commits();
+        self.head_panel.set_active(self.log_panel.log_heads());
         self.sync_head_output();
     }
 
     /// Extract selection from log panel and update change details panel
     fn sync_head_output(&mut self) {
         self.head = self.log_panel.head.clone();
-        self.refresh_head_output();
+        let title = format!(" Details for {} ", self.head.change_id);
+        self.head_panel.show(Some(self.head.clone()), title);
     }
-
-    /// Refesh the diff of the currently selected change
-    fn refresh_head_output(&mut self) {
-        // Check if the child process has new data for the cache
-        self.try_read_jj_show_output();
-
-        // Look up selected change via its key
-        // If the key matches, then we can use the cached value.
-        // This is not entierly true. A reconfiguration of jj could
-        // generate different output for some keys. We probably need
-        // a forced cache clear function.
-
-        // The next draw requests `jj show` for the new key if it is not
-        // already cached, and moves the panel over once it has content.
-        self.head_key = CommitShowKey::new(self.head.clone(), self.diff_format.clone());
-    }
-
-    /// The 'jj show' the details panel wants for the selected change. The
-    /// panel reports the width it got in the last frame, so this is only
-    /// meaningful once it has been drawn.
-    fn head_show_request(&self) -> CommitShowRequest {
-        CommitShowRequest::new(self.head_key.clone(), self.head_panel.columns() as usize)
-    }
-
-    /// The content the details panel is to render. This is the selected
-    /// change as soon as the cache can serve it, and the change the panel
-    /// already shows while we briefly wait for 'jj show'.
-    fn key_to_render(&self) -> Option<CommitShowKey> {
-        if self.commit_show_cache.get(&self.head_key).is_some() {
-            return Some(self.head_key.clone());
-        }
-        let pending = self.pending_jj_show.as_ref()?;
-        if pending.timer.elapsed() < LOADING_GRACE {
-            return self.shown_key.clone();
-        }
-        None
-    }
-
-    //
-    // Cache related
-    //
-
-    /// Mark all active elements as dirty, which will trigger a cache
-    /// update next time they are requested.
-    fn mark_cache_as_dirty(&mut self) {
-        self.commit_show_cache.mark_dirty();
-    }
-
-    /// Get the list of active commits from the log panel, and mark
-    /// the changes there as active. For non-active changes, keep at most
-    /// one commit.
-    fn update_cache_active_commits(&mut self) {
-        let active_heads = self.log_panel.log_heads();
-        self.commit_show_cache
-            .set_active(active_heads, &self.diff_format);
-    }
-
-    /// Launch of a child process for 'jj show'
-    fn request_jj_show(&mut self, request: CommitShowRequest) {
-        // Ignore request for already pending key
-        if let Some(pjs) = self.pending_jj_show.as_ref()
-            && pjs.request == request
-        {
-            return;
-        }
-        // Kill old child process
-        if let Some(mut pjs) = self.pending_jj_show.take() {
-            // TODO implement std::fmt::Display for CommitShowKey
-            //debug!("Kill 'jj show' that was too slow. key={}", &key);
-            if let Err(err) = pjs.child.kill() {
-                error!("Kill failed on 'jj show' child process: {err}");
-            }
-            let _ = pjs.child.wait();
-        }
-
-        // Lanuch new child process that runs 'jj show'
-        let launch_key = request.key().clone();
-        let mut commander = new_commander();
-        commander.limit_width(request.width());
-        let launch_child =
-            commander.spawn_commit_show(&launch_key.id.commit_id, &launch_key.format, true);
-        let mut launch_child = match launch_child {
-            Ok(child) => child,
-            Err(err) => {
-                error!("Unable to spawn 'jj show': {err}");
-                self.show_error_in_details_panel(request, err.to_string());
-                return;
-            }
-        };
-
-        let stdout_reader = spawn_pipe_reader("stdout", launch_child.stdout.take().unwrap());
-        let stderr_reader = spawn_pipe_reader("stderr", launch_child.stderr.take().unwrap());
-
-        // Check for updates from child
-        let launch_timer = Timer::new(self.app_event_sender.clone());
-        launch_timer.signal_in(AppEvent::Refresh, Duration::from_millis(100));
-
-        let pjs = PendingJjShow {
-            request,
-            child: launch_child,
-            stdout_reader,
-            stderr_reader,
-            timer: launch_timer,
-        };
-        self.pending_jj_show = Some(pjs);
-    }
-
-    /// Update the cache with data from the child process, if it is
-    /// ready.
-    fn try_read_jj_show_output(&mut self) {
-        let Some(mut pjs) = self.pending_jj_show.take() else {
-            return;
-        };
-
-        let wait_result = pjs.child.try_wait();
-        if let Err(err) = wait_result {
-            // Abort on error, but log what happended
-            error!(
-                "Unable to get result from 'jj show'. try_wait on child failed with message: {err}"
-            );
-            // TODO: Maybe we want to kill the child process here?
-            self.pending_jj_show = Some(pjs);
-            return;
-        }
-
-        let Some(status) = wait_result.unwrap() else {
-            // Child not done yet
-            let next_check_in = if pjs.timer.elapsed() < Duration::from_secs(1) {
-                Duration::from_millis(100)
-            } else {
-                Duration::from_millis(1000)
-            };
-            pjs.timer.signal_in(AppEvent::Refresh, next_check_in);
-            self.pending_jj_show = Some(pjs);
-            return;
-        };
-        debug!("jj show child process exited with status {status}");
-
-        // Read data from child process into cache
-        let stdout = pjs.stdout_reader.join().unwrap_or_default();
-        let stderr_bytes = pjs.stderr_reader.join().unwrap_or_default();
-        let stderr = String::from_utf8_lossy(&stderr_bytes);
-        pjs.timer.stop();
-
-        // A failing 'jj show' has nothing useful on stdout, so show the
-        // error instead of caching an empty document for the commit.
-        if !status.success() {
-            error!("'jj show' exited with status {status}:\n{stderr}");
-            self.show_error_in_details_panel(pjs.request, format!("jj show failed:\n\n{stderr}"));
-            return;
-        }
-        if !stderr.is_empty() {
-            warn!("Ignoring stderr from child process:\n{stderr}");
-        }
-
-        let text = tabs_to_spaces(&String::from_utf8_lossy(&stdout));
-        let value = pjs.request.into_value(text);
-        self.commit_show_cache.insert_document(value);
-
-        // Note: self.pending_jj_show.take() has already cleared the
-        // child handle, which indicates room for the next child process
-    }
-
-    /// Cache `message` as the content the request asked for, so the
-    /// details panel shows it instead of staying blank.
-    fn show_error_in_details_panel(&mut self, request: CommitShowRequest, message: String) {
-        self.commit_show_cache
-            .insert_document(request.into_value(message));
-    }
-}
-
-/// Drain a child process pipe from its own thread. The pipe buffer would
-/// otherwise fill up on large diffs and block the child before it exits.
-fn spawn_pipe_reader<R: Read + Send + 'static>(
-    name: &'static str,
-    mut pipe: R,
-) -> JoinHandle<Vec<u8>> {
-    thread::spawn(move || {
-        let mut output = Vec::new();
-        if let Err(err) = pipe.read_to_end(&mut output) {
-            error!("Failed to read {name} from 'jj show': {err}");
-        }
-        output
-    })
 }
 
 /**
@@ -810,7 +544,7 @@ impl Tab for LogTab<'_> {
     }
 
     fn drop_caches(&mut self) {
-        self.mark_cache_as_dirty();
+        self.head_panel.mark_dirty();
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
@@ -890,34 +624,7 @@ impl Component for LogTab<'_> {
         self.log_panel.draw(f, chunks[0])?;
 
         // Draw change details
-        self.try_read_jj_show_output();
-        let head_request = self.head_show_request();
-        if !self.commit_show_cache.is_fresh(&head_request) {
-            self.request_jj_show(head_request);
-        }
-        if let Some(key) = self.key_to_render()
-            && let Some(content) = self.commit_show_cache.get(&key)
-        {
-            // Read a change from its top, but stay put while it is only
-            // being rewritten under us
-            if self.shown_key.as_ref().map(|shown| &shown.id.change_id) != Some(&key.id.change_id) {
-                self.head_panel.scroll_to(0);
-            }
-            self.head_panel
-                .render_context::<LargeStringContent>(content.value())
-                .title(format!(" Details for {} ", key.id.change_id))
-                .draw(f, chunks[1]);
-            self.shown_key = Some(key);
-        } else if let Some(pjs) = &self.pending_jj_show {
-            self.head_panel
-                .render_context::<TextContent>(waiting_message(
-                    Some(pjs.timer.elapsed()),
-                    "jj show",
-                    LOADING_GRACE,
-                ))
-                .title(format!(" Details for {} ", self.head.change_id))
-                .draw(f, chunks[1])
-        }
+        self.head_panel.draw(f, chunks[1]);
 
         // Draw popup
         if self.popup.is_opened() {
@@ -1016,11 +723,6 @@ impl Component for LogTab<'_> {
 
             match self.details_keybinds.match_event(key) {
                 DetailsPanelEvent::Unbound => {}
-                DetailsPanelEvent::ToggleDiffFormat => {
-                    self.diff_format = self.diff_format.get_next(self.config.diff_tool());
-                    self.refresh_head_output();
-                    return Ok(ComponentInputResult::Handled);
-                }
                 ev => {
                     self.head_panel.handle_event(ev);
                     return Ok(ComponentInputResult::Handled);

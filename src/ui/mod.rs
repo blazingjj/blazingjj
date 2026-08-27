@@ -1,7 +1,6 @@
 /*! All user interface components, such as tabs, panels and dialogs.
 */
 pub mod bookmarks_tab;
-pub mod commit_show_cache;
 pub mod dialog;
 pub mod files_tab;
 pub mod log_tab;
