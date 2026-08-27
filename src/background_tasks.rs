@@ -70,6 +70,8 @@ pub enum TaskSlot {
     EvologShow(TabId, OutputRequest<EvologShowKey>),
     GitPush,
     GitFetch,
+    /// A read of what operation the repo is at.
+    RepoOpId,
 }
 
 /// Which run of a slot a task is. Unique for the lifetime of the app,
@@ -244,14 +246,20 @@ impl BackgroundTasks {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    #[cfg(test)]
-    fn running_count(&self) -> usize {
-        self.lock().tasks.len()
+    /// Whether the task in `slot` has yet to deliver its result.
+    pub fn is_running(&self, slot: &TaskSlot) -> bool {
+        self.lock().tasks.iter().any(|task| &task.slot == slot)
+    }
+
+    /// Whether a submission would find a free slot rather than have to
+    /// make room.
+    pub fn has_room(&self) -> bool {
+        self.lock().tasks.len() < MAX_RUNNING
     }
 
     #[cfg(test)]
-    fn contains(&self, slot: &TaskSlot) -> bool {
-        self.lock().tasks.iter().any(|task| &task.slot == slot)
+    fn running_count(&self) -> usize {
+        self.lock().tasks.len()
     }
 }
 
@@ -410,8 +418,11 @@ mod tests {
         gates.push(gate);
         tasks.submit(slot(MAX_RUNNING), move |_cancel| task());
 
-        assert!(!tasks.contains(&slot(0)), "oldest task should be evicted");
-        assert!(tasks.contains(&slot(1)), "younger tasks should be left be");
+        assert!(!tasks.is_running(&slot(0)), "oldest task should be evicted");
+        assert!(
+            tasks.is_running(&slot(1)),
+            "younger tasks should be left be"
+        );
         assert_eq!(tasks.running_count(), MAX_RUNNING);
     }
 
@@ -431,7 +442,7 @@ mod tests {
         tasks.submit(slot(MAX_RUNNING), move |_cancel| task());
 
         assert_eq!(tasks.running_count(), MAX_RUNNING + 1);
-        assert!(tasks.contains(&slot(0)));
+        assert!(tasks.is_running(&slot(0)));
     }
 
     #[test]
@@ -454,8 +465,11 @@ mod tests {
         gates.push(gate);
         tasks.submit(slot(MAX_RUNNING), move |_cancel| task());
 
-        assert!(tasks.contains(&TaskSlot::GitPush), "a push is never killed");
-        assert!(!tasks.contains(&slot(1)), "oldest task should be evicted");
+        assert!(
+            tasks.is_running(&TaskSlot::GitPush),
+            "a push is never killed"
+        );
+        assert!(!tasks.is_running(&slot(1)), "oldest task should be evicted");
         assert_eq!(tasks.running_count(), MAX_RUNNING);
     }
 
@@ -465,7 +479,7 @@ mod tests {
         let gates = fill_with_gated_tasks(&tasks);
 
         tasks.submit(slot(MAX_RUNNING), |_cancel| Ok("newest".to_owned()));
-        assert!(!tasks.contains(&slot(0)), "oldest task should be evicted");
+        assert!(!tasks.is_running(&slot(0)), "oldest task should be evicted");
 
         // The evicted task runs to completion here, since a plain closure
         // has nothing we could kill. Its result is dropped anyway.
@@ -481,7 +495,7 @@ mod tests {
         tasks.submit(slot(0), move |_cancel| task());
 
         tasks.cancel(&slot(0));
-        assert!(!tasks.contains(&slot(0)));
+        assert!(!tasks.is_running(&slot(0)));
         assert_eq!(tasks.running_count(), 0);
 
         drop(gate);
@@ -495,7 +509,7 @@ mod tests {
         tasks.submit(slot(0), move |_cancel| task());
 
         tasks.cancel(&slot(1));
-        assert!(tasks.contains(&slot(0)));
+        assert!(tasks.is_running(&slot(0)));
     }
 
     #[test]
@@ -541,7 +555,10 @@ mod tests {
             })
             .collect();
         tasks.submit(slot(MAX_RUNNING), |_cancel| Ok("newest".to_owned()));
-        assert!(!tasks.contains(&slot(0)), "the oldest entry should be gone");
+        assert!(
+            !tasks.is_running(&slot(0)),
+            "the oldest entry should be gone"
+        );
 
         // With no entry left, the slot takes a second run -- which the
         // first run's result must not release.
@@ -550,7 +567,7 @@ mod tests {
         tasks.finish(&first);
 
         assert!(
-            tasks.contains(&slot(0)),
+            tasks.is_running(&slot(0)),
             "the second run should still hold the slot"
         );
     }
@@ -569,6 +586,6 @@ mod tests {
         }
 
         assert_eq!(tasks.running_count(), MAX_RUNNING);
-        assert!(tasks.contains(&slot(MAX_RUNNING * 2 - 1)));
+        assert!(tasks.is_running(&slot(MAX_RUNNING * 2 - 1)));
     }
 }
