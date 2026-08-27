@@ -33,6 +33,7 @@ use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::panel::DetailsPanel;
+use crate::ui::panel::ListPane;
 use crate::ui::panel::TextContent;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::tabs_to_spaces;
@@ -53,8 +54,8 @@ const EDIT_POPUP_ID: u16 = 4;
 /// Bookmarks tab. Shows bookmarks in main panel and selected bookmark current change in details panel.
 pub struct BookmarksTab {
     bookmarks_output: Result<Vec<BookmarkLine>, CommandError>,
+    bookmarks_pane: ListPane,
     bookmarks_list_state: ListState,
-    bookmarks_height: u16,
 
     show_all: bool,
 
@@ -132,8 +133,8 @@ impl BookmarksTab {
         Self {
             bookmarks_output: Ok(Vec::new()),
             bookmark: None,
+            bookmarks_pane: ListPane::default(),
             bookmarks_list_state: ListState::default(),
-            bookmarks_height: 0,
 
             show_all: false,
 
@@ -239,7 +240,7 @@ impl Tab for BookmarksTab {
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
-        let half_page = self.bookmarks_height as isize / 2;
+        let half_page = self.bookmarks_pane.visible_items() / 2;
         self.scroll_bookmarks(match scroll {
             Scroll::Down => 1,
             Scroll::Up => -1,
@@ -410,32 +411,18 @@ impl Component for BookmarksTab {
                 bookmark_lines
             };
 
-            let bookmarks_block = Block::bordered()
+            let block = Block::bordered()
                 .title(" Bookmarks ")
                 .border_type(BorderType::Rounded);
-            self.bookmarks_height = bookmarks_block.inner(chunks[0]).height;
-            let bookmark_count = lines.len();
-            let bookmarks = List::new(lines).block(bookmarks_block).scroll_padding(3);
+            let bookmarks = List::new(lines).scroll_padding(3);
             *self.bookmarks_list_state.selected_mut() = current_bookmark_index;
-            f.render_stateful_widget(bookmarks, chunks[0], &mut self.bookmarks_list_state);
-
-            // Draw scrollbar on left panel
-            if bookmark_count > self.bookmarks_height.into() {
-                let index = current_bookmark_index.unwrap_or(0);
-                let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-                let mut scrollbar_state = ScrollbarState::default()
-                    .content_length(bookmark_count)
-                    .position(index);
-
-                f.render_stateful_widget(
-                    scrollbar,
-                    chunks[0].inner(Margin {
-                        vertical: 1,
-                        horizontal: 0,
-                    }),
-                    &mut scrollbar_state,
-                );
-            }
+            self.bookmarks_pane.render(
+                f,
+                chunks[0],
+                block,
+                bookmarks,
+                &mut self.bookmarks_list_state,
+            );
         }
 
         // Draw bookmark

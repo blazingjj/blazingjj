@@ -27,6 +27,7 @@ use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::panel::DetailsPanel;
+use crate::ui::panel::ListPane;
 use crate::ui::panel::TextContent;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::tabs_to_spaces;
@@ -38,8 +39,8 @@ pub struct FilesTab {
 
     files_output: Result<Vec<File>, CommandError>,
     conflicts_output: Vec<Conflict>,
+    files_pane: ListPane,
     files_list_state: ListState,
-    files_height: u16,
 
     pub file: Option<File>,
     diff_panel: DetailsPanel,
@@ -84,8 +85,8 @@ impl FilesTab {
 
             files_output: Ok(Vec::new()),
             file: None,
+            files_pane: ListPane::default(),
             files_list_state: ListState::default(),
-            files_height: 0,
 
             conflicts_output: Vec::new(),
 
@@ -220,7 +221,7 @@ impl Tab for FilesTab {
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
-        let half_page = self.files_height as isize / 2;
+        let half_page = self.files_pane.visible_items() / 2;
         self.scroll_files(match scroll {
             Scroll::Down => 1,
             Scroll::Up => -1,
@@ -323,34 +324,13 @@ impl Component for FilesTab {
                 }
             }
 
-            let files = List::new(lines)
-                .block(
-                    Block::bordered()
-                        .title(" Files for ".to_owned() + &title_change + " ")
-                        .border_type(BorderType::Rounded),
-                )
-                .scroll_padding(3);
+            let block = Block::bordered()
+                .title(" Files for ".to_owned() + &title_change + " ")
+                .border_type(BorderType::Rounded);
+            let files = List::new(lines).scroll_padding(3);
             *self.files_list_state.selected_mut() = current_file_index;
-            f.render_stateful_widget(&files, chunks[0], &mut self.files_list_state);
-            self.files_height = chunks[0].height - 2;
-
-            if let Some(index) = current_file_index
-                && files.len() > self.files_height as usize
-            {
-                let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-                let mut scrollbar_state = ScrollbarState::default()
-                    .content_length(files.len())
-                    .position(index);
-
-                f.render_stateful_widget(
-                    scrollbar,
-                    chunks[0].inner(Margin {
-                        vertical: 1,
-                        horizontal: 0,
-                    }),
-                    &mut scrollbar_state,
-                );
-            }
+            self.files_pane
+                .render(f, chunks[0], block, files, &mut self.files_list_state);
         }
 
         // Draw diff
