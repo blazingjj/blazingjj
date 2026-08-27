@@ -128,6 +128,7 @@ impl FromStr for Shortcut {
                 "end" => key = Some(KeyCode::End),
                 "pagedown" => key = Some(KeyCode::PageDown),
                 "pageup" => key = Some(KeyCode::PageUp),
+                "menu" => key = Some(KeyCode::Menu),
                 s if s.starts_with('f') && s.chars().count() > 1 => {
                     let s = s.trim_start_matches('f');
                     match s.parse::<u8>() {
@@ -171,6 +172,7 @@ impl Display for Shortcut {
             KeyCode::F(n) => format!("F{n}"),
             KeyCode::Char(c) => c.to_string(),
             KeyCode::Esc => "Esc".to_string(),
+            KeyCode::Menu => "Menu".to_string(),
             _ => "Unknown".to_string(),
         };
         parts.push(k);
