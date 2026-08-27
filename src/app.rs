@@ -356,7 +356,7 @@ impl<'a> App<'a> {
     }
 
     /// Recieve an AppEvent if one is waiting
-    pub fn try_recv_app_event(&mut self, timeout: Duration) -> Option<AppEvent> {
+    pub fn try_recv_app_event(&self, timeout: Duration) -> Option<AppEvent> {
         self.event_source.try_recv(timeout)
     }
 
