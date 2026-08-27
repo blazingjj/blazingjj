@@ -52,7 +52,9 @@ use crate::ui::dialog::RebasePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::LargeStringContent;
 use crate::ui::panel::LogPanel;
+use crate::ui::panel::MouseInput;
 use crate::ui::panel::TextContent;
+use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::Timer;
 use crate::ui::utils::centered_rect_line_height;
@@ -1036,15 +1038,16 @@ impl Component for LogTab<'_> {
             {
                 return Ok(ComponentInputResult::Handled);
             }
-            let input_result = self.log_panel.input(event.clone())?;
-            if input_result.is_handled() {
-                self.sync_head_output();
-                return Ok(input_result);
+            match route_mouse(
+                mouse_event,
+                &mut [&mut self.log_panel, &mut self.head_panel],
+            ) {
+                MouseInput::Scroll(delta) => self.log_panel.scroll_relative(delta),
+                MouseInput::Handled => {}
+                MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }
-            if self.head_panel.input_mouse(mouse_event) {
-                return Ok(ComponentInputResult::Handled);
-            }
-            return Ok(ComponentInputResult::NotHandled);
+            self.sync_head_output();
+            return Ok(ComponentInputResult::Handled);
         }
 
         Ok(ComponentInputResult::Handled)
