@@ -28,7 +28,8 @@ use crate::app::TabId;
 use crate::commander::CommandError;
 use crate::commander::cancel::CancelToken;
 use crate::event::AppEvent;
-use crate::ui::panel::CommitShowRequest;
+use crate::ui::panel::CommitShowKey;
+use crate::ui::panel::OutputRequest;
 
 /// How many tasks may run at once. A submission beyond this makes room by
 /// killing the ones that have been running longest.
@@ -60,7 +61,7 @@ pub enum TaskSlot {
     /// A 'jj show' for the details panel of a tab. Two tabs may want the
     /// same change at once, and each keeps its own copy of the output, so
     /// the tab is part of the slot.
-    CommitShow(TabId, CommitShowRequest),
+    CommitShow(TabId, OutputRequest<CommitShowKey>),
     GitPush,
     GitFetch,
 }
@@ -278,7 +279,7 @@ mod tests {
     use crate::commander::ids::CommitId;
     use crate::commander::log::Head;
     use crate::env::DiffFormat;
-    use crate::ui::panel::CommitShowKey;
+    use crate::ui::panel::OutputKey;
 
     /// Long enough that a missing result is a failure, not a slow machine.
     const DELIVERY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -301,7 +302,7 @@ mod tests {
         };
         TaskSlot::CommitShow(
             TabId::Log,
-            CommitShowRequest::new(CommitShowKey::new(head, DiffFormat::Git), 0),
+            OutputRequest::new(CommitShowKey::new(head, DiffFormat::Git), 0),
         )
     }
 
