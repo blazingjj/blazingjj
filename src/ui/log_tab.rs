@@ -37,6 +37,7 @@ use crate::ui::dialog::BookmarkSetPopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
+use crate::ui::dialog::ParentSelectPopup;
 use crate::ui::dialog::RebasePopup;
 use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::LogPanel;
@@ -307,6 +308,47 @@ impl<'a> LogTab<'a> {
         }
     }
 
+    /// Move the selection to the parent of the current head, asking which
+    /// one unless there is a single parent to go to.
+    fn handle_goto_parent(&mut self) -> Result<ComponentInputResult> {
+        let message = |text: &str| {
+            Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                Box::new(MessagePopup::new("Go to parent", text)),
+            )))
+        };
+
+        let parents = match new_commander().get_commit_parents(&self.head.commit_id) {
+            Ok(parents) => parents,
+            Err(err) => return message(&err.to_string()),
+        };
+
+        if parents.is_empty() {
+            return message("The root commit has no parent");
+        }
+
+        // Selecting a change the log does not hold would leave the list
+        // without a highlight, and the next scroll would start over at its
+        // first change.
+        let (mut parents, out_of_view): (Vec<_>, Vec<_>) = parents
+            .into_iter()
+            .partition(|parent| self.log_panel.shows_head(&parent.head));
+
+        match parents.len() {
+            0 => message("The log holds no parent of this change"),
+            1 => {
+                self.set_head(parents.remove(0).head);
+                Ok(ComponentInputResult::Handled)
+            }
+            _ => Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                Box::new(ParentSelectPopup::new(
+                    parents,
+                    out_of_view,
+                    self.config.clone(),
+                )),
+            ))),
+        }
+    }
+
     fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<ComponentInputResult> {
         match log_tab_event {
             LogTabEvent::ScrollToBottom
@@ -512,6 +554,10 @@ impl<'a> LogTab<'a> {
                     Box::new(loader),
                 )));
             }
+            LogTabEvent::GotoParent => {
+                return self.handle_goto_parent();
+            }
+
             LogTabEvent::Save
             | LogTabEvent::Cancel
             | LogTabEvent::ClosePopup

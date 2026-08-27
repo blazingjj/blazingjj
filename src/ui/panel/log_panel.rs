@@ -227,6 +227,12 @@ impl<'a> LogPanel<'a> {
         get_head_index(&self.head, &self.log_output)
     }
 
+    /// Whether the log holds a head, taking a different commit for the
+    /// same change as a match.
+    pub fn shows_head(&self, head: &Head) -> bool {
+        get_head_index(head, &self.log_output).is_some()
+    }
+
     /// Number of heads that fit on screen. Think of this as in unit
     /// head-index. Moving the head-index this much causes a full page
     /// scroll.

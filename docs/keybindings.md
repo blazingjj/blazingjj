@@ -61,6 +61,8 @@ close-popup = "q"
 
 toggle-diff-format = "w"
 
+goto-parent = "-"
+
 create-new = "n"
 create-new-describe = "shift+n"
 duplicate = "shift+d"

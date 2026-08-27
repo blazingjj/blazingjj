@@ -15,6 +15,7 @@ mod describe;
 mod help;
 mod loader;
 mod message;
+mod parent_select;
 mod rebase;
 
 pub use bookmark_name::BookmarkNamePopup;
@@ -24,4 +25,5 @@ pub use describe::DescribePopup;
 pub use help::HelpPopup;
 pub use loader::LoaderPopup;
 pub use message::MessagePopup;
+pub use parent_select::ParentSelectPopup;
 pub use rebase::RebasePopup;
