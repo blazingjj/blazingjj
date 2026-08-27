@@ -44,14 +44,9 @@ use std::string::FromUtf8Error;
 use std::thread;
 use std::thread::JoinHandle;
 
-use ansi_to_tui::IntoText;
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::bail;
-use ratatui::style::Color;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::text::Text;
 use thiserror::Error;
 use tracing::error;
 use tracing::instrument;
@@ -99,20 +94,6 @@ pub enum CommandError {
     Status(String, Option<i32>),
     #[error("Error parsing UTF-8 output: {0}")]
     FromUtf8(#[from] FromUtf8Error),
-}
-
-impl CommandError {
-    #[expect(clippy::wrong_self_convention)]
-    pub fn into_text<'a>(&self, title: &'a str) -> Result<Text<'a>, ansi_to_tui::Error> {
-        let mut lines = vec![];
-        if !title.is_empty() {
-            lines.push(Line::raw(title).bold().fg(Color::Red));
-            lines.append(&mut vec![Line::raw(""), Line::raw("")]);
-        }
-        lines.append(&mut self.to_string().into_text()?.lines);
-
-        Ok(Text::from(lines))
-    }
 }
 
 /// Reusable handle to a repository.

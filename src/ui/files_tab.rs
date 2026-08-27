@@ -32,6 +32,7 @@ use crate::ui::panel::MouseInput;
 use crate::ui::panel::TextContent;
 use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
+use crate::ui::utils::error_text;
 use crate::ui::utils::tabs_to_spaces;
 
 /// Files tab. Shows files in selected change in main panel and selected file diff in details panel
@@ -309,7 +310,7 @@ impl Component for FilesTab {
                         files_lines
                     }
                 }
-                Err(err) => err.into_text("Error getting files")?.lines,
+                Err(err) => error_text("Error getting files", err)?.lines,
             };
 
             let title_change = if self.is_current_head {
@@ -340,7 +341,7 @@ impl Component for FilesTab {
             let diff_content = match self.diff_output.as_ref() {
                 Ok(Some(diff_content)) => diff_content.into_text()?,
                 Ok(None) => Text::default(),
-                Err(err) => err.into_text("Error getting diff")?,
+                Err(err) => error_text("Error getting diff", err)?,
             };
             self.diff_panel
                 .render_context::<TextContent>(diff_content)
