@@ -1,8 +1,10 @@
 mod large_string;
 
+use std::fmt;
 use std::time::Duration;
 use std::time::Instant;
 
+use ansi_to_tui::IntoText;
 pub use large_string::LargeString;
 use ratatui::crossterm::event::MouseButton;
 use ratatui::crossterm::event::MouseEvent;
@@ -11,6 +13,10 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui::style::Stylize;
+use ratatui::text::Line;
+use ratatui::text::Text;
 
 use crate::env::JJLayout;
 
@@ -176,6 +182,22 @@ pub fn centered_rect_fixed(area: Rect, width: u16, height: u16) -> Rect {
     }
 }
 
+/// An error under a red title, with any ANSI escape sequences in its
+/// message honoured.
+pub fn error_text<'a>(
+    title: &'a str,
+    error: &impl fmt::Display,
+) -> Result<Text<'a>, ansi_to_tui::Error> {
+    let mut lines = vec![
+        Line::raw(title).bold().fg(Color::Red),
+        Line::raw(""),
+        Line::raw(""),
+    ];
+    lines.append(&mut error.to_string().into_text()?.lines);
+
+    Ok(Text::from(lines))
+}
+
 /// How long a panel keeps quiet about the command it is waiting for.
 const LOADING_GRACE: Duration = Duration::from_secs(1);
 
@@ -308,6 +330,19 @@ pub fn tabs_to_spaces(line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_error_is_shown_under_its_title() -> Result<(), ansi_to_tui::Error> {
+        let text = error_text("Error getting diff", &"no such \x1b[31mrevision\x1b[0m")?;
+
+        let lines: Vec<String> = text.lines.iter().map(ToString::to_string).collect();
+        assert_eq!(lines, ["Error getting diff", "", "", "no such revision"]);
+        assert_eq!(text.lines[0].style.fg, Some(Color::Red));
+        // The escape sequence is a style rather than something to read.
+        assert_eq!(text.lines[3].spans.len(), 2);
+
+        Ok(())
+    }
 
     #[test]
     fn a_long_wait_names_the_command_and_its_runtime() {

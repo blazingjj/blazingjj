@@ -25,6 +25,7 @@ use crate::keybinds::LogTabKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::utils::error_text;
 
 /**
     A panel that displays the output of jj log.
@@ -191,7 +192,7 @@ impl<'a> LogPanel<'a> {
     fn log_lines(&self) -> Vec<Line<'a>> {
         match self.log_output.as_ref() {
             Ok(log_output) => self.output_to_lines(log_output),
-            Err(err) => err.into_text("Error getting log").unwrap().lines,
+            Err(err) => error_text("Error getting log", err).unwrap().lines,
         }
     }
 
