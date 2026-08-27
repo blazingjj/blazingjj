@@ -29,6 +29,10 @@ use crate::keybinds::DetailsPanelEvent;
 use crate::ui::utils::PanelWait;
 use crate::ui::utils::error_text;
 
+/// How many of the documents just after the one on screen are produced
+/// before the user asks for them.
+const PREFETCH_AHEAD: usize = 5;
+
 /// What the panel renders, and the title it renders it under. The title
 /// travels with the content, so that what is left on screen while the
 /// next thing is produced keeps the title it went up with.
@@ -50,6 +54,10 @@ pub struct OutputPanel<K: OutputKey> {
 
     /// What to show, if there is anything
     subject: Option<K::Subject>,
+
+    /// What the panel may come to show, in the order the tab lists it in.
+    /// The ones just after `subject` are produced ahead of being asked for.
+    active: Vec<K::Subject>,
 
     /// The title to show `subject` under
     title: String,
@@ -81,6 +89,7 @@ impl<K: OutputKey> OutputPanel<K> {
             owner,
             panel: DetailsPanel::new(),
             subject: None,
+            active: Vec::new(),
             title: String::new(),
             shown: None,
             cache: OutputCache::new(),
@@ -127,6 +136,13 @@ impl<K: OutputKey> OutputPanel<K> {
             self.wait.end();
         }
 
+        self.submit_shown(panel_width);
+        self.prefetch_ahead(panel_width);
+    }
+
+    /// Have the output the panel is to show produced, unless the cache can
+    /// already serve it.
+    fn submit_shown(&mut self, panel_width: usize) {
         let Some(request) = self.request.clone() else {
             return;
         };
@@ -144,6 +160,39 @@ impl<K: OutputKey> OutputPanel<K> {
             return;
         }
 
+        self.submit(request);
+    }
+
+    /// Have the document after the one on screen produced, so that moving
+    /// the selection onto it finds it already there. Only one runs at a
+    /// time, and only once the panel has what it shows, so what the user
+    /// is waiting for never queues behind a document nobody asked for.
+    fn prefetch_ahead(&mut self, panel_width: usize) {
+        if panel_width == 0 || self.wait.is_waiting() {
+            return;
+        }
+
+        let Some(shown) = &self.subject else {
+            return;
+        };
+        let Some(request) = ahead_of(&self.active, shown, PREFETCH_AHEAD)
+            .iter()
+            .map(|subject| {
+                let key = K::new(subject.clone(), self.diff_format.clone());
+                OutputRequest::new(key, panel_width)
+            })
+            .find(|request| !self.cache.is_fresh(request))
+        else {
+            return;
+        };
+
+        self.submit(request);
+    }
+
+    /// Run `request` in the background. A request already in flight is
+    /// left to finish, so re-submitting the one we are still waiting for
+    /// costs nothing.
+    fn submit(&self, request: OutputRequest<K>) {
         self.background_tasks
             .submit(K::slot(self.owner, request.clone()), move |cancel| {
                 request.run(cancel)
@@ -186,6 +235,7 @@ impl<K: OutputKey> OutputPanel<K> {
     /// come to show belongs here, so that the output for a change that has
     /// been rewritten stands in for it until the new one is ready.
     pub fn set_active(&mut self, subjects: Vec<K::Subject>) {
+        self.active = subjects.clone();
         self.cache.set_active(subjects, &self.diff_format);
     }
 
@@ -267,6 +317,16 @@ impl<K: OutputKey> OutputPanel<K> {
     }
 }
 
+/// The `count` subjects following `shown` in `active`. A subject the tab
+/// no longer lists has nothing after it, so it yields none at all.
+fn ahead_of<'a, S: PartialEq>(active: &'a [S], shown: &S, count: usize) -> &'a [S] {
+    let Some(position) = active.iter().position(|subject| subject == shown) else {
+        return &[];
+    };
+    let start = position + 1;
+    &active[start..(start + count).min(active.len())]
+}
+
 /// Whether what is on screen is the same content as `wanted`, only
 /// produced again. Content that may stand in for nothing never is.
 fn stands_in_for<K: OutputKey>(on_screen: Option<&K>, wanted: &K) -> bool {
@@ -279,5 +339,35 @@ fn stands_in_for<K: OutputKey>(on_screen: Option<&K>, wanted: &K) -> bool {
 impl<K: OutputKey> PanelMouseInput for OutputPanel<K> {
     fn input_mouse(&mut self, mouse: MouseEvent) -> MouseInput {
         self.panel.input_mouse(mouse)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ACTIVE: [u32; 5] = [1, 2, 3, 4, 5];
+
+    #[test]
+    fn the_documents_ahead_are_the_ones_the_selection_moves_onto() {
+        assert_eq!(ahead_of(&ACTIVE, &1, 2), [2, 3]);
+        assert_eq!(ahead_of(&ACTIVE, &3, 2), [4, 5]);
+    }
+
+    #[test]
+    fn there_is_nothing_ahead_of_the_last_document() {
+        assert!(ahead_of(&ACTIVE, &5, 2).is_empty());
+    }
+
+    #[test]
+    fn asking_for_more_than_is_left_yields_what_is_left() {
+        assert_eq!(ahead_of(&ACTIVE, &4, 3), [5]);
+    }
+
+    /// The panel may still show a change the log has since dropped, and
+    /// its neighbours then say nothing about where the selection can go.
+    #[test]
+    fn a_document_that_is_no_longer_active_has_nothing_ahead_of_it() {
+        assert!(ahead_of(&ACTIVE, &6, 2).is_empty());
     }
 }

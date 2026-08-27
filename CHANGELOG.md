@@ -49,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   coming back to it is instant
 - In files tab, the diff panel update no longer blocks the UI thread, and the
   diffs it has shown are cached
+- The details panel now runs ahead of the selection, so moving onto one of the
+  next few entries of the list shows their content without a wait
 
 ### Fixed
 
