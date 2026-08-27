@@ -5,6 +5,10 @@ mod list_pane;
 mod log_panel;
 
 pub use commit_show::CommitShowPanel;
+/// Only a test ever builds a request of its own.
+#[cfg(test)]
+pub use commit_show_cache::CommitShowKey;
+pub use commit_show_cache::CommitShowRequest;
 pub use details_panel::DetailsPanel;
 pub use details_panel::LargeStringContent;
 pub use details_panel::TextContent;

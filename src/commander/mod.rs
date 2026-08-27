@@ -19,10 +19,12 @@ invocation with [Commander::jj], which returns a [JjCommand] builder:
 * [Commander::jj] - Start building a single jj invocation
 * [JjCommand::run] - Execute the command and return its output
 * [JjCommand::run_void] - Execute the command and discard the output
+* [JjCommand::run_cancellable] - Execute the command so it can be killed
 
 */
 
 pub mod bookmarks;
+pub mod cancel;
 pub mod files;
 pub mod ids;
 pub mod jj;
@@ -33,6 +35,7 @@ pub mod revset;
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::io;
+use std::io::Read;
 use std::io::Write;
 use std::process::Child;
 use std::process::Command;
@@ -50,11 +53,14 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Text;
 use thiserror::Error;
+use tracing::error;
 use tracing::instrument;
 use tracing::trace;
+use tracing::warn;
 use version_compare::Cmp;
 use version_compare::compare;
 
+use crate::commander::cancel::CancelToken;
 use crate::env::DiffFormat;
 use crate::env::Env;
 use crate::env::get_env;
@@ -170,8 +176,8 @@ impl Commander {
     /// Start building a single jj invocation with the given arguments.
     ///
     /// The returned [JjCommand] carries the per-command options (color,
-    /// quiet, ...) and is executed with [JjCommand::run] or
-    /// [JjCommand::run_void].
+    /// quiet, ...) and is executed with [JjCommand::run],
+    /// [JjCommand::run_void] or [JjCommand::run_cancellable].
     pub fn jj<I, S>(&self, args: I) -> JjCommand<'_>
     where
         I: IntoIterator<Item = S>,
@@ -235,7 +241,8 @@ impl Commander {
 ///
 /// Carries the arguments and the per-command options. Configuration
 /// methods consume and return the builder so they can be chained; the
-/// command is run exactly once with [Self::run] or [Self::run_void].
+/// command is run exactly once with [Self::run], [Self::run_void] or
+/// [Self::run_cancellable].
 pub struct JjCommand<'a> {
     commander: &'a Commander,
     args: Vec<OsString>,
@@ -294,7 +301,7 @@ impl JjCommand<'_> {
 
     /// Execute the command and return its standard output.
     pub fn run(self) -> Result<String, CommandError> {
-        let stdout = self.execute(Stdio::piped())?;
+        let stdout = self.execute(Stdio::piped(), &CancelToken::new())?;
         Ok(String::from_utf8(stdout)?)
     }
 
@@ -303,52 +310,94 @@ impl JjCommand<'_> {
         // The output isn't used, so don't bother capturing or decoding it.
         // Color stays enabled so a failure's stderr reaches the user with its
         // formatting intact.
-        self.color().execute(Stdio::null())?;
+        self.color().execute(Stdio::null(), &CancelToken::new())?;
         Ok(())
     }
 
-    /// Spawn a child process to run the command
-    pub fn spawn(self) -> Result<Child, CommandError> {
-        let mut command = self.build_command();
-        command
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(CommandError::Spawn)
+    /// Execute the command in a child process `cancel` can kill, and return
+    /// its standard output.
+    ///
+    /// Bytes that are not UTF-8 become replacement characters, so the
+    /// output is fit to put on screen but not to parse.
+    pub fn run_cancellable(self, cancel: &CancelToken) -> Result<String, CommandError> {
+        let stdout = self.execute(Stdio::piped(), cancel)?;
+        Ok(String::from_utf8(stdout).unwrap_or_else(|err| {
+            warn!("Output of the command is not valid UTF-8");
+            String::from_utf8_lossy(err.as_bytes()).into_owned()
+        }))
     }
 
-    /// Configure and run the command, returning the captured standard output.
+    /// Configure and run the command in a child process `cancel` can kill,
+    /// blocking until it is done, and return its captured standard output.
     ///
     /// `stdout` selects how the child's standard output is handled: piped to
     /// be captured and returned, or null to be discarded. Standard error is
     /// always captured so it can be surfaced on failure.
-    fn execute(self, stdout: Stdio) -> Result<Vec<u8>, CommandError> {
+    fn execute(mut self, stdout: Stdio, cancel: &CancelToken) -> Result<Vec<u8>, CommandError> {
+        let input = self.stdin.take();
+
         let mut command = self.build_command();
-        command.stdout(stdout);
-        command.stderr(Stdio::piped());
+        command
+            .stdin(if input.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(stdout)
+            .stderr(Stdio::piped());
+        let mut child = command.spawn().map_err(CommandError::Spawn)?;
 
-        let output = match self.stdin {
-            Some(input) => {
-                command.stdin(Stdio::piped());
-                let mut child = command.spawn()?;
-                let writer = spawn_stdin_writer(&mut child, input);
-                let output = child.wait_with_output()?;
-                join_stdin_writer(writer)?;
-                output
+        let stdin_writer = input.map(|input| spawn_stdin_writer(&mut child, input));
+        let child_stdout = child.stdout.take();
+        let mut child_stderr = child.stderr.take().expect("stderr was piped");
+        // From here on the child can be killed, so every pipe has to be
+        // drained even when the command is going nowhere.
+        cancel.register(child);
+
+        let stderr_reader = thread::spawn(move || {
+            let mut stderr = Vec::new();
+            if let Err(err) = child_stderr.read_to_end(&mut stderr) {
+                error!("Failed to read stderr of child process: {err}");
             }
-            None => command.spawn()?.wait_with_output()?,
-        };
+            stderr
+        });
 
-        if !output.status.success() {
-            // Return JjError if non-zero status code
+        let mut output = Vec::new();
+        // Every thread and the child have to be collected below whatever
+        // went wrong, so failures are held back rather than returned here.
+        let read_result = child_stdout
+            .map(|mut pipe| pipe.read_to_end(&mut output))
+            .transpose();
+        let stderr = stderr_reader.join().unwrap_or_default();
+        // The child is done reading its input too, either because it read
+        // everything or because it exited and closed the pipe.
+        let write_result = stdin_writer.map(join_stdin_writer).transpose();
+
+        // Every pipe is closed, so the child has finished and there is
+        // nothing left to wait for.
+        let mut child = cancel
+            .take_child()
+            .expect("the child registered above is only taken here");
+        let status = child.wait()?;
+
+        if !status.success() {
             return Err(CommandError::Status(
-                String::from_utf8_lossy(&output.stderr).to_string(),
-                output.status.code(),
+                String::from_utf8_lossy(&stderr).into_owned(),
+                status.code(),
             ));
         }
+        // A pipe that broke along the way only matters for a command that
+        // succeeded; for one that failed, its status and stderr say more.
+        write_result?;
+        read_result?;
+        if !stderr.is_empty() {
+            warn!(
+                "Ignoring stderr of successful command:\n{}",
+                String::from_utf8_lossy(&stderr)
+            );
+        }
 
-        Ok(output.stdout)
+        Ok(output)
     }
 
     /// Construct a Command ready for execution
@@ -484,6 +533,58 @@ pub mod tests {
         let test_repo = TestRepo::new()?;
 
         test_repo.commander.jj(["status"]).color().run()?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_cancellable_returns_the_output() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        let output = test_repo
+            .commander
+            .jj(["status"])
+            .run_cancellable(&CancelToken::new())?;
+
+        assert!(output.contains("The working copy has no changes"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_cancellable_reports_stderr_of_a_failing_command() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        let error = test_repo
+            .commander
+            .jj(["log", "-r", "nope()"])
+            .run_cancellable(&CancelToken::new())
+            .expect_err("an unknown revset function is an error");
+
+        let CommandError::Status(stderr, code) = error else {
+            panic!("expected a non-zero exit status");
+        };
+        assert!(stderr.contains("nope"), "stderr is not reported: {stderr}");
+        assert_eq!(code, Some(1));
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_cancellable_feeds_stdin_to_the_command() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        test_repo
+            .commander
+            .jj(["describe", "--stdin"])
+            .stdin("message from stdin")
+            .run_cancellable(&CancelToken::new())?;
+
+        let description = test_repo
+            .commander
+            .jj(["log", "-r", "@", "--no-graph", "-T", "description"])
+            .run()?;
+        assert_eq!(description.remove_end_line(), "message from stdin");
 
         Ok(())
     }

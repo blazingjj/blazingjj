@@ -1,4 +1,4 @@
-/*! A cache of the output from 'jj show'
+/*! The 'jj show' a details panel needs, and a cache of what it produced
 
 It is optimized for continous editing, which means that the
 automatic rebase that happens when a change is modified will
@@ -12,30 +12,39 @@ an ancester causes it to be rebased without modification lots of time.
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+use crate::background_tasks::TaskOutput;
+use crate::commander::cancel::CancelToken;
 use crate::commander::ids::ChangeId;
 use crate::commander::log::Head;
+use crate::commander::new_commander;
 use crate::env::DiffFormat;
 use crate::ui::utils::LargeString;
+use crate::ui::utils::tabs_to_spaces;
 
 /// The change and formatting a 'jj show' output belongs to
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub struct CommitShowKey {
     /// Commit id of shown change
-    pub id: Head,
+    id: Head,
     /// Formatting used to render change
-    pub format: DiffFormat,
+    format: DiffFormat,
 }
 
 impl CommitShowKey {
     pub fn new(id: Head, format: DiffFormat) -> Self {
         Self { id, format }
     }
+
+    /// The change whose content this key describes
+    pub fn change_id(&self) -> &ChangeId {
+        &self.id.change_id
+    }
 }
 
 /// A 'jj show' to run: the output to produce, and the width to produce it
 /// at. Two requests that differ only in a width neither format nor tool
 /// acts on are the same request.
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub struct CommitShowRequest {
     key: CommitShowKey,
     width: usize,
@@ -52,9 +61,26 @@ impl CommitShowRequest {
         &self.key
     }
 
-    /// The width the output is to be rendered at
-    pub fn width(&self) -> usize {
-        self.width
+    /// Whether `other` asks for the same content as this request, rendered
+    /// at a width it does not want. Both fill the same cache entry, so only
+    /// one of them can be there.
+    pub fn differs_only_in_width(&self, other: &Self) -> bool {
+        self.key == other.key && self.width != other.width
+    }
+
+    /// Run the 'jj show' this request describes. Blocks until the command
+    /// is done, so it belongs on a background task.
+    pub fn run_jj_show(&self, cancel: &CancelToken) -> TaskOutput {
+        let mut commander = new_commander();
+        commander.limit_width(self.width);
+        let output = commander
+            .build_jj_commit_show(&self.key.id.commit_id, &self.key.format, true)
+            .color()
+            .run_cancellable(cancel)?;
+
+        // A copy of the whole document, which the UI thread has no reason
+        // to make once the task is already holding it.
+        Ok(tabs_to_spaces(&output))
     }
 
     /// The output this request produced, ready for the cache.
@@ -284,6 +310,37 @@ mod tests {
 
         assert_eq!(text_of(cache.get(&new)), "new output");
         assert_eq!(cache.commit_document.len(), 1);
+    }
+
+    #[test]
+    fn a_resize_makes_a_request_for_the_same_change_collide() {
+        let diff_tool = CommitShowKey::new(head("abc", "111"), DiffFormat::DiffTool(None));
+        let narrow = request(&diff_tool, PANEL_WIDTH);
+        let wide = request(&diff_tool, PANEL_WIDTH * 2);
+
+        assert!(narrow.differs_only_in_width(&wide));
+        assert!(wide.differs_only_in_width(&narrow));
+        assert!(!narrow.differs_only_in_width(&narrow));
+    }
+
+    #[test]
+    fn a_request_for_another_change_does_not_collide() {
+        let key = CommitShowKey::new(head("abc", "111"), DiffFormat::DiffTool(None));
+        let other = CommitShowKey::new(head("def", "222"), DiffFormat::DiffTool(None));
+
+        assert!(
+            !request(&key, PANEL_WIDTH).differs_only_in_width(&request(&other, PANEL_WIDTH * 2))
+        );
+    }
+
+    #[test]
+    fn a_resize_leaves_a_width_independent_request_alone() {
+        let color_words = key("abc", "111");
+
+        assert!(
+            !request(&color_words, PANEL_WIDTH)
+                .differs_only_in_width(&request(&color_words, PANEL_WIDTH * 2))
+        );
     }
 
     #[test]

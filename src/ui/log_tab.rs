@@ -1,7 +1,5 @@
 #![expect(clippy::borrow_interior_mutable_const)]
 
-use std::sync::mpsc::Sender;
-
 use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::event::Event;
@@ -17,12 +15,15 @@ use tui_confirm_dialog::ConfirmDialog;
 use tui_confirm_dialog::ConfirmDialogState;
 use tui_confirm_dialog::Listener;
 
+use crate::app::TabId;
+use crate::background_tasks::BackgroundTasks;
+use crate::background_tasks::TaskResult;
+use crate::background_tasks::TaskSlot;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::env::get_env;
-use crate::event::AppEvent;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::LogTabEvent;
@@ -103,8 +104,8 @@ The main functions are:
   (called by refresh_log_output)
 */
 impl<'a> LogTab<'a> {
-    #[instrument(level = "info", name = "Initializing log tab", parent = None, skip())]
-    pub fn new(app_event_sender: Sender<AppEvent>, head: Head) -> Self {
+    #[instrument(level = "info", name = "Initializing log tab", parent = None, skip(background_tasks))]
+    pub fn new(background_tasks: BackgroundTasks, head: Head) -> Self {
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
 
         let mut keybinds = LogTabKeybinds::default();
@@ -128,7 +129,7 @@ impl<'a> LogTab<'a> {
             log_panel: LogPanel::new(head.clone()),
 
             head,
-            head_panel: CommitShowPanel::new(app_event_sender),
+            head_panel: CommitShowPanel::new(TabId::Log, background_tasks),
 
             popup: ConfirmDialogState::default(),
             popup_tx,
@@ -575,6 +576,8 @@ impl Tab for LogTab<'_> {
 
 impl Component for LogTab<'_> {
     fn update(&mut self) -> Result<Option<AppAction>> {
+        self.head_panel.update();
+
         // Check for popup action
         if let Ok(res) = self.popup_rx.try_recv()
             && res.1.unwrap_or(false)
@@ -611,6 +614,16 @@ impl Component for LogTab<'_> {
         }
 
         Ok(None)
+    }
+
+    fn task_done(&mut self, result: TaskResult) -> Result<Option<AppAction>> {
+        let TaskSlot::CommitShow(_, request) = result.slot;
+        self.head_panel.task_done(request, result.output);
+        Ok(None)
+    }
+
+    fn is_waiting(&self) -> bool {
+        self.head_panel.is_waiting()
     }
 
     fn draw(
