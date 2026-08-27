@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outside it are listed alongside but cannot be selected. The popup takes the
   mouse as well: the wheel scrolls it, a click picks a parent, and a click
   outside dismisses it
+- The new-change dialog now asks where to put the change, so it can also be
+  inserted before or after the selected one rather than only as its child
 
 ### Changed
 
