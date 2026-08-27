@@ -43,7 +43,7 @@ use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::commit_show_cache::CommitShowCache;
 use crate::ui::commit_show_cache::CommitShowKey;
-use crate::ui::commit_show_cache::CommitShowValue;
+use crate::ui::commit_show_cache::CommitShowRequest;
 use crate::ui::dialog::BookmarkSetPopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
@@ -125,10 +125,8 @@ pub struct LogTab<'a> {
 /// A background process for fetching 'jj show' and a thread for signalling
 /// the UI while waiting
 struct PendingJjShow {
-    /// The requested key
-    key: CommitShowKey,
-    /// The render width the output is requested at
-    width: usize,
+    /// The 'jj show' the child was launched for
+    request: CommitShowRequest,
     /// The child process executing 'jj show'
     child: Child,
     /// The thread reading stdout from child process
@@ -270,12 +268,11 @@ impl<'a> LogTab<'a> {
         self.head_key = CommitShowKey::new(self.head.clone(), self.diff_format.clone());
     }
 
-    /// The width the details panel renders the selected change at. The
+    /// The 'jj show' the details panel wants for the selected change. The
     /// panel reports the width it got in the last frame, so this is only
     /// meaningful once it has been drawn.
-    fn head_width(&self) -> usize {
-        self.diff_format
-            .render_width(self.head_panel.columns() as usize)
+    fn head_show_request(&self) -> CommitShowRequest {
+        CommitShowRequest::new(self.head_key.clone(), self.head_panel.columns() as usize)
     }
 
     /// The content the details panel is to render. This is the selected
@@ -312,11 +309,10 @@ impl<'a> LogTab<'a> {
     }
 
     /// Launch of a child process for 'jj show'
-    fn request_jj_show(&mut self, launch_key: CommitShowKey, launch_width: usize) {
+    fn request_jj_show(&mut self, request: CommitShowRequest) {
         // Ignore request for already pending key
         if let Some(pjs) = self.pending_jj_show.as_ref()
-            && pjs.key == launch_key
-            && pjs.width == launch_width
+            && pjs.request == request
         {
             return;
         }
@@ -331,15 +327,16 @@ impl<'a> LogTab<'a> {
         }
 
         // Lanuch new child process that runs 'jj show'
+        let launch_key = request.key().clone();
         let mut commander = new_commander();
-        commander.limit_width(launch_width);
+        commander.limit_width(request.width());
         let launch_child =
             commander.spawn_commit_show(&launch_key.id.commit_id, &launch_key.format, true);
         let mut launch_child = match launch_child {
             Ok(child) => child,
             Err(err) => {
                 error!("Unable to spawn 'jj show': {err}");
-                self.show_error_in_details_panel(launch_key, launch_width, err.to_string());
+                self.show_error_in_details_panel(request, err.to_string());
                 return;
             }
         };
@@ -352,8 +349,7 @@ impl<'a> LogTab<'a> {
         launch_timer.signal_in(AppEvent::Refresh, Duration::from_millis(100));
 
         let pjs = PendingJjShow {
-            key: launch_key,
-            width: launch_width,
+            request,
             child: launch_child,
             stdout_reader,
             stderr_reader,
@@ -403,11 +399,7 @@ impl<'a> LogTab<'a> {
         // error instead of caching an empty document for the commit.
         if !status.success() {
             error!("'jj show' exited with status {status}:\n{stderr}");
-            self.show_error_in_details_panel(
-                pjs.key,
-                pjs.width,
-                format!("jj show failed:\n\n{stderr}"),
-            );
+            self.show_error_in_details_panel(pjs.request, format!("jj show failed:\n\n{stderr}"));
             return;
         }
         if !stderr.is_empty() {
@@ -415,18 +407,18 @@ impl<'a> LogTab<'a> {
         }
 
         let text = tabs_to_spaces(&String::from_utf8_lossy(&stdout));
-        let value = CommitShowValue::new(pjs.key, pjs.width, text);
+        let value = pjs.request.into_value(text);
         self.commit_show_cache.insert_document(value);
 
         // Note: self.pending_jj_show.take() has already cleared the
         // child handle, which indicates room for the next child process
     }
 
-    /// Cache `message` as the content for `key`, so the details panel
-    /// shows it instead of staying blank.
-    fn show_error_in_details_panel(&mut self, key: CommitShowKey, width: usize, message: String) {
+    /// Cache `message` as the content the request asked for, so the
+    /// details panel shows it instead of staying blank.
+    fn show_error_in_details_panel(&mut self, request: CommitShowRequest, message: String) {
         self.commit_show_cache
-            .insert_document(CommitShowValue::new(key, width, message));
+            .insert_document(request.into_value(message));
     }
 }
 
@@ -897,9 +889,9 @@ impl Component for LogTab<'_> {
 
         // Draw change details
         self.try_read_jj_show_output();
-        let head_width = self.head_width();
-        if !self.commit_show_cache.is_fresh(&self.head_key, head_width) {
-            self.request_jj_show(self.head_key.clone(), head_width);
+        let head_request = self.head_show_request();
+        if !self.commit_show_cache.is_fresh(&head_request) {
+            self.request_jj_show(head_request);
         }
         if let Some(key) = self.key_to_render()
             && let Some(content) = self.commit_show_cache.get(&key)
