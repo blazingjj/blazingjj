@@ -5,7 +5,6 @@ use std::collections::HashSet;
 
 use ansi_to_tui::IntoText;
 use anyhow::Result;
-use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::MouseEvent;
 use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Rect;
@@ -13,6 +12,8 @@ use ratatui::prelude::*;
 use ratatui::text::ToText;
 use ratatui::widgets::*;
 
+use super::MouseInput;
+use super::PanelMouseInput;
 use crate::commander::CommandError;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
@@ -224,7 +225,7 @@ impl<'a> LogPanel<'a> {
     }
 
     /// Find head of the provided log_output line
-    fn head_at_log_line(&mut self, log_line: usize) -> Option<Head> {
+    fn head_at_log_line(&self, log_line: usize) -> Option<Head> {
         self.log_output.as_ref().ok()?.head_at(log_line).cloned()
     }
 
@@ -369,52 +370,44 @@ impl Component for LogPanel<'_> {
 
         Ok(())
     }
+}
 
-    fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
-        if let Event::Mouse(mouse_event) = event {
-            // Determine if mouse event is inside log-view
-            let mouse_pos = Position::new(mouse_event.column, mouse_event.row);
-            if !self.panel_rect.contains(mouse_pos) {
-                return Ok(ComponentInputResult::NotHandled);
-            }
-
-            // Execute command dependent on panel and event kind
-            match mouse_event.kind {
-                MouseEventKind::ScrollUp => {
-                    self.scroll_relative(-1);
-                    return Ok(ComponentInputResult::Handled);
-                }
-                MouseEventKind::ScrollDown => {
-                    self.scroll_relative(1);
-                    return Ok(ComponentInputResult::Handled);
-                }
-                MouseEventKind::Up(_) => {
-                    // Check all items in list
-
-                    // TODO make a function that constructs the log list
-                    let log_lines = self.log_lines();
-                    let log_items: Vec<ListItem> = log_lines
-                        .iter()
-                        .map(|line| ListItem::from(line.to_text()))
-                        .collect();
-
-                    // Select the clicked change
-                    if let Some(inx) = list_item_from_mouse_event(
-                        &log_items,
-                        self.log_rect,
-                        &self.log_list_state,
-                        &mouse_event,
-                    ) && let Some(head) = self.head_at_log_line(inx)
-                    {
-                        self.set_head(head);
-                        return Ok(ComponentInputResult::Handled);
-                    }
-                }
-                _ => {} // Handle other mouse events if necessary
-            }
+impl PanelMouseInput for LogPanel<'_> {
+    fn input_mouse(&mut self, mouse: MouseEvent) -> MouseInput {
+        if !self
+            .panel_rect
+            .contains(Position::new(mouse.column, mouse.row))
+        {
+            return MouseInput::NotHandled;
         }
+        match mouse.kind {
+            MouseEventKind::ScrollUp => MouseInput::Scroll(-1),
+            MouseEventKind::ScrollDown => MouseInput::Scroll(1),
+            MouseEventKind::Up(_) => {
+                // Check all items in list
 
-        Ok(ComponentInputResult::NotHandled)
+                // TODO make a function that constructs the log list
+                let log_lines = self.log_lines();
+                let log_items: Vec<ListItem> = log_lines
+                    .iter()
+                    .map(|line| ListItem::from(line.to_text()))
+                    .collect();
+
+                // Select the clicked change
+                if let Some(inx) = list_item_from_mouse_event(
+                    &log_items,
+                    self.log_rect,
+                    &self.log_list_state,
+                    &mouse,
+                ) && let Some(head) = self.head_at_log_line(inx)
+                {
+                    self.set_head(head);
+                    return MouseInput::Handled;
+                }
+                MouseInput::NotHandled
+            }
+            _ => MouseInput::NotHandled,
+        }
     }
 }
 

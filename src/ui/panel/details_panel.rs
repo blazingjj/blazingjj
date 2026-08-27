@@ -29,6 +29,8 @@ use ratatui::widgets::ScrollbarState;
 use ratatui::widgets::Wrap;
 use tracing::trace;
 
+use super::MouseInput;
+use super::PanelMouseInput;
 use crate::keybinds::DetailsPanelEvent;
 use crate::ui::utils::LargeString;
 
@@ -253,15 +255,16 @@ impl DetailsPanel {
             DetailsPanelEvent::ToggleDiffFormat | DetailsPanelEvent::Unbound => {}
         }
     }
+}
 
-    /// Handle input. Returns bool of if event was handled
-    pub fn input_mouse(&mut self, mouse: MouseEvent) -> bool {
-        if !self.panel_rect.contains(Position {
-            y: mouse.row,
-            x: mouse.column,
-        }) {
+impl PanelMouseInput for DetailsPanel {
+    fn input_mouse(&mut self, mouse: MouseEvent) -> MouseInput {
+        if !self
+            .panel_rect
+            .contains(Position::new(mouse.column, mouse.row))
+        {
             trace!("mouse {:?} not in rect {:?}", &mouse, &self.panel_rect);
-            return false;
+            return MouseInput::NotHandled;
         }
         trace!("mouse {:?} inside  rect {:?}", &mouse, &self.panel_rect);
         match mouse.kind {
@@ -275,9 +278,9 @@ impl DetailsPanel {
                 self.handle_event(DetailsPanelEvent::ScrollDown);
                 self.handle_event(DetailsPanelEvent::ScrollDown);
             }
-            _ => return false,
+            _ => return MouseInput::NotHandled,
         }
-        true
+        MouseInput::Handled
     }
 }
 

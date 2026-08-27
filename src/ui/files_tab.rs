@@ -28,7 +28,9 @@ use crate::ui::Tab;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::ListPane;
+use crate::ui::panel::MouseInput;
 use crate::ui::panel::TextContent;
+use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::tabs_to_spaces;
 
@@ -399,10 +401,12 @@ impl Component for FilesTab {
             if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
                 return Ok(ComponentInputResult::Handled);
             }
-            if self.diff_panel.input_mouse(mouse) {
-                return Ok(ComponentInputResult::Handled);
+            match route_mouse(mouse, &mut [&mut self.diff_panel]) {
+                MouseInput::Scroll(delta) => self.scroll_files(delta)?,
+                MouseInput::Handled => {}
+                MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }
-            return Ok(ComponentInputResult::NotHandled);
+            return Ok(ComponentInputResult::Handled);
         }
 
         Ok(ComponentInputResult::Handled)

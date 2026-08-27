@@ -41,16 +41,6 @@ pub enum ComponentInputResult {
     NotHandled,
 }
 
-impl ComponentInputResult {
-    pub fn is_handled(&self) -> bool {
-        match self {
-            Self::Handled => true,
-            Self::HandledAction(_) => true,
-            Self::NotHandled => false,
-        }
-    }
-}
-
 /// How far to move the selection in a tab's main panel.
 #[derive(Debug, Clone, Copy)]
 pub enum Scroll {
@@ -67,7 +57,9 @@ pub trait Component {
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()>;
 
-    fn input(&mut self, event: Event) -> Result<ComponentInputResult>;
+    fn input(&mut self, _event: Event) -> Result<ComponentInputResult> {
+        Ok(ComponentInputResult::NotHandled)
+    }
 }
 
 /// A top-level tab, showing what it reads from the repo.

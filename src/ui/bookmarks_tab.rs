@@ -34,7 +34,9 @@ use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::ListPane;
+use crate::ui::panel::MouseInput;
 use crate::ui::panel::TextContent;
+use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::tabs_to_spaces;
 
@@ -640,10 +642,12 @@ impl Component for BookmarksTab {
             if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
                 return Ok(ComponentInputResult::Handled);
             }
-            if self.bookmark_panel.input_mouse(mouse) {
-                return Ok(ComponentInputResult::Handled);
+            match route_mouse(mouse, &mut [&mut self.bookmark_panel]) {
+                MouseInput::Scroll(delta) => self.scroll_bookmarks(delta),
+                MouseInput::Handled => {}
+                MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }
-            return Ok(ComponentInputResult::NotHandled);
+            return Ok(ComponentInputResult::Handled);
         }
 
         Ok(ComponentInputResult::Handled)
