@@ -108,7 +108,7 @@ impl<'a> App<'a> {
         Ok(App {
             current_tab: TabId::Log,
             log: LogTab::new(background_tasks.clone(), current_head.clone()),
-            files: FilesTab::new(&current_head),
+            files: FilesTab::new(&current_head, background_tasks.clone()),
             bookmarks: BookmarksTab::new(background_tasks.clone()),
             popup: None,
             stats: Stats {
@@ -376,7 +376,7 @@ impl<'a> App<'a> {
         self.background_tasks.finish(&result);
 
         let consumer: Option<&mut dyn Component> = match result.slot {
-            TaskSlot::CommitShow(tab, _) => Some(self.get_tab(tab)),
+            TaskSlot::CommitShow(tab, _) | TaskSlot::FileDiff(tab, _) => Some(self.get_tab(tab)),
             // The cast reborrows the popup for the body rather than for
             // the lifetime the app is tied to.
             TaskSlot::GitPush | TaskSlot::GitFetch => self

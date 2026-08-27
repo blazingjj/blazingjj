@@ -1,19 +1,20 @@
 mod commit_show;
-mod commit_show_cache;
 mod details_panel;
 mod list_pane;
 mod log_panel;
+mod output_cache;
+mod output_panel;
 
+pub use commit_show::CommitShowKey;
 pub use commit_show::CommitShowPanel;
-/// Only a test ever builds a request of its own.
-#[cfg(test)]
-pub use commit_show_cache::CommitShowKey;
-pub use commit_show_cache::CommitShowRequest;
 pub use details_panel::DetailsPanel;
 pub use details_panel::LargeStringContent;
 pub use details_panel::TextContent;
 pub use list_pane::ListPane;
 pub use log_panel::LogPanel;
+pub use output_cache::OutputKey;
+pub use output_cache::OutputRequest;
+pub use output_panel::OutputPanel;
 use ratatui::crossterm::event::MouseEvent;
 
 /// What a panel did with a mouse event.

@@ -8,9 +8,16 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use tracing::instrument;
 
+use crate::app::TabId;
+use crate::background_tasks::BackgroundTasks;
+use crate::background_tasks::TaskOutput;
+use crate::background_tasks::TaskResult;
+use crate::background_tasks::TaskSlot;
 use crate::commander::CommandError;
+use crate::commander::cancel::CancelToken;
 use crate::commander::files::Conflict;
 use crate::commander::files::File;
+use crate::commander::ids::ChangeId;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::env::DiffFormat;
@@ -26,14 +33,14 @@ use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::dialog::MessagePopup;
-use crate::ui::panel::DetailsPanel;
 use crate::ui::panel::ListPane;
 use crate::ui::panel::MouseInput;
-use crate::ui::panel::TextContent;
+use crate::ui::panel::OutputKey;
+use crate::ui::panel::OutputPanel;
+use crate::ui::panel::OutputRequest;
 use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::error_text;
-use crate::ui::utils::tabs_to_spaces;
 
 /// Files tab. Shows files in selected change in main panel and selected file diff in details panel
 pub struct FilesTab {
@@ -46,9 +53,7 @@ pub struct FilesTab {
     files_list_state: ListState,
 
     pub file: Option<File>,
-    diff_panel: DetailsPanel,
-    diff_output: Result<Option<String>, CommandError>,
-    diff_format: DiffFormat,
+    diff_panel: FileDiffPanel,
 
     config: JjConfig,
     keybinds: FilesTabKeybinds,
@@ -56,6 +61,57 @@ pub struct FilesTab {
     pane_divider: PaneDivider,
 
     stale: bool,
+}
+
+/// A details panel showing what 'jj diff' says about a file.
+type FileDiffPanel = OutputPanel<FileDiffKey>;
+
+/// 'jj diff' output for a single file depends on all these values
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct FileDiffKey {
+    /// Change the file is diffed in
+    head: Head,
+    /// File to diff
+    file: File,
+    /// Formatting used to render the diff
+    format: DiffFormat,
+}
+
+impl OutputKey for FileDiffKey {
+    type Subject = (Head, File);
+    type Identity = (ChangeId, File);
+
+    const COMMAND: &'static str = "jj diff";
+
+    fn new((head, file): (Head, File), format: DiffFormat) -> Self {
+        Self { head, file, format }
+    }
+
+    /// A change that has been rewritten still shows the diff it had,
+    /// since what the panel shows of it is the file the user selected.
+    fn identity(&self) -> Option<(ChangeId, File)> {
+        (!self.head.divergent).then(|| (self.head.change_id.clone(), self.file.clone()))
+    }
+
+    fn render_width(&self, panel_width: usize) -> usize {
+        self.format.render_width(panel_width)
+    }
+
+    fn run(&self, width: usize, cancel: &CancelToken) -> TaskOutput {
+        let mut commander = new_commander();
+        commander.limit_width(width);
+        // A file listed without a path has no diff, which is an empty
+        // document rather than a failure.
+        let Some(command) = commander.build_file_diff(&self.head, &self.file, &self.format, true)
+        else {
+            return Ok(String::new());
+        };
+        Ok(command.run_cancellable(cancel)?)
+    }
+
+    fn slot(owner: TabId, request: OutputRequest<Self>) -> TaskSlot {
+        TaskSlot::FileDiff(owner, request)
+    }
 }
 
 fn get_current_file_index(
@@ -75,8 +131,8 @@ fn get_current_file_index(
 
 impl FilesTab {
     /// A stale tab at `current_head`, holding no files yet.
-    #[instrument(level = "info", name = "Initializing files tab", parent = None, skip())]
-    pub fn new(current_head: &Head) -> Self {
+    #[instrument(level = "info", name = "Initializing files tab", parent = None, skip(background_tasks))]
+    pub fn new(current_head: &Head, background_tasks: BackgroundTasks) -> Self {
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
         let keybinds = FilesTabKeybinds::default();
@@ -93,9 +149,7 @@ impl FilesTab {
 
             conflicts_output: Vec::new(),
 
-            diff_output: Ok(None),
-            diff_format: get_env().jj_config.diff_format(),
-            diff_panel: DetailsPanel::new(),
+            diff_panel: FileDiffPanel::new(TabId::Files, background_tasks),
 
             config,
             keybinds,
@@ -117,7 +171,7 @@ impl FilesTab {
             .ok()
             .and_then(|files_output| files_output.first())
             .map(|file| file.to_owned());
-        self.refresh_diff()?;
+        self.show_diff();
 
         Ok(())
     }
@@ -138,25 +192,26 @@ impl FilesTab {
                 .and_then(|files_output| files_output.first())
                 .map(|file| file.to_owned());
         }
+        self.set_active_diffs();
 
         Ok(())
     }
 
-    pub fn refresh_diff(&mut self) -> Result<()> {
-        let mut commander = new_commander();
-        let inner_width = self.diff_panel.columns() as usize;
-        commander.limit_width(inner_width);
-        self.diff_output = self
-            .file
-            .as_ref()
-            .map(|current_file| {
-                commander.get_file_diff(&self.head, current_file, &self.diff_format, true)
-            })
-            .map_or(Ok(None), |r| {
-                r.map(|diff| diff.map(|diff| tabs_to_spaces(&diff)))
-            });
-        self.diff_panel.scroll_to(0);
-        Ok(())
+    /// Have the details panel show the diff of the selected file.
+    fn show_diff(&mut self) {
+        let subject = self.file.clone().map(|file| (self.head.clone(), file));
+        self.diff_panel.show(subject, " Diff ".to_owned());
+    }
+
+    /// Every file the change lists is one the panel may come to show
+    fn set_active_diffs(&mut self) {
+        let subjects = self
+            .files_output
+            .iter()
+            .flatten()
+            .map(|file| (self.head.clone(), file.clone()))
+            .collect();
+        self.diff_panel.set_active(subjects);
     }
 
     /// Move to the working copy commit, dropping the selection, without
@@ -183,7 +238,7 @@ impl FilesTab {
         Ok(())
     }
 
-    fn scroll_files(&mut self, scroll: isize) -> Result<()> {
+    fn scroll_files(&mut self, scroll: isize) {
         if let Ok(files) = self.files_output.as_ref() {
             let current_file_index = self.get_current_file_index();
             let next_file = match current_file_index {
@@ -197,10 +252,9 @@ impl FilesTab {
             .map(|x| x.to_owned());
             if let Some(next_file) = next_file {
                 self.file = Some(next_file.to_owned());
-                self.refresh_diff()?;
+                self.show_diff();
             }
         }
-        Ok(())
     }
 }
 
@@ -209,7 +263,10 @@ impl Tab for FilesTab {
         self.is_current_head = self.head == new_commander().get_current_head()?;
         self.head = new_commander().get_head_latest(&self.head)?;
         self.refresh_files()?;
-        self.refresh_diff()?;
+        // The change may have moved on, which the key notices. A
+        // selection that still means the same diff keeps the one it
+        // has, scroll position and all.
+        self.show_diff();
         self.stale = false;
 
         Ok(())
@@ -223,6 +280,10 @@ impl Tab for FilesTab {
         self.stale
     }
 
+    fn drop_caches(&mut self) {
+        self.diff_panel.mark_dirty();
+    }
+
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
         let half_page = self.files_pane.visible_items() / 2;
         self.scroll_files(match scroll {
@@ -230,7 +291,8 @@ impl Tab for FilesTab {
             Scroll::Up => -1,
             Scroll::DownHalfPage => half_page,
             Scroll::UpHalfPage => half_page.saturating_neg(),
-        })
+        });
+        Ok(())
     }
 
     fn focus_current(&mut self) -> Result<()> {
@@ -247,6 +309,22 @@ impl Tab for FilesTab {
 }
 
 impl Component for FilesTab {
+    fn update(&mut self) -> Result<Option<AppAction>> {
+        self.diff_panel.update();
+        Ok(None)
+    }
+
+    fn task_done(&mut self, result: TaskResult) -> Result<Option<AppAction>> {
+        if let TaskSlot::FileDiff(_, request) = result.slot {
+            self.diff_panel.task_done(request, result.output);
+        }
+        Ok(None)
+    }
+
+    fn is_waiting(&self) -> bool {
+        self.diff_panel.is_waiting()
+    }
+
     fn draw(
         &mut self,
         f: &mut ratatui::prelude::Frame<'_>,
@@ -337,17 +415,7 @@ impl Component for FilesTab {
         }
 
         // Draw diff
-        {
-            let diff_content = match self.diff_output.as_ref() {
-                Ok(Some(diff_content)) => diff_content.into_text()?,
-                Ok(None) => Text::default(),
-                Err(err) => error_text("Error getting diff", err)?,
-            };
-            self.diff_panel
-                .render_context::<TextContent>(diff_content)
-                .title(" Diff ")
-                .draw(f, chunks[1]);
-        }
+        self.diff_panel.draw(f, chunks[1]);
 
         Ok(())
     }
@@ -360,11 +428,6 @@ impl Component for FilesTab {
 
             match self.details_keybinds.match_event(key) {
                 DetailsPanelEvent::Unbound => {}
-                DetailsPanelEvent::ToggleDiffFormat => {
-                    self.diff_format = self.diff_format.get_next(self.config.diff_tool());
-                    self.refresh_diff()?;
-                    return Ok(ComponentInputResult::Handled);
-                }
                 ev => {
                     self.diff_panel.handle_event(ev);
                     return Ok(ComponentInputResult::Handled);
@@ -403,13 +466,13 @@ impl Component for FilesTab {
                 return Ok(ComponentInputResult::Handled);
             }
             match route_mouse(mouse, &mut [&mut self.files_pane, &mut self.diff_panel]) {
-                MouseInput::Scroll(delta) => self.scroll_files(delta)?,
+                MouseInput::Scroll(delta) => self.scroll_files(delta),
                 MouseInput::Select(index) => {
                     if let Ok(files) = self.files_output.as_ref()
                         && let Some(file) = files.get(index).cloned()
                     {
                         self.file = Some(file);
-                        self.refresh_diff()?;
+                        self.show_diff();
                     }
                 }
                 MouseInput::Handled => {}
@@ -419,5 +482,81 @@ impl Component for FilesTab {
         }
 
         Ok(ComponentInputResult::Handled)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commander::files::DiffType;
+    use crate::commander::ids::CommitId;
+
+    fn head(change_id: &str, commit_id: &str) -> Head {
+        Head {
+            change_id: ChangeId(change_id.to_owned()),
+            commit_id: CommitId(commit_id.to_owned()),
+            divergent: false,
+            immutable: false,
+        }
+    }
+
+    fn file(path: &str) -> File {
+        File {
+            line: format!("M {path}"),
+            path: Some(path.to_owned()),
+            diff_type: Some(DiffType::Modified),
+        }
+    }
+
+    fn key(change_id: &str, commit_id: &str, path: &str) -> FileDiffKey {
+        FileDiffKey::new((head(change_id, commit_id), file(path)), DiffFormat::Git)
+    }
+
+    #[test]
+    fn a_rewritten_change_still_shows_the_same_diff() {
+        let wanted = key("change", "commit", "a.txt");
+        let rewritten = key("change", "rewritten", "a.txt");
+
+        assert_ne!(wanted, rewritten);
+        assert_eq!(wanted.identity(), rewritten.identity());
+    }
+
+    #[test]
+    fn another_file_or_change_is_a_diff_of_its_own() {
+        let wanted = key("change", "commit", "a.txt");
+
+        assert_ne!(
+            wanted.identity(),
+            key("change", "commit", "b.txt").identity()
+        );
+        assert_ne!(
+            wanted.identity(),
+            key("other", "commit", "a.txt").identity()
+        );
+    }
+
+    #[test]
+    fn a_divergent_change_never_shows_the_diff_of_a_sibling() {
+        let divergent = |commit_id| {
+            let mut key = key("change", commit_id, "a.txt");
+            key.head.divergent = true;
+            key
+        };
+
+        assert_eq!(divergent("commit").identity(), None);
+        assert_eq!(divergent("sibling").identity(), None);
+    }
+
+    #[test]
+    fn only_a_format_that_wraps_its_output_asks_for_a_width() {
+        const PANEL_WIDTH: usize = 80;
+        let git = key("change", "commit", "a.txt");
+        let tool = FileDiffKey::new(
+            (head("change", "commit"), file("a.txt")),
+            DiffFormat::DiffTool(None),
+        );
+
+        assert_eq!(git.render_width(PANEL_WIDTH), 0);
+        assert_eq!(tool.render_width(PANEL_WIDTH), PANEL_WIDTH);
     }
 }
