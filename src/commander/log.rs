@@ -25,7 +25,7 @@ use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
 use crate::env::DiffFormat;
 
-/// A change as [HEAD_TEMPLATE] describes it. The field names are the ones
+/// A change as [head_template] describes it. The field names are the ones
 /// the template writes.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Deserialize)]
 pub struct Head {
@@ -58,28 +58,33 @@ impl Display for HeadParseError {
     }
 }
 
-/// Template writing a [Head] as a JSON object, for `jj log` and the other
-/// commands that take a template. `escape_json()` keeps a value that needs
-/// quoting from ending the object early, or the line.
-const HEAD_TEMPLATE: &str = r#"
-    '{"change_id":' ++ stringify(change_id).escape_json()
-    ++ ',"commit_id":' ++ stringify(commit_id).escape_json()
-    ++ ',"divergent":' ++ divergent
-    ++ ',"immutable":' ++ immutable
-    ++ '}'
-"#;
-/// [HEAD_TEMPLATE] with a newline behind it, so that output holding more
-/// than one head has one object per line.
-const HEAD_TEMPLATE_NL: &str = r#"
-    '{"change_id":' ++ stringify(change_id).escape_json()
-    ++ ',"commit_id":' ++ stringify(commit_id).escape_json()
-    ++ ',"divergent":' ++ divergent
-    ++ ',"immutable":' ++ immutable
-    ++ '}'
-    ++ "\n"
-"#;
+/// Template writing the [Head] of the commit the template expression
+/// `commit` names as a JSON object. `escape_json()` keeps a value that
+/// needs quoting from ending the object early, or the line.
+///
+/// Naming the commit rather than taking the one in context lets a command
+/// whose `self` is something else point at the commit it holds, as
+/// `jj bookmark list` does.
+pub(super) fn head_template(commit: &str) -> String {
+    format!(
+        r#"
+    '{{"change_id":' ++ stringify({commit}.change_id()).escape_json()
+    ++ ',"commit_id":' ++ stringify({commit}.commit_id()).escape_json()
+    ++ ',"divergent":' ++ {commit}.divergent()
+    ++ ',"immutable":' ++ {commit}.immutable()
+    ++ '}}'
+"#
+    )
+}
 
-/// Parse the [Head] one line of [HEAD_TEMPLATE] output describes.
+/// [head_template] for the commit in context, with a newline behind it so
+/// that output holding more than one head has one object per line.
+fn head_template_nl() -> String {
+    let head = head_template("self");
+    format!(r#"{head} ++ "\n""#)
+}
+
+/// Parse the [Head] one line of [head_template] output describes.
 ///
 /// jj draws the graph in front of what the template writes, so the object
 /// starts at the first brace of the line. A line the graph draws for edges
@@ -139,13 +144,14 @@ impl Commander {
         // 2 lines per change, there will also be two lines with head info.
         // The number of lines in graph and the number of items in graph_heads
         // should be identical.
+        let head = head_template("self");
         let graph_heads: Vec<Option<Head>> = self
             .jj([
                 vec![
                     "log",
                     "--template",
                     // Match builtin_log_compact with 2 lines per change
-                    &format!(r#"{HEAD_TEMPLATE} ++ "\n" ++ {HEAD_TEMPLATE}"#),
+                    &format!(r#"{head} ++ "\n" ++ {head}"#),
                 ],
                 args,
             ]
@@ -204,7 +210,7 @@ impl Commander {
     pub fn get_current_head(&self) -> Result<Head> {
         parse_head(
             &self
-                .execute_jj_log_one("@", HEAD_TEMPLATE_NL)
+                .execute_jj_log_one("@", &head_template_nl())
                 .context("Failed getting current head")?
                 .remove_end_line(),
         )
@@ -216,7 +222,7 @@ impl Commander {
         // Get all heads which point to the same change ID
         let latest_heads_res = self.execute_jj_log(
             &format!(r#"change_id({})"#, head.change_id.as_str()),
-            HEAD_TEMPLATE_NL,
+            &head_template_nl(),
         );
         let Ok(latest_heads_res) = latest_heads_res else {
             return self.get_head_latest(&self.get_current_head()?);
@@ -274,7 +280,7 @@ impl Commander {
     pub fn get_commit_parent(&self, commit_id: &CommitId) -> Result<Head> {
         parse_head(
             &self
-                .execute_jj_log_one(&format!("{commit_id}-"), HEAD_TEMPLATE_NL)
+                .execute_jj_log_one(&format!("{commit_id}-"), &head_template_nl())
                 .with_context(|| format!("Failed getting commit parent: {commit_id}"))?
                 .remove_end_line(),
         )
@@ -307,7 +313,7 @@ impl Commander {
     pub fn get_bookmark_head(&self, bookmark: &Bookmark) -> Result<Head> {
         parse_head(
             &self
-                .execute_jj_log_one(&bookmark.to_string(), HEAD_TEMPLATE_NL)
+                .execute_jj_log_one(&bookmark.to_string(), &head_template_nl())
                 .context("Failed getting bookmark head")?
                 .remove_end_line(),
         )

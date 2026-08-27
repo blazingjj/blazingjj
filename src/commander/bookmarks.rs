@@ -17,11 +17,11 @@ use tracing::instrument;
 
 use crate::commander::CommandError;
 use crate::commander::Commander;
-use crate::commander::RemoveEndLine;
 use crate::commander::ids::ChangeId;
-use crate::env::DiffFormat;
+use crate::commander::log::Head;
+use crate::commander::log::head_template;
 
-/// A bookmark as [BRANCH_TEMPLATE] describes it. The field names are the
+/// A bookmark as [bookmark_template] describes it. The field names are the
 /// ones the template writes.
 ///
 /// `name` and `remote` are revset symbols, quoted where a plain name would
@@ -45,32 +45,53 @@ impl Display for Bookmark {
     }
 }
 
-/// Template writing a [Bookmark] as a JSON object, one per line.
+/// A bookmark and the change it points at, as [bookmark_template]
+/// describes them. The field names are the ones the template writes.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+struct BookmarkRecord {
+    #[serde(flatten)]
+    bookmark: Bookmark,
+    head: Head,
+}
+
+/// Template writing a [BookmarkRecord] as a JSON object, one per line.
 ///
 /// `name` and `remote` are revset symbols, which jj only quotes when it
 /// renders them as a template -- `stringify()` alone would hand back the
 /// bare name. Concatenating is what puts them through that rendering.
 ///
-/// A bookmark that has no single target has no timestamp either, and jj
-/// writes its error where the number belongs. That leaves the line
-/// unparsable, which is how such a bookmark is meant to come out.
-const BRANCH_TEMPLATE: &str = r#"
-    '{"name":' ++ stringify(concat(name)).escape_json()
+/// A bookmark that has no single target has neither timestamp nor head,
+/// and jj writes its error where each of them belongs. That leaves the
+/// line unparsable, which is how such a bookmark is meant to come out.
+fn bookmark_template() -> String {
+    let head = head_template("self.normal_target()");
+    format!(
+        r#"
+    '{{"name":' ++ stringify(concat(name)).escape_json()
     ++ ',"remote":' ++ if(remote, stringify(concat(remote)).escape_json(), 'null')
     ++ ',"present":' ++ present
     ++ ',"timestamp":' ++ self.normal_target().committer().timestamp().format("%s")
-    ++ '}' ++ "\n"
-"#;
+    ++ ',"head":' ++ {head}
+    ++ '}}' ++ "\n"
+"#
+    )
+}
 
-/// Parse the [Bookmark] one line of [BRANCH_TEMPLATE] output describes.
-fn parse_bookmark(text: &str) -> Option<Bookmark> {
+/// Parse the [BookmarkRecord] one line of [bookmark_template] output
+/// describes.
+fn parse_bookmark(text: &str) -> Option<BookmarkRecord> {
     serde_json::from_str(text).ok()
 }
 
 #[derive(Clone, Debug)]
 pub enum BookmarkLine {
     Unparsable(String),
-    Parsed { text: String, bookmark: Bookmark },
+    Parsed {
+        text: String,
+        bookmark: Bookmark,
+        /// The change the bookmark points at
+        head: Head,
+    },
 }
 
 impl BookmarkLine {
@@ -116,15 +137,16 @@ impl Commander {
             .run()?;
 
         let bookmarks: Vec<BookmarkLine> = self
-            .jj([vec!["bookmark", "list", "-T", BRANCH_TEMPLATE], args].concat())
+            .jj([vec!["bookmark", "list", "-T", &bookmark_template()], args].concat())
             .ignore_working_copy()
             .run()?
             .lines()
             .zip(bookmarks_colored.lines())
             .map(|(line, line_colored)| match parse_bookmark(line) {
-                Some(bookmark) => BookmarkLine::Parsed {
+                Some(record) => BookmarkLine::Parsed {
                     text: line_colored.to_owned(),
-                    bookmark,
+                    bookmark: record.bookmark,
+                    head: record.head,
                 },
                 None => BookmarkLine::Unparsable(line_colored.to_owned()),
             })
@@ -141,7 +163,7 @@ impl Commander {
             "bookmark".to_owned(),
             "list".to_owned(),
             "-T".to_owned(),
-            format!(r#"if(present, {BRANCH_TEMPLATE}, "")"#),
+            format!(r#"if(present, {}, "")"#, bookmark_template()),
         ];
         if show_all {
             args.push("--all-remotes".to_owned());
@@ -153,31 +175,11 @@ impl Commander {
             .run()?
             .lines()
             .filter_map(parse_bookmark)
+            .map(|record| record.bookmark)
             .sorted_by(|a, b| b.timestamp.cmp(&a.timestamp))
             .collect();
 
         Ok(bookmarks)
-    }
-
-    /// Get bookmark details.
-    /// Maps to `jj show <bookmark>`
-    #[instrument(level = "trace", skip(self))]
-    pub fn get_bookmark_show(
-        &self,
-        bookmark: &Bookmark,
-        diff_format: &DiffFormat,
-        ignore_working_copy: bool,
-    ) -> Result<String, CommandError> {
-        let bookmark_arg = &bookmark.to_string();
-        let mut args = vec!["show", bookmark_arg];
-        args.append(&mut diff_format.get_args());
-
-        let mut command = self.jj(args).color();
-        if ignore_working_copy {
-            command = command.ignore_working_copy();
-        }
-
-        Ok(command.run()?.remove_end_line())
     }
 
     #[instrument(level = "trace", skip(self))]
@@ -198,17 +200,37 @@ impl Commander {
 #[cfg(test)]
 mod tests {
 
-    use insta::assert_debug_snapshot;
-
     use super::*;
+    use crate::commander::ids::CommitId;
     use crate::commander::tests::TestRepo;
+
+    /// One line of [bookmark_template] output, describing the bookmark
+    /// `fields` names and the change [head] describes.
+    fn bookmark_line(fields: &str) -> String {
+        format!(
+            r#"{{{fields},"head":{{"change_id":"kkmpqwpv","commit_id":"c13337796487","divergent":false,"immutable":true}}}}"#
+        )
+    }
+
+    fn head() -> Head {
+        Head {
+            change_id: ChangeId("kkmpqwpv".to_owned()),
+            commit_id: CommitId("c13337796487".to_owned()),
+            divergent: false,
+            immutable: true,
+        }
+    }
+
+    fn parse_bookmark_of(text: &str) -> Option<Bookmark> {
+        parse_bookmark(text).map(|record| record.bookmark)
+    }
 
     #[test]
     fn parse_bookmark_reads_a_local_bookmark() {
         assert_eq!(
-            parse_bookmark(
-                r#"{"name":"main","remote":null,"present":true,"timestamp":1786973730}"#
-            ),
+            parse_bookmark_of(&bookmark_line(
+                r#""name":"main","remote":null,"present":true,"timestamp":1786973730"#
+            )),
             Some(Bookmark {
                 name: "main".to_owned(),
                 remote: None,
@@ -221,9 +243,9 @@ mod tests {
     #[test]
     fn parse_bookmark_reads_a_remote_bookmark() {
         assert_eq!(
-            parse_bookmark(
-                r#"{"name":"main","remote":"origin","present":false,"timestamp":1786973730}"#
-            ),
+            parse_bookmark_of(&bookmark_line(
+                r#""name":"main","remote":"origin","present":false,"timestamp":1786973730"#
+            )),
             Some(Bookmark {
                 name: "main".to_owned(),
                 remote: Some("origin".to_owned()),
@@ -238,9 +260,9 @@ mod tests {
     #[test]
     fn parse_bookmark_reads_a_name_that_needed_quoting() {
         assert_eq!(
-            parse_bookmark(
-                r#"{"name":"\"feature@v2\"","remote":"origin","present":true,"timestamp":1}"#
-            ),
+            parse_bookmark_of(&bookmark_line(
+                r#""name":"\"feature@v2\"","remote":"origin","present":true,"timestamp":1"#
+            )),
             Some(Bookmark {
                 name: "\"feature@v2\"".to_owned(),
                 remote: Some("origin".to_owned()),
@@ -250,13 +272,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn parse_bookmark_reads_the_change_the_bookmark_points_at() {
+        assert_eq!(
+            parse_bookmark(&bookmark_line(
+                r#""name":"main","remote":null,"present":true,"timestamp":1"#
+            ))
+            .map(|record| record.head),
+            Some(head())
+        );
+    }
+
     /// Which is what jj leaves behind for a bookmark without a single
-    /// target, in place of the timestamp.
+    /// target, in place of the timestamp and of the head.
     #[test]
     fn parse_bookmark_rejects_a_record_holding_an_error() {
         assert!(
             parse_bookmark(
-                r#"{"name":"main","remote":null,"present":true,"timestamp":<Error: No commit available>}"#
+                r#"{"name":"main","remote":null,"present":true,"timestamp":<Error: No commit available>,"head":<Error: No commit available>}"#
             )
             .is_none()
         );
@@ -292,6 +325,24 @@ mod tests {
     }
 
     #[test]
+    fn get_bookmarks_reads_the_change_each_bookmark_points_at() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        let bookmark = test_repo.commander.create_bookmark("test")?;
+        let bookmarks = test_repo.commander.get_bookmarks(false)?;
+
+        assert_eq!(
+            bookmarks.first().and_then(|line| match line {
+                BookmarkLine::Parsed { head, .. } => Some(head.clone()),
+                BookmarkLine::Unparsable(_) => None,
+            }),
+            Some(test_repo.commander.get_bookmark_head(&bookmark)?)
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn get_bookmarks_list() -> Result<()> {
         let test_repo = TestRepo::new()?;
 
@@ -315,27 +366,6 @@ mod tests {
                 timestamp: 0,
             }]
         );
-
-        Ok(())
-    }
-
-    #[test]
-    fn get_bookmark_show() -> Result<()> {
-        let test_repo = TestRepo::new()?;
-
-        let bookmark = test_repo.commander.create_bookmark("test")?;
-        let bookmark_show =
-            test_repo
-                .commander
-                .get_bookmark_show(&bookmark, &DiffFormat::default(), false)?;
-
-        let mut settings = insta::Settings::clone_current();
-        settings.add_filter(r"Commit ID: [0-9a-fA-F]{40}", "Commit ID: [COMMIT_ID]");
-        settings.add_filter(r"Change ID: [k-z]{32}", "Change ID: [Change ID]");
-        settings.add_filter(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", "([DATE_TIME])");
-        let _bound = settings.bind_to_scope();
-
-        assert_debug_snapshot!(bookmark_show);
 
         Ok(())
     }

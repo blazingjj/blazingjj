@@ -1,5 +1,7 @@
 #![expect(clippy::borrow_interior_mutable_const)]
 
+use std::sync::mpsc::Sender;
+
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
@@ -17,9 +19,9 @@ use crate::commander::CommandError;
 use crate::commander::bookmarks::BookmarkLine;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
-use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::event::AppEvent;
 use crate::keybinds::BookmarksTabEvent;
 use crate::keybinds::BookmarksTabKeybinds;
 use crate::keybinds::DetailsPanelEvent;
@@ -32,13 +34,11 @@ use crate::ui::Tab;
 use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::MessagePopup;
-use crate::ui::panel::DetailsPanel;
+use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::ListPane;
 use crate::ui::panel::MouseInput;
-use crate::ui::panel::TextContent;
 use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
-use crate::ui::utils::tabs_to_spaces;
 
 struct DeleteBookmark {
     name: String,
@@ -63,8 +63,7 @@ pub struct BookmarksTab {
 
     bookmark: Option<BookmarkLine>,
 
-    bookmark_panel: DetailsPanel,
-    bookmark_output: Option<Result<String, CommandError>>,
+    bookmark_panel: CommitShowPanel,
 
     delete: Option<DeleteBookmark>,
     forget: Option<ForgetBookmark>,
@@ -79,8 +78,6 @@ pub struct BookmarksTab {
 
     bookmark_name_popup_tx: std::sync::mpsc::Sender<String>,
     bookmark_name_popup_rx: std::sync::mpsc::Receiver<String>,
-
-    diff_format: DiffFormat,
 
     config: JjConfig,
     keybinds: BookmarksTabKeybinds,
@@ -122,8 +119,8 @@ fn get_current_bookmark_index(
 
 impl BookmarksTab {
     /// A stale tab holding no bookmarks yet.
-    #[instrument(level = "info", name = "Initializing bookmarks tab", parent = None, skip())]
-    pub fn new() -> Self {
+    #[instrument(level = "info", name = "Initializing bookmarks tab", parent = None, skip(app_event_sender))]
+    pub fn new(app_event_sender: Sender<AppEvent>) -> Self {
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (bookmark_name_popup_tx, bookmark_name_popup_rx) = std::sync::mpsc::channel();
 
@@ -140,8 +137,7 @@ impl BookmarksTab {
 
             show_all: false,
 
-            bookmark_panel: DetailsPanel::new(),
-            bookmark_output: None,
+            bookmark_panel: CommitShowPanel::new(app_event_sender),
 
             delete: None,
             forget: None,
@@ -156,8 +152,6 @@ impl BookmarksTab {
 
             bookmark_name_popup_tx,
             bookmark_name_popup_rx,
-
-            diff_format: get_env().jj_config.diff_format(),
 
             config,
             keybinds,
@@ -175,32 +169,43 @@ impl BookmarksTab {
     pub fn refresh_bookmarks(&mut self) {
         self.bookmarks_output = new_commander().get_bookmarks(self.show_all);
 
-        // The selected bookmark may be gone, deleted from here or from
-        // anywhere else, so fall back to the first one.
-        if self.get_current_bookmark_index().is_none() {
-            self.bookmark = self
-                .bookmarks_output
-                .as_ref()
-                .ok()
-                .and_then(|bookmarks| bookmarks.first())
-                .map(|bookmark| bookmark.to_owned());
-        }
+        // Take the selection over to the list we have just read, so that a
+        // bookmark that has moved shows the change it points at now. It
+        // may also be gone, deleted from here or from anywhere else, so
+        // fall back to the first one.
+        let selected = self.get_current_bookmark_index().unwrap_or(0);
+        self.bookmark = self
+            .bookmarks_output
+            .as_ref()
+            .ok()
+            .and_then(|bookmarks| bookmarks.get(selected))
+            .map(|bookmark| bookmark.to_owned());
+
+        // Every listed bookmark is one we may come to show
+        let heads = self
+            .bookmarks_output
+            .iter()
+            .flatten()
+            .filter_map(|line| match line {
+                BookmarkLine::Parsed { head, .. } => Some(head.clone()),
+                BookmarkLine::Unparsable(_) => None,
+            })
+            .collect();
+        self.bookmark_panel.set_active(heads);
+
+        self.show_bookmark();
     }
 
-    pub fn refresh_bookmark(&mut self) {
-        let mut commander = new_commander();
-        let inner_width = self.bookmark_panel.columns() as usize;
-        commander.limit_width(inner_width);
-        self.bookmark_output = self.bookmark.as_ref().and_then(|bookmark| match bookmark {
-            BookmarkLine::Parsed { bookmark, .. } => Some(
-                commander
-                    .get_bookmark_show(bookmark, &self.diff_format, true)
-                    .map(|diff| tabs_to_spaces(&diff)),
-            ),
-            _ => None,
-        });
-
-        self.bookmark_panel.scroll_to(0);
+    /// Have the details panel show the change the selected bookmark
+    /// points at.
+    fn show_bookmark(&mut self) {
+        let (head, title) = match self.bookmark.as_ref() {
+            Some(BookmarkLine::Parsed { bookmark, head, .. }) => {
+                (Some(head.clone()), format!(" Bookmark {bookmark} "))
+            }
+            _ => (None, " Bookmark ".to_owned()),
+        };
+        self.bookmark_panel.show(head, title);
     }
 
     fn scroll_bookmarks(&mut self, scroll: isize) {
@@ -219,7 +224,7 @@ impl BookmarksTab {
 
         if let Some(next_bookmark) = next_bookmark {
             self.bookmark = Some(next_bookmark);
-            self.refresh_bookmark();
+            self.show_bookmark();
         }
     }
 }
@@ -227,10 +232,13 @@ impl BookmarksTab {
 impl Tab for BookmarksTab {
     fn refresh(&mut self) -> Result<()> {
         self.refresh_bookmarks();
-        self.refresh_bookmark();
         self.stale = false;
 
         Ok(())
+    }
+
+    fn drop_caches(&mut self) {
+        self.bookmark_panel.mark_dirty();
     }
 
     fn mark_stale(&mut self) {
@@ -332,8 +340,8 @@ impl Component for BookmarksTab {
                 })
             }) {
                 self.bookmark = Some(bookmark.clone());
+                self.show_bookmark();
             }
-            self.refresh_bookmark();
         }
 
         Ok(None)
@@ -428,23 +436,7 @@ impl Component for BookmarksTab {
         }
 
         // Draw bookmark
-        {
-            let title = if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
-            {
-                format!(" Bookmark {bookmark} ")
-            } else {
-                " Bookmark ".to_owned()
-            };
-            let bookmark_content: Vec<Line> = match self.bookmark_output.as_ref() {
-                Some(Ok(bookmark_output)) => bookmark_output.into_text()?.lines,
-                Some(Err(err)) => err.into_text("Error getting bookmark")?.lines,
-                None => vec![],
-            };
-            self.bookmark_panel
-                .render_context::<TextContent>(bookmark_content)
-                .title(title)
-                .draw(f, chunks[1]);
-        }
+        self.bookmark_panel.draw(f, chunks[1]);
 
         // Draw popup
         if self.popup.is_opened() {
@@ -480,11 +472,6 @@ impl Component for BookmarksTab {
 
             match self.details_keybinds.match_event(key) {
                 DetailsPanelEvent::Unbound => {}
-                DetailsPanelEvent::ToggleDiffFormat => {
-                    self.diff_format = self.diff_format.get_next(self.config.diff_tool());
-                    self.refresh_bookmark();
-                    return Ok(ComponentInputResult::Handled);
-                }
                 ev => {
                     self.bookmark_panel.handle_event(ev);
                     return Ok(ComponentInputResult::Handled);
@@ -651,7 +638,7 @@ impl Component for BookmarksTab {
                     let bookmarks = self.bookmarks_output.as_deref().unwrap_or_default();
                     if let Some(bookmark) = bookmarks.get(index).cloned() {
                         self.bookmark = Some(bookmark);
-                        self.refresh_bookmark();
+                        self.show_bookmark();
                     }
                 }
                 MouseInput::Handled => {}

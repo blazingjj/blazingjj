@@ -104,7 +104,7 @@ impl<'a> App<'a> {
             current_tab: TabId::Log,
             log: LogTab::new(event_source.clone_event_sender(), current_head.clone()),
             files: FilesTab::new(&current_head),
-            bookmarks: BookmarksTab::new(),
+            bookmarks: BookmarksTab::new(event_source.clone_event_sender()),
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
