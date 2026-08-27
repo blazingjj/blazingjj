@@ -1025,12 +1025,6 @@ impl Component for LogTab<'_> {
                 }
             }
 
-            let input_result = self.log_panel.input(event)?;
-            if input_result.is_handled() {
-                self.sync_head_output();
-                return Ok(input_result);
-            }
-
             let log_tab_event = self.keybinds.match_event(key);
             return self.handle_event(log_tab_event);
         }
