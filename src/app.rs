@@ -491,12 +491,17 @@ impl<'a> App<'a> {
             _ => {}
         }
 
+        let mut to_tab = self.popup.is_none();
         if let Some(popup) = self.popup.as_mut() {
             match popup.input(event.clone())? {
                 ComponentInputResult::HandledAction(app_action) => {
                     self.handle_action(app_action)?
                 }
                 ComponentInputResult::Handled => {}
+                ComponentInputResult::Dismissed => {
+                    self.popup = None;
+                    to_tab = true;
+                }
                 ComponentInputResult::NotHandled => {
                     if let TermEvent::Key(key) = event
                         && key.kind == event::KeyEventKind::Press
@@ -516,12 +521,16 @@ impl<'a> App<'a> {
                     }
                 }
             };
-        } else {
+        }
+
+        if to_tab {
             match self.get_current_tab().input(event.clone())? {
                 ComponentInputResult::HandledAction(app_action) => {
                     self.handle_action(app_action)?
                 }
-                ComponentInputResult::Handled => {}
+                // A tab is never on top of anything, so it has nothing
+                // to dismiss itself in favour of.
+                ComponentInputResult::Handled | ComponentInputResult::Dismissed => {}
                 ComponentInputResult::NotHandled => {
                     if let TermEvent::Key(key) = event
                         && key.kind == event::KeyEventKind::Press

@@ -44,6 +44,9 @@ pub enum ComponentInputResult {
     HandledAction(AppAction),
     /// The app should ask the next component in z-order to handle the event
     NotHandled,
+    /// The app should close this popup and then ask the next component
+    /// in z-order to handle the event.
+    Dismissed,
 }
 
 /// How far to move the selection in a tab's main panel.

@@ -53,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   have it only check when asked
 - The header's `R: refresh` hint turns red when the current tab has gone
   stale and the app is not going to catch it up on its own
+- A right click now takes a choice popup away: one inside it cancels, one
+  outside also goes on to the tab underneath, which may act on what was hit
 
 ### Changed
 

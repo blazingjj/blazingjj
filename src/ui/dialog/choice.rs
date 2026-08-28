@@ -218,6 +218,15 @@ impl<T: Clone> Component for ChoicePopup<T> {
                             return self.confirm();
                         }
                     }
+                    // A right click outside still names what it hit, so
+                    // we let it through rather than only taking it as a
+                    // dismissal.
+                    MouseEventKind::Down(MouseButton::Right) => {
+                        if self.popup_area.contains(pos) {
+                            return Self::close();
+                        }
+                        return Ok(ComponentInputResult::Dismissed);
+                    }
                     _ => {}
                 }
             }
@@ -400,6 +409,36 @@ mod tests {
         assert!(matches!(
             click(&mut popup, 0, 0),
             ComponentInputResult::HandledAction(AppAction::PopupCanceled)
+        ));
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    fn right_click(popup: &mut ChoicePopup<u8>, column: u16, row: u16) -> ComponentInputResult {
+        mouse(popup, MouseEventKind::Down(MouseButton::Right), column, row)
+    }
+
+    #[test]
+    fn right_clicking_a_choice_cancels_without_sending_it() {
+        let (mut popup, rx) = popup(3, 2);
+        draw(&mut popup);
+
+        assert!(matches!(
+            right_click(&mut popup, 30, 18),
+            ComponentInputResult::HandledAction(AppAction::PopupCanceled)
+        ));
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn right_clicking_outside_the_popup_dismisses_it_and_leaves_the_event_to_others() {
+        let (mut popup, rx) = popup(3, 0);
+        draw(&mut popup);
+
+        assert!(matches!(
+            right_click(&mut popup, 0, 0),
+            ComponentInputResult::Dismissed
         ));
 
         assert!(rx.try_recv().is_err());
