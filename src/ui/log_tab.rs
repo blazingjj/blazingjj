@@ -10,10 +10,10 @@ use tracing::instrument;
 use crate::app::TabId;
 use crate::app::command;
 use crate::app::command::Command;
-use crate::app::command::NewSource;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
+use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::log::LOG_LINES_PER_HEAD;
 use crate::commander::new_commander;
@@ -29,10 +29,8 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
-use crate::ui::dialog::BookmarkSetPopup;
-use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::MessagePopup;
-use crate::ui::dialog::RebasePopup;
+use crate::ui::dialog::context_menu;
 use crate::ui::dialog::parent_select;
 use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::LogPanel;
@@ -163,30 +161,20 @@ taking whatever that request acts on off the selection. The app runs it
 from there.
 */
 impl<'a> LogTab<'a> {
-    /// A new change from the marked changes, or from the selected one
-    /// when nothing is marked.
-    fn handle_new(&self, describe: bool) -> Option<AppAction> {
-        let marked: Vec<_> = self.log_panel.marked_heads.iter().cloned().collect();
-        let target = if marked.is_empty() {
-            self.head.change_id.as_str().chars().take(8).collect()
-        } else {
-            format!("the {} marked changes", marked.len())
-        };
-        let revset = Revset::union(&marked).unwrap_or_else(|| Revset::from(&self.head.commit_id));
+    /// What the operations in a menu or behind a key would act on.
+    fn marked(&self) -> Vec<CommitId> {
+        self.log_panel.marked_heads.iter().cloned().collect()
+    }
 
-        let source = if marked.is_empty() {
-            NewSource::Change
-        } else {
-            NewSource::Marks
-        };
-
-        Some(command::ask_new_change(
+    /// The menu of what can be done to the selected change, put at
+    /// `anchor` or centered when there is nowhere to point at.
+    fn open_context_menu(&self, anchor: Option<Position>) -> Result<Option<AppAction>> {
+        Ok(Some(AppAction::SetPopup(Box::new(context_menu(
             self.config.clone(),
-            revset,
-            source,
-            &target,
-            describe,
-        ))
+            anchor,
+            &self.head,
+            &self.marked(),
+        )?))))
     }
 
     /// Move the selection to the parent of the current head, asking which
@@ -250,14 +238,15 @@ impl<'a> LogTab<'a> {
             }
 
             LogTabEvent::CreateNew { describe } => {
-                return Ok(self.handle_new(describe));
+                return Ok(Some(command::ask_new_change_from_selection(
+                    self.config.clone(),
+                    &self.head,
+                    &self.marked(),
+                    describe,
+                )));
             }
             LogTabEvent::Rebase => {
-                let source_change = new_commander().get_current_head()?;
-                return Ok(Some(AppAction::SetPopup(Box::new(RebasePopup::new(
-                    source_change,
-                    self.head.clone(),
-                )))));
+                return Ok(Some(command::rebase(&self.head)?));
             }
             LogTabEvent::Squash { ignore_immutable } => {
                 return Ok(Some(command::ask_squash(
@@ -275,33 +264,17 @@ impl<'a> LogTab<'a> {
                 )));
             }
             LogTabEvent::Abandon => {
-                let marked = self.log_panel.marked_heads.iter().cloned().collect();
                 return Ok(Some(command::ask_abandon(
                     self.config.clone(),
                     &self.head,
-                    marked,
+                    self.marked(),
                 )));
             }
             LogTabEvent::Absorb => {
                 return Ok(Some(AppAction::Run(Command::Absorb(self.head.clone()))));
             }
             LogTabEvent::Describe => {
-                if self.head.immutable {
-                    return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
-                        "Describe",
-                        "The change cannot be described because it is immutable.",
-                    )))));
-                } else {
-                    let lines = new_commander()
-                        .get_commit_description(&self.head.commit_id)?
-                        .split("\n")
-                        .map(|line| line.to_string())
-                        .collect();
-                    return Ok(Some(AppAction::SetPopup(Box::new(DescribePopup::new(
-                        self.head.clone(),
-                        lines,
-                    )))));
-                }
+                return Ok(Some(command::describe(&self.head)?));
             }
             LogTabEvent::EditRevset => {
                 let mut textarea = TextArea::new(
@@ -317,11 +290,7 @@ impl<'a> LogTab<'a> {
                 return Ok(None);
             }
             LogTabEvent::SetBookmark => {
-                return Ok(Some(AppAction::SetPopup(Box::new(BookmarkSetPopup::new(
-                    self.config.clone(),
-                    Some(self.head.change_id.clone()),
-                    self.head.commit_id.clone(),
-                )))));
+                return Ok(Some(command::set_bookmark(self.config.clone(), &self.head)));
             }
             LogTabEvent::OpenFiles => {
                 return Ok(Some(AppAction::ViewFiles(self.head.clone())));
@@ -354,6 +323,10 @@ impl<'a> LogTab<'a> {
             }
             LogTabEvent::GotoParent => {
                 return self.handle_goto_parent();
+            }
+
+            LogTabEvent::OpenContextMenu => {
+                return self.open_context_menu(self.log_panel.selected_position());
             }
 
             // Not operations of their own; the key handler deals with
@@ -549,6 +522,16 @@ impl Component for LogTab<'_> {
                 MouseInput::Select(index) => {
                     if let Some(head) = self.log_panel.head_at_log_line(index) {
                         self.log_panel.set_head(head);
+                    }
+                }
+                // The graph takes lines of its own, which name no change
+                // for a menu to act on.
+                MouseInput::Context(index) => {
+                    if let Some(head) = self.log_panel.head_at_log_line(index) {
+                        self.log_panel.set_head_in_place(head);
+                        self.sync_head_output();
+                        let anchor = Position::new(mouse_event.column, mouse_event.row);
+                        return Ok(self.open_context_menu(Some(anchor))?.into());
                     }
                 }
                 MouseInput::Handled => {}

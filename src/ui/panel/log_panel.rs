@@ -62,6 +62,10 @@ pub struct LogPanel<'a> {
 
     /// Configuration of colours
     config: JjConfig,
+
+    /// Whether to apply scroll_padding on the next draw.
+    /// Disabled after a right-click so the viewport doesn't jump.
+    scroll_padding_active: bool,
 }
 
 const LEFT_MARGIN_BLANK: char = ' ';
@@ -116,6 +120,7 @@ impl<'a> LogPanel<'a> {
             list_pane: ListPane::default(),
 
             config: get_env().jj_config.clone(),
+            scroll_padding_active: true,
         }
     }
 
@@ -214,6 +219,13 @@ impl<'a> LogPanel<'a> {
             .position(|opt_h| opt_h.as_ref().is_some_and(|h| h == &self.head))
     }
 
+    /// Where to put something that wants to show up next to the selected
+    /// change.
+    pub fn selected_position(&self) -> Option<Position> {
+        self.list_pane
+            .item_anchor(self.selected_log_line()?, self.lines_per_head as u16)
+    }
+
     /// Find head of the provided log_output line
     pub fn head_at_log_line(&self, log_line: usize) -> Option<Head> {
         self.log_output.as_ref().ok()?.head_at(log_line).cloned()
@@ -242,6 +254,15 @@ impl<'a> LogPanel<'a> {
     /// Move selection to a specific head. This may cause the next draw to
     /// scroll to a different line.
     pub fn set_head(&mut self, head: Head) {
+        self.scroll_padding_active = true;
+        head.clone_into(&mut self.head);
+    }
+
+    /// Move selection to a specific head, leaving the viewport where it
+    /// is. Used when the selection follows the mouse, which is already
+    /// pointing at the line it wants to stay on.
+    pub fn set_head_in_place(&mut self, head: Head) {
+        self.scroll_padding_active = false;
         head.clone_into(&mut self.head);
     }
 
@@ -307,7 +328,12 @@ impl Component for LogPanel<'_> {
             .title(self.title.clone())
             .border_type(BorderType::Rounded);
         self.log_list_state.select(self.selected_log_line());
-        let log = List::new(log_lines).scroll_padding(7);
+        let log = List::new(log_lines);
+        let log = if self.scroll_padding_active {
+            log.scroll_padding(7)
+        } else {
+            log
+        };
         self.list_pane
             .render(f, area, log_block, log, &mut self.log_list_state);
 

@@ -259,6 +259,7 @@ impl Component for EvologTab<'_> {
                         self.sync_entry_output();
                     }
                 }
+                MouseInput::Context(_) => {}
                 MouseInput::Handled => {}
                 MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }

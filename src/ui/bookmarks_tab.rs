@@ -543,6 +543,7 @@ impl Component for BookmarksTab {
                         self.show_bookmark();
                     }
                 }
+                MouseInput::Context(_) => {}
                 MouseInput::Handled => {}
                 MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }

@@ -31,6 +31,9 @@ pub(crate) enum MouseInput {
     /// what its items represent, so it is up to the caller to map the
     /// index onto its own domain type.
     Select(usize),
+    /// The item at this index was right-clicked, asking for whatever the
+    /// caller offers as a context menu.
+    Context(usize),
 }
 
 pub(crate) trait PanelMouseInput {

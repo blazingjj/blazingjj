@@ -464,6 +464,7 @@ impl Component for FilesTab {
                         self.show_diff();
                     }
                 }
+                MouseInput::Context(_) => {}
                 MouseInput::Handled => {}
                 MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }
