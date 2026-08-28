@@ -159,7 +159,7 @@ impl Commander {
     /// The returned [JjCommand] carries the per-command options (color,
     /// quiet, ...) and is executed with [JjCommand::run],
     /// [JjCommand::run_void] or [JjCommand::run_cancellable].
-    pub fn jj<I, S>(&self, args: I) -> JjCommand<'_>
+    pub fn jj<I, S>(&self, args: I) -> JjCommand
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -168,11 +168,19 @@ impl Commander {
         if let Some(columns) = self.columns {
             env_var.push(("COLUMNS".to_owned(), columns.to_string()));
         }
+        let mut args: Vec<OsString> = args.into_iter().map(|s| s.as_ref().to_owned()).collect();
+        if let Some(jj_config_toml) = &self.jj_config_toml {
+            for cfg in jj_config_toml {
+                args.extend(["--config".into(), cfg.into()]);
+            }
+        }
 
         JjCommand {
-            commander: self,
-            args: args.into_iter().map(|s| s.as_ref().to_owned()).collect(),
+            jj_bin: self.env.jj_bin.clone(),
+            root: self.env.root.clone(),
+            args,
             color: false,
+            force_no_color: self.force_no_color,
             quiet: true,
             ignore_working_copy: self.ignore_working_copy,
             stdin: None,
@@ -224,13 +232,16 @@ impl Commander {
 /// methods consume and return the builder so they can be chained; the
 /// command is run exactly once with [Self::run], [Self::run_void] or
 /// [Self::run_cancellable].
-pub struct JjCommand<'a> {
-    commander: &'a Commander,
+pub struct JjCommand {
+    jj_bin: String,
+    root: String,
     args: Vec<OsString>,
     /// Whether the command should emit ANSI color. Off by default so output
     /// is safe to parse; enable with [Self::color] for output shown to the
     /// user.
     color: bool,
+    /// Whether to keep ANSI color off whatever `color` asks for.
+    force_no_color: bool,
     /// Whether to pass `--quiet`. On by default.
     quiet: bool,
     /// Whether to pass `--ignore-working-copy`. Off unless the commander
@@ -242,7 +253,7 @@ pub struct JjCommand<'a> {
     env_var: Vec<(String, String)>,
 }
 
-impl JjCommand<'_> {
+impl JjCommand {
     /// Enable ANSI color in the command's output.
     ///
     /// Off by default, so parsed output stays free of escape codes; enable it
@@ -383,10 +394,10 @@ impl JjCommand<'_> {
 
     /// Construct a Command ready for execution
     fn build_command(&self) -> Command {
-        let mut command = Command::new(&self.commander.env.jj_bin);
+        let mut command = Command::new(&self.jj_bin);
         command.args(&self.args);
         command.args(get_output_args(
-            !self.commander.force_no_color && self.color,
+            !self.force_no_color && self.color,
             self.quiet,
         ));
 
@@ -394,13 +405,7 @@ impl JjCommand<'_> {
             command.arg("--ignore-working-copy");
         }
 
-        if let Some(jj_config_toml) = &self.commander.jj_config_toml {
-            for cfg in jj_config_toml {
-                command.args(["--config", cfg]);
-            }
-        }
-
-        command.current_dir(&self.commander.env.root);
+        command.current_dir(&self.root);
         command.envs(self.env_var.iter().cloned());
         command
     }

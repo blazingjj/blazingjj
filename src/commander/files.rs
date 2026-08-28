@@ -183,7 +183,7 @@ impl Commander {
         current_file: &File,
         diff_format: &DiffFormat,
         ignore_working_copy: bool,
-    ) -> Option<JjCommand<'_>> {
+    ) -> Option<JjCommand> {
         let path = current_file.path.as_deref()?;
 
         let fileset = Self::get_file_revset(path);
