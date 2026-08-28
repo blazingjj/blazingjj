@@ -6,6 +6,8 @@ Only the app runs them. What it is to show once one is done comes back
 as an [AppAction].
 */
 
+use std::fmt::Display;
+
 use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::execute;
@@ -120,26 +122,24 @@ impl Command {
                 let _ = execute!(std::io::stdout(), CopyToClipboard::to_clipboard_from(text));
                 Ok(None)
             }
-            Command::Duplicate(revset) => {
-                let _ = new_commander().run_duplicate(revset.as_str());
-                Ok(Some(AppAction::MarkTabsStale))
-            }
-            Command::Absorb(head) => {
-                new_commander().run_absorb(&head.commit_id)?;
-                Ok(Some(show_change(new_commander().get_head_latest(&head)?)))
-            }
+            Command::Duplicate(revset) => match new_commander().run_duplicate(revset.as_str()) {
+                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                Err(err) => Ok(Some(refused("Duplicate", err))),
+            },
+            Command::Absorb(head) => match new_commander().run_absorb(&head.commit_id) {
+                Ok(()) => Ok(Some(show_change(new_commander().get_head_latest(&head)?))),
+                Err(err) => Ok(Some(refused("Absorb", err))),
+            },
             Command::New {
                 revset,
                 source,
                 insert,
                 describe,
             } => {
-                // Inserting can hit immutable changes, so report the
-                // refusal and leave the marks for another attempt.
+                // Inserting can hit immutable changes, so the marks are
+                // left for another attempt.
                 if let Err(err) = new_commander().run_new_with_insert(revset, insert) {
-                    return Ok(Some(AppAction::SetPopup(Box::new(
-                        MessagePopup::new("New", format!("{err:#}")).text_align(Alignment::Left),
-                    ))));
+                    return Ok(Some(refused("New", err)));
                 }
 
                 let head = new_commander().get_current_head()?;
@@ -159,17 +159,17 @@ impl Command {
             Command::Squash {
                 target,
                 ignore_immutable,
-            } => {
-                new_commander().run_squash(target.commit_id.as_str(), ignore_immutable)?;
-                Ok(Some(show_change(new_commander().get_current_head()?)))
-            }
+            } => match new_commander().run_squash(target.commit_id.as_str(), ignore_immutable) {
+                Ok(()) => Ok(Some(show_change(new_commander().get_current_head()?))),
+                Err(err) => Ok(Some(refused("Squash", err))),
+            },
             Command::Edit {
                 revset,
                 ignore_immutable,
-            } => {
-                new_commander().run_edit(revset, ignore_immutable)?;
-                Ok(Some(show_change(new_commander().get_current_head()?)))
-            }
+            } => match new_commander().run_edit(revset, ignore_immutable) {
+                Ok(()) => Ok(Some(show_change(new_commander().get_current_head()?))),
+                Err(err) => Ok(Some(refused("Edit", err))),
+            },
             Command::Abandon { marked, selected } => {
                 let (revset, abandoned) = match Revset::union(&marked) {
                     Some(revset) => (revset, marked.as_slice()),
@@ -187,7 +187,9 @@ impl Command {
                     moved_to = new_commander().get_commit_parent(&moved_to.commit_id)?;
                 }
 
-                new_commander().run_abandon(revset)?;
+                if let Err(err) = new_commander().run_abandon(revset) {
+                    return Ok(Some(refused("Abandon", err)));
+                }
 
                 let mut actions = vec![
                     AppAction::ClearLogMarks,
@@ -201,28 +203,28 @@ impl Command {
                 Ok(Some(AppAction::Multiple(actions)))
             }
             Command::Describe { head, description } => {
-                new_commander().run_describe(&head.commit_id, &description)?;
-                Ok(Some(AppAction::Multiple(vec![
-                    AppAction::ViewLog(new_commander().get_head_latest(&head)?),
-                    AppAction::MarkTabsStale,
-                ])))
+                match new_commander().run_describe(&head.commit_id, &description) {
+                    Ok(()) => Ok(Some(AppAction::Multiple(vec![
+                        AppAction::ViewLog(new_commander().get_head_latest(&head)?),
+                        AppAction::MarkTabsStale,
+                    ]))),
+                    Err(err) => Ok(Some(refused("Describe", err))),
+                }
             }
             Command::Rebase {
                 source,
                 source_mode,
                 target,
                 target_mode,
-            } => {
-                if let Err(err) = new_commander().run_rebase(
-                    source_mode,
-                    &source.commit_id,
-                    target_mode,
-                    &target.commit_id,
-                ) {
-                    return Ok(Some(message("Error", err.to_string())));
-                }
-                Ok(Some(AppAction::MarkTabsStale))
-            }
+            } => match new_commander().run_rebase(
+                source_mode,
+                &source.commit_id,
+                target_mode,
+                &target.commit_id,
+            ) {
+                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                Err(err) => Ok(Some(refused("Rebase", err))),
+            },
             Command::Push {
                 commit_id,
                 all_bookmarks,
@@ -239,23 +241,16 @@ impl Command {
                 TaskSlot::GitFetch,
                 move || Ok(new_commander().git_fetch(all_remotes)?),
             ))),
-            Command::RestoreFile(file) => {
-                if let Err(err) = new_commander().restore_file(&file) {
-                    return Ok(Some(message("Can't restore file", err.to_string())));
-                }
-                Ok(Some(show_working_copy_files()?))
-            }
+            Command::RestoreFile(file) => match new_commander().restore_file(&file) {
+                Ok(_) => Ok(Some(show_working_copy_files()?)),
+                Err(err) => Ok(Some(refused("Restore", err))),
+            },
             // This works even for deleted files, as jj does not fail on
             // those.
-            Command::UntrackFile(file) => {
-                if new_commander().untrack_file(&file).is_err() {
-                    return Ok(Some(message(
-                        "Can't untrack file",
-                        "Make sure that file is ignored",
-                    )));
-                }
-                Ok(Some(show_working_copy_files()?))
-            }
+            Command::UntrackFile(file) => match new_commander().untrack_file(&file) {
+                Ok(_) => Ok(Some(show_working_copy_files()?)),
+                Err(err) => Ok(Some(refused("Untrack", err))),
+            },
             Command::CreateBookmark(name) => match new_commander().create_bookmark(&name) {
                 Ok(_) => Ok(Some(AppAction::Multiple(vec![
                     AppAction::ViewBookmark(name),
@@ -284,28 +279,35 @@ impl Command {
                 }
             }
             Command::SetBookmark { name, commit_id } => {
-                new_commander().set_bookmark_commit(&name, &commit_id)?;
-                Ok(Some(AppAction::MarkTabsStale))
+                match new_commander().set_bookmark_commit(&name, &commit_id) {
+                    Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                    Err(err) => Ok(Some(refused("Set bookmark", err))),
+                }
             }
             Command::DeleteBookmark(name) => match new_commander().delete_bookmark(&name) {
                 Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
-                Err(err) => Ok(Some(message("Delete error", err.to_string()))),
+                Err(err) => Ok(Some(refused("Delete", err))),
             },
             Command::ForgetBookmark(name) => match new_commander().forget_bookmark(&name) {
                 Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
-                Err(err) => Ok(Some(message("Forget error", err.to_string()))),
+                Err(err) => Ok(Some(refused("Forget", err))),
             },
-            Command::TrackBookmark(bookmark) => {
-                new_commander().track_bookmark(&bookmark)?;
-                Ok(Some(AppAction::MarkTabsStale))
-            }
+            Command::TrackBookmark(bookmark) => match new_commander().track_bookmark(&bookmark) {
+                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                Err(err) => Ok(Some(refused("Track", err))),
+            },
             Command::UntrackBookmark(bookmark) => {
-                new_commander().untrack_bookmark(&bookmark)?;
-                Ok(Some(AppAction::MarkTabsStale))
+                match new_commander().untrack_bookmark(&bookmark) {
+                    Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                    Err(err) => Ok(Some(refused("Untrack", err))),
+                }
             }
-            Command::ShowBookmarkInLog(bookmark) => Ok(Some(AppAction::ViewLog(
-                new_commander().get_bookmark_head(&bookmark)?,
-            ))),
+            Command::ShowBookmarkInLog(bookmark) => {
+                match new_commander().get_bookmark_head(&bookmark) {
+                    Ok(head) => Ok(Some(AppAction::ViewLog(head))),
+                    Err(err) => Ok(Some(refused("View in log", err))),
+                }
+            }
         }
     }
 }
@@ -524,6 +526,14 @@ fn show_working_copy_files() -> Result<AppAction> {
 
 fn message(title: &'static str, text: impl Into<String>) -> AppAction {
     AppAction::SetPopup(Box::new(MessagePopup::new(title, text)))
+}
+
+/// What jj said when it would not do what `operation` asked. Its answer
+/// is laid out as it wrote it, being several lines as often as not.
+fn refused(operation: &'static str, err: impl Display) -> AppAction {
+    AppAction::SetPopup(Box::new(
+        MessagePopup::new(operation, format!("{err:#}")).text_align(Alignment::Left),
+    ))
 }
 
 /// Run `operation` in `slot` and put up a loader popup for it, which

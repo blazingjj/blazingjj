@@ -81,6 +81,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An operation jj turns down no longer takes the app down with it: the reason
+  goes up in a popup, as it already did for the operations refused before they
+  were run
+- A duplicate jj turns down now says so, rather than looking like it worked
+- A file that cannot be untracked now reports what jj said about it, rather
+  than guessing that it needs to be ignored
 - Switching tabs right after an operation no longer briefly shows what they
   held before it
 - Going to the current change (`@`) now shows it right away, rather than
