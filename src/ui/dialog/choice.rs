@@ -35,6 +35,7 @@ use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::styles::create_popup_block;
+use crate::ui::utils::anchored_rect_fixed;
 use crate::ui::utils::centered_rect;
 use crate::ui::utils::centered_rect_fixed;
 use crate::ui::utils::chrome;
@@ -50,6 +51,8 @@ pub struct ChoicePopup<T> {
     /// Rows listed under the choices that cannot be picked
     footnote: Vec<Line<'static>>,
     list_state: ListState,
+    /// Top-left of the popup. When `None`, the popup is centered.
+    anchor: Option<Position>,
     /// Whole popup area, updated on every draw
     popup_area: Rect,
     /// List area inside the popup, updated on every draw
@@ -62,6 +65,7 @@ impl<T> ChoicePopup<T> {
     pub fn new(
         config: JjConfig,
         tx: Sender<T>,
+        anchor: Option<Position>,
         title: &'static str,
         items: Vec<(Line<'static>, T)>,
     ) -> Self {
@@ -70,6 +74,7 @@ impl<T> ChoicePopup<T> {
             items,
             footnote: vec![],
             list_state: ListState::default().with_selected(Some(0)),
+            anchor,
             popup_area: Rect::ZERO,
             list_area: Rect::ZERO,
             config,
@@ -100,8 +105,9 @@ impl<T> ChoicePopup<T> {
             .chain(self.footnote.iter())
     }
 
-    /// Where to put the popup in `area`: centered, and no larger than the
-    /// list needs, up to the share of the screen we are willing to take.
+    /// Where to put the popup in `area`: at its anchor or centered, and
+    /// no larger than the list needs, up to the share of the screen we
+    /// are willing to take.
     fn popup_rect(&self, area: Rect, block: &Block) -> Rect {
         let max = centered_rect(area, 50, 60);
         let [extra_width, extra_height] = chrome(block, max);
@@ -119,7 +125,10 @@ impl<T> ChoicePopup<T> {
             .saturating_add(extra_height)
             .min(max.height);
 
-        centered_rect_fixed(area, width, height)
+        match self.anchor {
+            Some(anchor) => anchored_rect_fixed(area, anchor, width, height),
+            None => centered_rect_fixed(area, width, height),
+        }
     }
 
     /// The choice `pos` points at, if it points at one at all. The
@@ -253,7 +262,7 @@ mod tests {
         let items = (0..count)
             .map(|i| (Line::raw(format!("item {i}")), i))
             .collect();
-        let popup = ChoicePopup::new(JjConfig::default(), tx, "Choose", items)
+        let popup = ChoicePopup::new(JjConfig::default(), tx, None, "Choose", items)
             .footnote(vec![Line::raw("footnote"); footnote]);
 
         (popup, rx)
@@ -493,6 +502,7 @@ mod tests {
         let popup = ChoicePopup::new(
             JjConfig::default(),
             tx,
+            None,
             "Choose",
             vec![(Line::raw(label.clone()), 0u8)],
         );
@@ -517,6 +527,7 @@ mod tests {
         let popup = ChoicePopup::new(
             JjConfig::default(),
             tx,
+            None,
             "Choose",
             vec![(Line::raw("x".repeat(200)), 0u8)],
         );
@@ -530,7 +541,13 @@ mod tests {
     fn a_title_wider_than_the_rows_still_fits_between_the_corners() {
         let (tx, _rx) = channel();
         let title = "A rather wordy popup title that outgrows its help line";
-        let popup = ChoicePopup::new(JjConfig::default(), tx, title, vec![(Line::raw("x"), 0u8)]);
+        let popup = ChoicePopup::new(
+            JjConfig::default(),
+            tx,
+            None,
+            title,
+            vec![(Line::raw("x"), 0u8)],
+        );
 
         let rect = popup.popup_rect(Rect::new(0, 0, 200, 40), &create_popup_block(title));
 

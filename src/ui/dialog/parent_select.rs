@@ -46,7 +46,7 @@ pub fn parent_select(
         .iter()
         .map(|parent| (parent_line(parent, false), parent.head.clone()))
         .collect();
-    let popup = ChoicePopup::new(config, tx, "Select parent", items);
+    let popup = ChoicePopup::new(config, tx, None, "Select parent", items);
 
     if out_of_view.is_empty() {
         return popup;
