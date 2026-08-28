@@ -36,6 +36,18 @@ pub fn get_env() -> &'static Env {
     ENV.get().unwrap()
 }
 
+/// A default environment for tests that build components reading it. The
+/// tests share one process, so whichever gets there first sets it.
+#[cfg(test)]
+pub fn set_test_env() {
+    let _ = ENV.set(Env {
+        root: ".".to_owned(),
+        jj_config: JjConfig::default(),
+        default_revset: None,
+        jj_bin: "jj".to_owned(),
+    });
+}
+
 #[derive(Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "kebab-case", default)]
 pub struct JjConfig {

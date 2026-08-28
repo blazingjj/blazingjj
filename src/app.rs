@@ -265,11 +265,11 @@ impl<'a> App<'a> {
         match app_action {
             AppAction::ViewFiles(head) => {
                 self.set_tab(TabId::Files);
-                self.files.set_head(&head)?;
+                self.files.set_head(&head);
             }
             AppAction::ViewVersionFiles(version) => {
                 self.set_tab(TabId::Files);
-                self.files.set_version(&version)?;
+                self.files.set_version(&version);
             }
             AppAction::ViewEvolog(head) => {
                 self.set_tab(TabId::Evolog);
@@ -284,7 +284,7 @@ impl<'a> App<'a> {
                 self.bookmarks.select_bookmark(&name);
             }
             AppAction::ChangeHead(head) => {
-                self.files.set_head(&head)?;
+                self.files.set_head(&head);
                 self.evolog.set_head(&head);
             }
             AppAction::SetPopup(popup) => {
