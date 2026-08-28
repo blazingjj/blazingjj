@@ -13,6 +13,7 @@ use ratatui::Frame;
 use ratatui::crossterm::event::Event;
 use ratatui::layout::Rect;
 
+use crate::app::command::Command;
 use crate::background_tasks::TaskResult;
 use crate::commander::log::Head;
 
@@ -33,6 +34,10 @@ pub enum AppAction {
     PopupCanceled,
     Multiple(Vec<AppAction>),
     RefreshTab,
+    /// Run this operation and do whatever it asks for in turn. Whoever
+    /// raises one has named it in full, so the app can run it without
+    /// asking anything of the component the request came from.
+    Run(Command),
 }
 
 /// When a Component process an input event, it returns an ComponentInputResult

@@ -4,20 +4,20 @@ changed in the details panel.
 */
 
 use anyhow::Result;
-use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyEventKind;
-use ratatui::crossterm::execute;
 use ratatui::prelude::*;
 use tracing::instrument;
 
 use crate::app::TabId;
+use crate::app::command::Command;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
 use crate::commander::log::EVOLOG_LINES_PER_HEAD;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
+use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::DetailsPanelEvent;
@@ -131,14 +131,14 @@ impl<'a> EvologTab<'a> {
             EvologTabEvent::Duplicate => {
                 // The duplicate is a change of its own, so it shows up in
                 // the log rather than in the evolog we are on
-                new_commander().run_duplicate(entry.commit_id.as_str())?;
-                return Ok(Some(AppAction::RefreshTab));
+                return Ok(Some(AppAction::Run(Command::Duplicate(Revset::from(
+                    &entry.commit_id,
+                )))));
             }
             EvologTabEvent::CopyRev => {
-                let _ = execute!(
-                    std::io::stdout(),
-                    CopyToClipboard::to_clipboard_from(entry.commit_id.as_str())
-                );
+                return Ok(Some(AppAction::Run(Command::Copy(
+                    entry.commit_id.as_str().to_owned(),
+                ))));
             }
             // Not an operation of its own; the key handler deals with it.
             EvologTabEvent::Unbound => {}

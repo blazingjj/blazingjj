@@ -9,6 +9,7 @@ use ratatui::widgets::*;
 use tracing::instrument;
 
 use crate::app::TabId;
+use crate::app::command::Command;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskOutput;
 use crate::background_tasks::TaskResult;
@@ -32,7 +33,6 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
-use crate::ui::dialog::MessagePopup;
 use crate::ui::panel::ListPane;
 use crate::ui::panel::MouseInput;
 use crate::ui::panel::OutputKey;
@@ -232,54 +232,16 @@ impl FilesTab {
         self.diff_panel.set_active(subjects);
     }
 
-    /// Move to the working copy commit, dropping the selection, without
-    /// reading the files there.
-    fn follow_current_head(&mut self) -> Result<()> {
-        self.head = new_commander().get_current_head()?;
-        self.pinned = false;
-        self.file = None;
-        Ok(())
-    }
-
-    pub fn untrack_file(&mut self) -> Result<()> {
-        self.file
-            .as_ref()
-            .map(|current_file| new_commander().untrack_file(current_file))
-            .transpose()?;
-        Ok(())
-    }
-
-    pub fn restore_file(&mut self) -> Result<()> {
-        self.file
-            .as_ref()
-            .map(|current_file| new_commander().restore_file(current_file))
-            .transpose()?;
-        Ok(())
-    }
-
     fn handle_event(&mut self, event: FilesTabEvent) -> Result<Option<AppAction>> {
         match event {
-            FilesTabEvent::Untrack => {
-                // this works even for deleted files because jj doesn't return error in that case
-                if self.untrack_file().is_err() {
-                    return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
-                        "Can't untrack file",
-                        "Make sure that file is ignored",
-                    )))));
-                }
-                self.follow_current_head()?;
-                Ok(Some(AppAction::RefreshTab))
-            }
-            FilesTabEvent::Restore => {
-                if let Err(err) = self.restore_file() {
-                    return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
-                        "Can't restore file",
-                        err.to_string(),
-                    )))));
-                }
-                self.follow_current_head()?;
-                Ok(Some(AppAction::RefreshTab))
-            }
+            FilesTabEvent::Untrack => Ok(self
+                .file
+                .clone()
+                .map(|file| AppAction::Run(Command::UntrackFile(file)))),
+            FilesTabEvent::Restore => Ok(self
+                .file
+                .clone()
+                .map(|file| AppAction::Run(Command::RestoreFile(file)))),
             // Not an operation of its own; the key handler deals with it.
             FilesTabEvent::Unbound => Ok(None),
         }

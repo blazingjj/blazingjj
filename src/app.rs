@@ -1,3 +1,4 @@
+pub mod command;
 mod repo_watch;
 
 use core::fmt;
@@ -294,6 +295,11 @@ impl<'a> App<'a> {
             }
             AppAction::Multiple(app_actions) => {
                 for app_action in app_actions.into_iter() {
+                    self.handle_action(app_action)?;
+                }
+            }
+            AppAction::Run(command) => {
+                if let Some(app_action) = command.run(&self.background_tasks)? {
                     self.handle_action(app_action)?;
                 }
             }

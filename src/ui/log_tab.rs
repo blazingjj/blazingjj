@@ -1,10 +1,8 @@
 #![expect(clippy::borrow_interior_mutable_const)]
 
 use anyhow::Result;
-use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyEventKind;
-use ratatui::crossterm::execute;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use ratatui_textarea::CursorMove;
@@ -16,8 +14,8 @@ use tui_confirm_dialog::ConfirmDialogState;
 use tui_confirm_dialog::Listener;
 
 use crate::app::TabId;
+use crate::app::command::Command;
 use crate::background_tasks::BackgroundTasks;
-use crate::background_tasks::TaskOutput;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
 use crate::commander::jj::NewInsertMode;
@@ -38,7 +36,6 @@ use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::dialog::BookmarkSetPopup;
 use crate::ui::dialog::DescribePopup;
-use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
 use crate::ui::dialog::new_insert;
@@ -56,10 +53,6 @@ const SQUASH_POPUP_ID: u16 = 4;
 
 /// Log tab. Shows `jj log` in main panel and shows selected change details of in details panel.
 pub struct LogTab<'a> {
-    /// Where the commands the tab runs itself go, so they do not block
-    /// the UI thread
-    background_tasks: BackgroundTasks,
-
     /// The revset filter to apply to jj log
     log_revset: Option<String>,
 
@@ -149,9 +142,7 @@ impl<'a> LogTab<'a> {
             log_panel: LogPanel::new(head.clone(), LOG_LINES_PER_HEAD),
 
             head,
-            head_panel: CommitShowPanel::new(TabId::Log, background_tasks.clone()),
-
-            background_tasks,
+            head_panel: CommitShowPanel::new(TabId::Log, background_tasks),
 
             popup: ConfirmDialogState::default(),
             popup_tx,
@@ -203,19 +194,6 @@ impl<'a> LogTab<'a> {
         self.head = self.log_panel.head.clone();
         let title = format!(" Details for {} ", self.head.change_id);
         self.head_panel.show(Some(self.head.clone()), title);
-    }
-
-    /// Run `operation` in `slot` and put up a loader popup for it, which
-    /// stays until that slot's result arrives. The popup swallows all
-    /// input, so the slot it waits for has to be the one submitted here.
-    fn run_with_loader<F>(&self, operation_name: &str, slot: TaskSlot, operation: F) -> AppAction
-    where
-        F: FnOnce() -> TaskOutput + Send + 'static,
-    {
-        self.background_tasks
-            .submit_uninterruptible(slot.clone(), operation);
-
-        AppAction::SetPopup(Box::new(LoaderPopup::new(operation_name.to_owned(), slot)))
     }
 }
 
@@ -400,8 +378,9 @@ impl<'a> LogTab<'a> {
                 self.sync_head_output();
             }
             LogTabEvent::Duplicate => {
-                let _ = new_commander().run_duplicate(&self.head.change_id.to_string());
-                return Ok(Some(AppAction::RefreshTab));
+                return Ok(Some(AppAction::Run(Command::Duplicate(Revset::from(
+                    &self.head.change_id,
+                )))));
             }
 
             LogTabEvent::CreateNew { describe } => {
@@ -496,12 +475,7 @@ impl<'a> LogTab<'a> {
                 return self.handle_abandon();
             }
             LogTabEvent::Absorb => {
-                new_commander().run_absorb(&self.head.commit_id)?;
-                self.set_head(new_commander().get_head_latest(&self.head)?);
-                return Ok(Some(AppAction::Multiple(vec![
-                    AppAction::ChangeHead(self.head.clone()),
-                    AppAction::RefreshTab,
-                ])));
+                return Ok(Some(AppAction::Run(Command::Absorb(self.head.clone()))));
             }
             LogTabEvent::Describe => {
                 if self.head.immutable {
@@ -548,39 +522,27 @@ impl<'a> LogTab<'a> {
                 return Ok(Some(AppAction::ViewEvolog(self.head.clone())));
             }
             LogTabEvent::CopyChangeId => {
-                // Copy change ID to clipboard using crossterm
-                let change_id = self.head.change_id.as_str();
-                let _ = execute!(
-                    std::io::stdout(),
-                    CopyToClipboard::to_clipboard_from(change_id)
-                );
+                return Ok(Some(AppAction::Run(Command::Copy(
+                    self.head.change_id.as_string(),
+                ))));
             }
             LogTabEvent::CopyRev => {
-                // Copy revision (commit ID) to clipboard using crossterm
-                let commit_id = self.head.commit_id.as_str();
-                let _ = execute!(
-                    std::io::stdout(),
-                    CopyToClipboard::to_clipboard_from(commit_id)
-                );
+                return Ok(Some(AppAction::Run(Command::Copy(
+                    self.head.commit_id.as_str().to_owned(),
+                ))));
             }
             LogTabEvent::Push {
                 all_bookmarks,
                 allow_new,
             } => {
-                let commit_id = self.head.commit_id.clone();
-
-                return Ok(Some(self.run_with_loader(
-                    "Pushing",
-                    TaskSlot::GitPush,
-                    move || Ok(new_commander().git_push(all_bookmarks, allow_new, &commit_id)?),
-                )));
+                return Ok(Some(AppAction::Run(Command::Push {
+                    commit_id: self.head.commit_id.clone(),
+                    all_bookmarks,
+                    allow_new,
+                })));
             }
             LogTabEvent::Fetch { all_remotes } => {
-                return Ok(Some(self.run_with_loader(
-                    "Fetching",
-                    TaskSlot::GitFetch,
-                    move || Ok(new_commander().git_fetch(all_remotes)?),
-                )));
+                return Ok(Some(AppAction::Run(Command::Fetch { all_remotes })));
             }
             LogTabEvent::GotoParent => {
                 return self.handle_goto_parent();

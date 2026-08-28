@@ -14,10 +14,12 @@ use tui_confirm_dialog::ConfirmDialogState;
 use tui_confirm_dialog::Listener;
 
 use crate::app::TabId;
+use crate::app::command::Command;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
 use crate::commander::CommandError;
+use crate::commander::bookmarks::Bookmark;
 use crate::commander::bookmarks::BookmarkLine;
 use crate::commander::jj::NewInsertMode;
 use crate::commander::new_commander;
@@ -263,6 +265,22 @@ impl BookmarksTab {
         Ok(Some(AppAction::ViewLog(head)))
     }
 
+    /// The bookmark the operations would name, if the selection is on one
+    /// that is there to be operated on.
+    fn selected_bookmark(&self) -> Option<&Bookmark> {
+        match self.bookmark.as_ref() {
+            Some(BookmarkLine::Parsed { bookmark, .. }) if bookmark.present => Some(bookmark),
+            _ => None,
+        }
+    }
+
+    /// The selected bookmark when it is one on a remote, which is the
+    /// only kind tracking applies to.
+    fn tracked_bookmark(&self) -> Option<&Bookmark> {
+        self.selected_bookmark()
+            .filter(|bookmark| bookmark.remote.is_some())
+    }
+
     fn handle_event(&mut self, event: BookmarksTabEvent) -> Result<Option<AppAction>> {
         match event {
             BookmarksTabEvent::ToggleShowAll => {
@@ -327,21 +345,17 @@ impl BookmarksTab {
             }
             // TODO: Ask for confirmation?
             BookmarksTabEvent::TrackBookmark => {
-                if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
-                    && bookmark.remote.is_some()
-                    && bookmark.present
-                {
-                    new_commander().track_bookmark(bookmark)?;
-                    return Ok(Some(AppAction::RefreshTab));
+                if let Some(bookmark) = self.tracked_bookmark() {
+                    return Ok(Some(AppAction::Run(Command::TrackBookmark(
+                        bookmark.clone(),
+                    ))));
                 }
             }
             BookmarksTabEvent::UntrackBookmark => {
-                if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
-                    && bookmark.remote.is_some()
-                    && bookmark.present
-                {
-                    new_commander().untrack_bookmark(bookmark)?;
-                    return Ok(Some(AppAction::RefreshTab));
+                if let Some(bookmark) = self.tracked_bookmark() {
+                    return Ok(Some(AppAction::Run(Command::UntrackBookmark(
+                        bookmark.clone(),
+                    ))));
                 }
             }
             BookmarksTabEvent::NewChange { describe } => {
@@ -386,12 +400,10 @@ impl BookmarksTab {
                 }
             }
             BookmarksTabEvent::ViewInLog => {
-                if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
-                    && bookmark.present
-                {
-                    return Ok(Some(AppAction::ViewLog(
-                        new_commander().get_bookmark_head(bookmark)?,
-                    )));
+                if let Some(bookmark) = self.selected_bookmark() {
+                    return Ok(Some(AppAction::Run(Command::ShowBookmarkInLog(
+                        bookmark.clone(),
+                    ))));
                 }
             }
             // Not an operation of its own; the key handler deals with it.
