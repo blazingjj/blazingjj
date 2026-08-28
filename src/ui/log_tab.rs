@@ -20,6 +20,7 @@ use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskOutput;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
+use crate::commander::jj::NewInsertMode;
 use crate::commander::log::Head;
 use crate::commander::log::LOG_LINES_PER_HEAD;
 use crate::commander::new_commander;
@@ -36,6 +37,7 @@ use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::dialog::BookmarkSetPopup;
+use crate::ui::dialog::ChoicePopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
@@ -48,7 +50,6 @@ use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::centered_rect_line_height;
 
-const NEW_POPUP_ID: u16 = 1;
 const EDIT_POPUP_ID: u16 = 2;
 const ABANDON_POPUP_ID: u16 = 3;
 const SQUASH_POPUP_ID: u16 = 4;
@@ -81,6 +82,9 @@ pub struct LogTab<'a> {
 
     goto_parent_tx: std::sync::mpsc::Sender<Head>,
     goto_parent_rx: std::sync::mpsc::Receiver<Head>,
+
+    new_insert_tx: std::sync::mpsc::Sender<NewInsertMode>,
+    new_insert_rx: std::sync::mpsc::Receiver<NewInsertMode>,
 
     describe_after_new: bool,
 
@@ -121,6 +125,7 @@ impl<'a> LogTab<'a> {
     pub fn new(background_tasks: BackgroundTasks, head: Head) -> Self {
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (goto_parent_tx, goto_parent_rx) = std::sync::mpsc::channel();
+        let (new_insert_tx, new_insert_rx) = std::sync::mpsc::channel();
 
         let mut keybinds = LogTabKeybinds::default();
         let mut details_keybinds = DetailsPanelKeybinds::default();
@@ -151,9 +156,11 @@ impl<'a> LogTab<'a> {
             popup: ConfirmDialogState::default(),
             popup_tx,
             popup_rx,
-
             goto_parent_tx,
             goto_parent_rx,
+
+            new_insert_tx,
+            new_insert_rx,
 
             describe_after_new: false,
 
@@ -228,41 +235,52 @@ each other in code:
 impl<'a> LogTab<'a> {
     fn handle_new(&mut self, describe: bool) -> Result<ComponentInputResult> {
         let mark_count = self.log_panel.marked_heads.len();
-        let text = if mark_count > 0 {
-            Text::from(vec![Line::from(format!(
-                "Are you sure you want to create a new change with {mark_count} marked parents?"
-            ))])
-            .fg(Color::default())
+        let target: String = if mark_count > 0 {
+            format!("the {mark_count} marked changes")
         } else {
-            Text::from(vec![
-                Line::from("Are you sure you want to create a new change?"),
-                Line::from(format!("New parent: {}", self.head.change_id.as_str())),
-            ])
-            .fg(Color::default())
+            self.head.change_id.as_str().chars().take(8).collect()
         };
-        self.popup = ConfirmDialogState::new(
-            NEW_POPUP_ID,
-            Span::styled(" New ", Style::new().bold().cyan()),
-            text,
-        );
-        self.popup
-            .with_yes_button(ButtonLabel::YES.clone())
-            .with_no_button(ButtonLabel::NO.clone())
-            .with_listener(Some(self.popup_tx.clone()))
-            .open();
+        let items = vec![
+            (
+                Line::raw(format!("New child of {target}")),
+                NewInsertMode::Child,
+            ),
+            (
+                Line::raw(format!("Insert after {target}")),
+                NewInsertMode::After,
+            ),
+            (
+                Line::raw(format!("Insert before {target}")),
+                NewInsertMode::Before,
+            ),
+        ];
         self.describe_after_new = describe;
-        Ok(ComponentInputResult::Handled)
+        Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+            Box::new(ChoicePopup::new(
+                self.config.clone(),
+                self.new_insert_tx.clone(),
+                "New",
+                items,
+            )),
+        )))
     }
 
-    // Execute new command, after self.popup returned
-    fn execute_new(&mut self) -> Result<Option<AppAction>> {
-        let commit_ids = self.log_panel.extract_and_clear_head_marks();
+    // Execute new command, after the insertion point has been picked
+    fn execute_new(&mut self, insert: NewInsertMode) -> Result<Option<AppAction>> {
+        let describe = std::mem::take(&mut self.describe_after_new);
+        let commit_ids: Vec<_> = self.log_panel.marked_heads.iter().cloned().collect();
         let revset =
             Revset::union(&commit_ids).unwrap_or_else(|| Revset::from(&self.head.commit_id));
-        new_commander().run_new(revset)?;
+        // Inserting can hit immutable changes, so report the refusal and
+        // keep the marks for another attempt.
+        if let Err(err) = new_commander().run_new_with_insert(revset, insert) {
+            return Ok(Some(AppAction::SetPopup(Box::new(
+                MessagePopup::new("New", format!("{err:#}")).text_align(Alignment::Left),
+            ))));
+        }
+        self.log_panel.marked_heads.clear();
         self.set_head(new_commander().get_current_head()?);
-        if self.describe_after_new {
-            self.describe_after_new = false;
+        if describe {
             return Ok(Some(AppAction::Multiple(vec![
                 AppAction::ChangeHead(self.head.clone()),
                 AppAction::SetPopup(Box::new(DescribePopup::new(self.head.clone(), vec![]))),
@@ -673,9 +691,6 @@ impl Component for LogTab<'_> {
             && res.1.unwrap_or(false)
         {
             match res.0 {
-                NEW_POPUP_ID => {
-                    return self.execute_new();
-                }
                 EDIT_POPUP_ID => {
                     new_commander().run_edit(&self.head.commit_id, self.edit_ignore_immutable)?;
                     return Ok(Some(AppAction::Multiple(vec![
@@ -707,6 +722,10 @@ impl Component for LogTab<'_> {
         // ask for a refresh.
         if let Ok(head) = self.goto_parent_rx.try_recv() {
             return Ok(Some(AppAction::ViewLog(head)));
+        }
+
+        if let Ok(insert) = self.new_insert_rx.try_recv() {
+            return self.execute_new(insert);
         }
 
         Ok(None)

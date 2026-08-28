@@ -15,17 +15,42 @@ use crate::commander::bookmarks::Bookmark;
 use crate::commander::ids::CommitId;
 use crate::commander::revset::Revset;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewInsertMode {
+    /// `jj new <rev>` — leaves children of rev in place.
+    Child,
+    /// `jj new --insert-after <rev>` — splices between rev and its children.
+    After,
+    /// `jj new --insert-before <rev>` — splices between rev and its parents.
+    Before,
+}
+
 impl Commander {
     /// Create a new change. Maps to `jj new <revset>`.
     pub fn run_new(&self, revset: impl Into<Revset>) -> Result<()> {
-        self.run_new_inner(revset.into().as_str())
+        self.run_new_with_insert(revset, NewInsertMode::Child)
+    }
+
+    /// Like [`Self::run_new()`], but with an explicit insertion mode.
+    pub fn run_new_with_insert(
+        &self,
+        revset: impl Into<Revset>,
+        insert: NewInsertMode,
+    ) -> Result<()> {
+        self.run_new_inner(revset.into().as_str(), insert)
     }
 
     #[instrument(level = "trace", name = "run_new", skip(self))]
-    fn run_new_inner(&self, revset: &str) -> Result<()> {
-        self.jj(["new", revset])
-            .run_void()
-            .context("Failed executing jj new")
+    fn run_new_inner(&self, revset: &str, insert: NewInsertMode) -> Result<()> {
+        let mut args = vec!["new"];
+        match insert {
+            NewInsertMode::Child => {}
+            NewInsertMode::After => args.push("--insert-after"),
+            NewInsertMode::Before => args.push("--insert-before"),
+        }
+        args.push(revset);
+
+        self.jj(args).run_void().context("Failed executing jj new")
     }
 
     /// Duplicate a change. Maps to `jj duplicate`
@@ -251,6 +276,8 @@ impl Commander {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commander::ids::ChangeId;
+    use crate::commander::log::Head;
     use crate::commander::tests::TestRepo;
 
     #[test]
@@ -260,6 +287,74 @@ mod tests {
         let head = test_repo.commander.get_current_head()?;
         test_repo.commander.run_new(&head.commit_id)?;
         assert_ne!(head, test_repo.commander.get_current_head()?);
+
+        Ok(())
+    }
+
+    /// A repo holding a described `base` with a described `child` on top,
+    /// so that neither is abandoned for being empty when we move away.
+    fn chain_of_two(test_repo: &TestRepo) -> Result<(Head, Head)> {
+        let commander = &test_repo.commander;
+
+        let base = commander.get_current_head()?;
+        commander.run_describe(&base.commit_id, "base")?;
+        commander.run_new(&base.commit_id)?;
+        let child = commander.get_current_head()?;
+        commander.run_describe(&child.commit_id, "child")?;
+
+        Ok((base, child))
+    }
+
+    fn parent_change_id(test_repo: &TestRepo, head: &Head) -> Result<ChangeId> {
+        let head = test_repo.commander.get_head_latest(head)?;
+        Ok(test_repo
+            .commander
+            .get_commit_parent(&head.commit_id)?
+            .change_id)
+    }
+
+    #[test]
+    fn run_new_insert_after() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let (base, child) = chain_of_two(&test_repo)?;
+
+        test_repo
+            .commander
+            .run_new_with_insert(&base.commit_id, NewInsertMode::After)?;
+
+        let inserted = test_repo.commander.get_current_head()?;
+        assert_eq!(parent_change_id(&test_repo, &inserted)?, base.change_id);
+        assert_eq!(parent_change_id(&test_repo, &child)?, inserted.change_id);
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_new_insert_before() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let (base, child) = chain_of_two(&test_repo)?;
+
+        test_repo
+            .commander
+            .run_new_with_insert(&child.commit_id, NewInsertMode::Before)?;
+
+        let inserted = test_repo.commander.get_current_head()?;
+        assert_eq!(parent_change_id(&test_repo, &inserted)?, base.change_id);
+        assert_eq!(parent_change_id(&test_repo, &child)?, inserted.change_id);
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_new_leaves_the_children_in_place() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let (base, child) = chain_of_two(&test_repo)?;
+
+        test_repo.commander.run_new(&base.commit_id)?;
+
+        let sibling = test_repo.commander.get_current_head()?;
+        assert_eq!(parent_change_id(&test_repo, &sibling)?, base.change_id);
+        assert_eq!(parent_change_id(&test_repo, &child)?, base.change_id);
 
         Ok(())
     }
