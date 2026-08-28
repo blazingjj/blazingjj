@@ -565,6 +565,10 @@ impl<'a> App<'a> {
                             }
                             GlobalEvent::FocusCurrent => {
                                 self.get_current_tab().focus_current()?;
+                                // The tabs that read what they show when
+                                // they show it are now out of date at our
+                                // asking, not at the repo's.
+                                self.repo_watch.catching_up();
                             }
                             GlobalEvent::Refresh => {
                                 self.repo_watch.ask_check(Check {
