@@ -197,9 +197,7 @@ impl Component for RebasePopup {
                     Box::new(MessagePopup::new("Error", e.to_string())),
                 ))),
             },
-            PopupAction::Cancel => Ok(ComponentInputResult::HandledAction(
-                AppAction::PopupCanceled,
-            )),
+            PopupAction::Cancel => Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup)),
             PopupAction::SetSourceMode(m) => {
                 self.source_mode = m;
                 Ok(ComponentInputResult::Handled)

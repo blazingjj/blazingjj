@@ -1,12 +1,8 @@
-/*! A popup that lists labelled choices and sends the one picked over a
-channel, leaving it to whoever put the popup up to act on it in its own
-`update`.
+/*! A popup that lists labelled choices, each standing for an action the
+app is to take, and raises the one picked.
 */
 
-use std::sync::mpsc::Sender;
-
 use anyhow::Result;
-use anyhow::anyhow;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyCode;
@@ -45,9 +41,9 @@ const HELP: &str = "j/k: scroll | Enter: select | Escape: cancel";
 /// The help line and the border it sits under
 const HELP_HEIGHT: u16 = 2;
 
-pub struct ChoicePopup<T> {
+pub struct ChoicePopup {
     title: &'static str,
-    items: Vec<(Line<'static>, T)>,
+    items: Vec<(Line<'static>, AppAction)>,
     /// Rows listed under the choices that cannot be picked
     footnote: Vec<Line<'static>>,
     list_state: ListState,
@@ -58,16 +54,14 @@ pub struct ChoicePopup<T> {
     /// List area inside the popup, updated on every draw
     list_area: Rect,
     config: JjConfig,
-    tx: Sender<T>,
 }
 
-impl<T> ChoicePopup<T> {
+impl ChoicePopup {
     pub fn new(
         config: JjConfig,
-        tx: Sender<T>,
         anchor: Option<Position>,
         title: &'static str,
-        items: Vec<(Line<'static>, T)>,
+        items: Vec<(Line<'static>, AppAction)>,
     ) -> Self {
         Self {
             title,
@@ -78,7 +72,6 @@ impl<T> ChoicePopup<T> {
             popup_area: Rect::ZERO,
             list_area: Rect::ZERO,
             config,
-            tx,
         }
     }
 
@@ -144,25 +137,27 @@ impl<T> ChoicePopup<T> {
     }
 
     fn close() -> Result<ComponentInputResult> {
-        Ok(ComponentInputResult::HandledAction(
-            AppAction::PopupCanceled,
-        ))
+        Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup))
     }
 
-    fn confirm(&self) -> Result<ComponentInputResult>
-    where
-        T: Clone,
-    {
-        if let Some((_, choice)) = self.list_state.selected().and_then(|i| self.items.get(i)) {
-            self.tx
-                .send(choice.clone())
-                .map_err(|_| anyhow!("Nothing is listening for the choice"))?;
-        }
-        Self::close()
+    /// Take the popup down and raise what the selection stands for.
+    fn confirm(&mut self) -> Result<ComponentInputResult> {
+        let index = self
+            .list_state
+            .selected()
+            .filter(|index| *index < self.items.len());
+        let Some(index) = index else {
+            return Self::close();
+        };
+        let (_, chosen) = self.items.remove(index);
+
+        Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
+            vec![AppAction::ClosePopup, chosen],
+        )))
     }
 }
 
-impl<T: Clone> Component for ChoicePopup<T> {
+impl Component for ChoicePopup {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let block = create_popup_block(self.title);
         let area = self.popup_rect(area, &block);
@@ -246,29 +241,59 @@ impl<T: Clone> Component for ChoicePopup<T> {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::mpsc::Receiver;
-    use std::sync::mpsc::channel;
-
+pub(super) mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::crossterm::event::KeyModifiers;
     use ratatui::crossterm::event::MouseEvent;
 
     use super::*;
+    use crate::commander::ids::ChangeId;
+    use crate::commander::ids::CommitId;
+    use crate::commander::log::Head;
 
-    fn popup(count: u8, footnote: usize) -> (ChoicePopup<u8>, Receiver<u8>) {
-        let (tx, rx) = channel();
-        let items = (0..count)
-            .map(|i| (Line::raw(format!("item {i}")), i))
-            .collect();
-        let popup = ChoicePopup::new(JjConfig::default(), tx, None, "Choose", items)
-            .footnote(vec![Line::raw("footnote"); footnote]);
-
-        (popup, rx)
+    /// An action naming the choice it belongs to, so that a test can tell
+    /// which one the popup raised.
+    fn action(index: u8) -> AppAction {
+        AppAction::ViewLog(Head {
+            change_id: ChangeId(index.to_string()),
+            commit_id: CommitId(index.to_string()),
+            divergent: false,
+            immutable: false,
+        })
     }
 
-    fn press(popup: &mut ChoicePopup<u8>, key: KeyCode) -> ComponentInputResult {
+    /// The change the choice the popup raised stands for, or None when it
+    /// raised no choice.
+    pub(in crate::ui::dialog) fn picked(result: ComponentInputResult) -> Option<ChangeId> {
+        let ComponentInputResult::HandledAction(AppAction::Multiple(actions)) = result else {
+            return None;
+        };
+        let [AppAction::ClosePopup, AppAction::ViewLog(head)] = actions.as_slice() else {
+            return None;
+        };
+        Some(head.change_id.clone())
+    }
+
+    /// The choice the popup raised, or None when it raised none.
+    fn chosen(result: ComponentInputResult) -> Option<u8> {
+        picked(result).and_then(|change_id| change_id.0.parse().ok())
+    }
+
+    fn popup(count: u8, footnote: usize) -> ChoicePopup {
+        let items = (0..count)
+            .map(|i| (Line::raw(format!("item {i}")), action(i)))
+            .collect();
+
+        ChoicePopup::new(JjConfig::default(), None, "Choose", items).footnote(vec![
+            Line::raw(
+                "footnote"
+            );
+            footnote
+        ])
+    }
+
+    fn press(popup: &mut ChoicePopup, key: KeyCode) -> ComponentInputResult {
         popup
             .input(Event::Key(key.into()))
             .expect("the popup handles key presses")
@@ -276,7 +301,7 @@ mod tests {
 
     #[test]
     fn scrolling_is_clamped_to_the_choices() {
-        let (mut popup, _rx) = popup(3, 2);
+        let mut popup = popup(3, 2);
 
         for _ in 0..5 {
             press(&mut popup, KeyCode::Char('j'));
@@ -290,20 +315,16 @@ mod tests {
     }
 
     #[test]
-    fn enter_sends_the_selected_choice() {
-        let (mut popup, rx) = popup(3, 0);
+    fn enter_raises_the_selected_choice() {
+        let mut popup = popup(3, 0);
 
         press(&mut popup, KeyCode::Char('j'));
-        assert!(matches!(
-            press(&mut popup, KeyCode::Enter),
-            ComponentInputResult::HandledAction(AppAction::PopupCanceled)
-        ));
 
-        assert_eq!(rx.try_recv(), Ok(1));
+        assert_eq!(chosen(press(&mut popup, KeyCode::Enter)), Some(1));
     }
 
     fn mouse(
-        popup: &mut ChoicePopup<u8>,
+        popup: &mut ChoicePopup,
         kind: MouseEventKind,
         column: u16,
         row: u16,
@@ -318,17 +339,17 @@ mod tests {
             .expect("the popup handles mouse events")
     }
 
-    fn click(popup: &mut ChoicePopup<u8>, column: u16, row: u16) -> ComponentInputResult {
+    fn click(popup: &mut ChoicePopup, column: u16, row: u16) -> ComponentInputResult {
         mouse(popup, MouseEventKind::Down(MouseButton::Left), column, row)
     }
 
     /// A wheel notch over the middle of a popup drawn by `draw`
-    fn wheel(popup: &mut ChoicePopup<u8>, kind: MouseEventKind) -> ComponentInputResult {
+    fn wheel(popup: &mut ChoicePopup, kind: MouseEventKind) -> ComponentInputResult {
         mouse(popup, kind, 50, 20)
     }
 
     /// Put the popup on a 100x40 screen, so that it knows where it is
-    fn draw(popup: &mut ChoicePopup<u8>) {
+    fn draw(popup: &mut ChoicePopup) {
         Terminal::new(TestBackend::new(100, 40))
             .expect("the test backend")
             .draw(|f| popup.draw(f, f.area()).expect("the popup draws"))
@@ -337,7 +358,7 @@ mod tests {
 
     #[test]
     fn the_hit_test_looks_where_the_popup_was_drawn() {
-        let (mut popup, _rx) = popup(3, 2);
+        let mut popup = popup(3, 2);
 
         draw(&mut popup);
 
@@ -348,22 +369,17 @@ mod tests {
     }
 
     #[test]
-    fn clicking_a_choice_sends_it() {
-        let (mut popup, rx) = popup(3, 2);
+    fn clicking_a_choice_raises_it() {
+        let mut popup = popup(3, 2);
         draw(&mut popup);
 
         // The third row of the list
-        assert!(matches!(
-            click(&mut popup, 30, 18),
-            ComponentInputResult::HandledAction(AppAction::PopupCanceled)
-        ));
-
-        assert_eq!(rx.try_recv(), Ok(2));
+        assert_eq!(chosen(click(&mut popup, 30, 18)), Some(2));
     }
 
     #[test]
-    fn clicking_a_choice_in_a_scrolled_list_sends_it() {
-        let (mut popup, rx) = popup(30, 0);
+    fn clicking_a_choice_in_a_scrolled_list_raises_it() {
+        let mut popup = popup(30, 0);
         draw(&mut popup);
         for _ in 0..29 {
             press(&mut popup, KeyCode::Char('j'));
@@ -374,17 +390,12 @@ mod tests {
 
         // The topmost row on show, which is the eleventh choice
         let top = popup.list_area.y;
-        assert!(matches!(
-            click(&mut popup, 30, top),
-            ComponentInputResult::HandledAction(AppAction::PopupCanceled)
-        ));
-
-        assert_eq!(rx.try_recv(), Ok(10));
+        assert_eq!(chosen(click(&mut popup, 30, top)), Some(10));
     }
 
     #[test]
-    fn clicking_the_footnote_sends_nothing() {
-        let (mut popup, rx) = popup(3, 2);
+    fn clicking_the_footnote_raises_nothing() {
+        let mut popup = popup(3, 2);
         draw(&mut popup);
 
         // The first row below the three choices
@@ -392,13 +403,11 @@ mod tests {
             click(&mut popup, 30, 19),
             ComponentInputResult::Handled
         ));
-
-        assert!(rx.try_recv().is_err());
     }
 
     #[test]
-    fn clicking_the_help_line_sends_nothing_and_stays_open() {
-        let (mut popup, rx) = popup(3, 2);
+    fn clicking_the_help_line_raises_nothing_and_stays_open() {
+        let mut popup = popup(3, 2);
         draw(&mut popup);
 
         // Below the list, inside the popup
@@ -406,56 +415,48 @@ mod tests {
             click(&mut popup, 30, 21),
             ComponentInputResult::Handled
         ));
-
-        assert!(rx.try_recv().is_err());
     }
 
     #[test]
     fn clicking_outside_the_popup_cancels() {
-        let (mut popup, rx) = popup(3, 0);
+        let mut popup = popup(3, 0);
         draw(&mut popup);
 
         assert!(matches!(
             click(&mut popup, 0, 0),
-            ComponentInputResult::HandledAction(AppAction::PopupCanceled)
+            ComponentInputResult::HandledAction(AppAction::ClosePopup)
         ));
-
-        assert!(rx.try_recv().is_err());
     }
 
-    fn right_click(popup: &mut ChoicePopup<u8>, column: u16, row: u16) -> ComponentInputResult {
+    fn right_click(popup: &mut ChoicePopup, column: u16, row: u16) -> ComponentInputResult {
         mouse(popup, MouseEventKind::Down(MouseButton::Right), column, row)
     }
 
     #[test]
-    fn right_clicking_a_choice_cancels_without_sending_it() {
-        let (mut popup, rx) = popup(3, 2);
+    fn right_clicking_a_choice_cancels_without_raising_it() {
+        let mut popup = popup(3, 2);
         draw(&mut popup);
 
         assert!(matches!(
             right_click(&mut popup, 30, 18),
-            ComponentInputResult::HandledAction(AppAction::PopupCanceled)
+            ComponentInputResult::HandledAction(AppAction::ClosePopup)
         ));
-
-        assert!(rx.try_recv().is_err());
     }
 
     #[test]
     fn right_clicking_outside_the_popup_dismisses_it_and_leaves_the_event_to_others() {
-        let (mut popup, rx) = popup(3, 0);
+        let mut popup = popup(3, 0);
         draw(&mut popup);
 
         assert!(matches!(
             right_click(&mut popup, 0, 0),
             ComponentInputResult::Dismissed
         ));
-
-        assert!(rx.try_recv().is_err());
     }
 
     #[test]
     fn the_wheel_moves_the_selection_over_the_choices() {
-        let (mut popup, _rx) = popup(3, 2);
+        let mut popup = popup(3, 2);
         draw(&mut popup);
 
         for _ in 0..5 {
@@ -471,19 +472,17 @@ mod tests {
 
     #[test]
     fn clicking_before_the_popup_is_drawn_does_not_cancel_it() {
-        let (mut popup, rx) = popup(3, 0);
+        let mut popup = popup(3, 0);
 
         assert!(matches!(
             click(&mut popup, 0, 0),
             ComponentInputResult::Handled
         ));
-
-        assert!(rx.try_recv().is_err());
     }
 
     #[test]
     fn the_popup_is_no_larger_than_the_list() {
-        let (popup, _rx) = popup(3, 2);
+        let popup = popup(3, 2);
         let block = create_popup_block("Choose");
 
         let rect = popup.popup_rect(Rect::new(0, 0, 100, 40), &block);
@@ -497,14 +496,12 @@ mod tests {
 
     #[test]
     fn a_row_wider_than_the_help_line_widens_the_popup() {
-        let (tx, _rx) = channel();
         let label = "x".repeat(Line::raw(HELP).width() + 10);
         let popup = ChoicePopup::new(
             JjConfig::default(),
-            tx,
             None,
             "Choose",
-            vec![(Line::raw(label.clone()), 0u8)],
+            vec![(Line::raw(label.clone()), action(0))],
         );
 
         let rect = popup.popup_rect(Rect::new(0, 0, 200, 40), &create_popup_block("Choose"));
@@ -514,7 +511,7 @@ mod tests {
 
     #[test]
     fn a_long_list_stops_at_the_share_of_the_screen_we_take() {
-        let (popup, _rx) = popup(200, 0);
+        let popup = popup(200, 0);
 
         let rect = popup.popup_rect(Rect::new(0, 0, 100, 40), &create_popup_block("Choose"));
 
@@ -523,13 +520,11 @@ mod tests {
 
     #[test]
     fn a_wide_row_stops_at_the_share_of_the_screen_we_take() {
-        let (tx, _rx) = channel();
         let popup = ChoicePopup::new(
             JjConfig::default(),
-            tx,
             None,
             "Choose",
-            vec![(Line::raw("x".repeat(200)), 0u8)],
+            vec![(Line::raw("x".repeat(200)), action(0))],
         );
 
         let rect = popup.popup_rect(Rect::new(0, 0, 100, 40), &create_popup_block("Choose"));
@@ -539,14 +534,12 @@ mod tests {
 
     #[test]
     fn a_title_wider_than_the_rows_still_fits_between_the_corners() {
-        let (tx, _rx) = channel();
         let title = "A rather wordy popup title that outgrows its help line";
         let popup = ChoicePopup::new(
             JjConfig::default(),
-            tx,
             None,
             title,
-            vec![(Line::raw("x"), 0u8)],
+            vec![(Line::raw("x"), action(0))],
         );
 
         let rect = popup.popup_rect(Rect::new(0, 0, 200, 40), &create_popup_block(title));
@@ -555,14 +548,12 @@ mod tests {
     }
 
     #[test]
-    fn cancelling_sends_no_choice() {
-        let (mut popup, rx) = popup(3, 0);
+    fn cancelling_raises_no_choice() {
+        let mut popup = popup(3, 0);
 
         assert!(matches!(
             press(&mut popup, KeyCode::Esc),
-            ComponentInputResult::HandledAction(AppAction::PopupCanceled)
+            ComponentInputResult::HandledAction(AppAction::ClosePopup)
         ));
-
-        assert!(rx.try_recv().is_err());
     }
 }

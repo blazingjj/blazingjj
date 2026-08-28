@@ -290,13 +290,16 @@ impl<'a> App<'a> {
                 self.popup = None;
                 self.handle_action(AppAction::RefreshTab)?;
             }
-            AppAction::PopupCanceled => {
+            AppAction::ClosePopup => {
                 self.popup = None;
             }
             AppAction::Multiple(app_actions) => {
                 for app_action in app_actions.into_iter() {
                     self.handle_action(app_action)?;
                 }
+            }
+            AppAction::ClearLogMarks => {
+                self.log.clear_marks();
             }
             AppAction::Run(command) => {
                 if let Some(app_action) = command.run(&self.background_tasks)? {

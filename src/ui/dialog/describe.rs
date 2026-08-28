@@ -96,9 +96,7 @@ impl Component for DescribePopup<'_> {
                     )));
                 }
                 (KeyCode::Esc, _) => {
-                    return Ok(ComponentInputResult::HandledAction(
-                        AppAction::PopupCanceled,
-                    ));
+                    return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
                 }
                 _ => {}
             }

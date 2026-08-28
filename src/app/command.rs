@@ -9,6 +9,7 @@ as an [AppAction].
 use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::execute;
+use ratatui::layout::Alignment;
 
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskOutput;
@@ -16,18 +17,40 @@ use crate::background_tasks::TaskSlot;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::files::File;
 use crate::commander::ids::CommitId;
+use crate::commander::jj::NewInsertMode;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
+use crate::env::JjConfig;
 use crate::ui::AppAction;
+use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
+use crate::ui::dialog::new_insert;
+
+/// What a new change is created from, which decides whether the log is
+/// done marking it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum NewSource {
+    /// The changes the log has marked, which the new change now stands
+    /// on.
+    Marks,
+    /// A single change, named by the selection or by a bookmark.
+    Change,
+}
 
 pub enum Command {
     /// Put text on the system clipboard.
     Copy(String),
     Duplicate(Revset),
     Absorb(Head),
+    /// Create a change from `revset`, put where `insert` says.
+    New {
+        revset: Revset,
+        source: NewSource,
+        insert: NewInsertMode,
+        describe: bool,
+    },
     /// Push the bookmarks pointing at this change, or all of them.
     Push {
         commit_id: CommitId,
@@ -60,6 +83,34 @@ impl Command {
             Command::Absorb(head) => {
                 new_commander().run_absorb(&head.commit_id)?;
                 Ok(Some(show_change(new_commander().get_head_latest(&head)?)))
+            }
+            Command::New {
+                revset,
+                source,
+                insert,
+                describe,
+            } => {
+                // Inserting can hit immutable changes, so report the
+                // refusal and leave the marks for another attempt.
+                if let Err(err) = new_commander().run_new_with_insert(revset, insert) {
+                    return Ok(Some(AppAction::SetPopup(Box::new(
+                        MessagePopup::new("New", format!("{err:#}")).text_align(Alignment::Left),
+                    ))));
+                }
+
+                let head = new_commander().get_current_head()?;
+                let mut actions = vec![show_change(head.clone())];
+                if source == NewSource::Marks {
+                    actions.push(AppAction::ClearLogMarks);
+                }
+                if describe {
+                    actions.push(AppAction::SetPopup(Box::new(DescribePopup::new(
+                        head,
+                        vec![],
+                    ))));
+                }
+
+                Ok(Some(AppAction::Multiple(actions)))
             }
             Command::Push {
                 commit_id,
@@ -107,6 +158,25 @@ impl Command {
             ))),
         }
     }
+}
+
+/// Asking for a new change from `revset`, which `target` names as the
+/// user sees it: where the change goes is a question of its own.
+pub fn new_change(
+    config: JjConfig,
+    revset: Revset,
+    source: NewSource,
+    target: &str,
+    describe: bool,
+) -> AppAction {
+    AppAction::SetPopup(Box::new(new_insert(config, target, |insert| {
+        AppAction::Run(Command::New {
+            revset: revset.clone(),
+            source,
+            insert,
+            describe,
+        })
+    })))
 }
 
 /// Put `change` up wherever a change shows, the repo having moved under

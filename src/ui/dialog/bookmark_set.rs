@@ -253,9 +253,7 @@ impl Component for BookmarkSetPopup<'_> {
                         return Ok(ComponentInputResult::HandledAction(AppAction::PopupDone));
                     }
                     KeyCode::Esc => {
-                        return Ok(ComponentInputResult::HandledAction(
-                            AppAction::PopupCanceled,
-                        ));
+                        return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
                     }
                     _ => {}
                 }
@@ -316,9 +314,7 @@ impl Component for BookmarkSetPopup<'_> {
                     }
                 }
                 KeyCode::Char('q') | KeyCode::Esc => {
-                    return Ok(ComponentInputResult::HandledAction(
-                        AppAction::PopupCanceled,
-                    ));
+                    return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
                 }
                 _ => return Ok(ComponentInputResult::NotHandled),
             }

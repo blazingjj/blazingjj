@@ -168,9 +168,7 @@ impl Component for BookmarkNamePopup<'_> {
             }
 
             if key.code == KeyCode::Esc {
-                return Ok(ComponentInputResult::HandledAction(
-                    AppAction::PopupCanceled,
-                ));
+                return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
             }
         }
         self.textarea.input(event);

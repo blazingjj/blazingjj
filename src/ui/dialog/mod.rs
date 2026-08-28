@@ -5,7 +5,7 @@ A Component can launch a dialog by sending
 [`AppAction::SetPopup(<popup instance>)`](crate::ui::AppAction).
 Once launched, a dialog will receive all input events from the App,
 until it sends [`AppAction::PopupDone`](crate::ui::AppAction) or
-[`AppAction::PopupCanceled`](crate::ui::AppAction).
+[`AppAction::ClosePopup`](crate::ui::AppAction).
 */
 
 mod bookmark_name;

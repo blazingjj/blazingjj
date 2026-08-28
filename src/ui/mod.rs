@@ -30,8 +30,12 @@ pub enum AppAction {
     SetPopup(Box<dyn Component>),
     /// Take the popup down, what it was there to do having been done.
     PopupDone,
-    /// Take the popup down, nothing having been done.
-    PopupCanceled,
+    /// Take the popup down. Whatever it was there to collect is asked
+    /// for alongside this, so there is nothing left for the app to do.
+    ClosePopup,
+    /// The marked changes have been acted on, so the log stops marking
+    /// them.
+    ClearLogMarks,
     Multiple(Vec<AppAction>),
     RefreshTab,
     /// Run this operation and do whatever it asks for in turn. Whoever

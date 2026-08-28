@@ -81,9 +81,7 @@ impl Component for CommandPopup<'_> {
                     let mut command_input = command_input.as_str();
 
                     if command_input.trim().is_empty() {
-                        return Ok(ComponentInputResult::HandledAction(
-                            AppAction::PopupCanceled,
-                        ));
+                        return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
                     }
 
                     if command_input == "jj" {
@@ -121,9 +119,7 @@ impl Component for CommandPopup<'_> {
                     )));
                 }
                 KeyCode::Esc => {
-                    return Ok(ComponentInputResult::HandledAction(
-                        AppAction::PopupCanceled,
-                    ));
+                    return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
                 }
                 _ => {}
             }

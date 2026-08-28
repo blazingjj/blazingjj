@@ -75,6 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Creating a change from the bookmarks tab now brings the view up to date,
+  rather than leaving it to the next poll
 - The help popup no longer drops the global keybindings when the terminal is too
   short to hold them next to the details panel ones
 - The help popup now scrolls its three keybinding lists as a whole rather than

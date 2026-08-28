@@ -14,11 +14,12 @@ use tui_confirm_dialog::ConfirmDialogState;
 use tui_confirm_dialog::Listener;
 
 use crate::app::TabId;
+use crate::app::command;
 use crate::app::command::Command;
+use crate::app::command::NewSource;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
-use crate::commander::jj::NewInsertMode;
 use crate::commander::log::Head;
 use crate::commander::log::LOG_LINES_PER_HEAD;
 use crate::commander::new_commander;
@@ -38,7 +39,6 @@ use crate::ui::dialog::BookmarkSetPopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
-use crate::ui::dialog::new_insert;
 use crate::ui::dialog::parent_select;
 use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::LogPanel;
@@ -72,14 +72,6 @@ pub struct LogTab<'a> {
     popup: ConfirmDialogState,
     popup_tx: std::sync::mpsc::Sender<Listener>,
     popup_rx: std::sync::mpsc::Receiver<Listener>,
-
-    goto_parent_tx: std::sync::mpsc::Sender<Head>,
-    goto_parent_rx: std::sync::mpsc::Receiver<Head>,
-
-    new_insert_tx: std::sync::mpsc::Sender<NewInsertMode>,
-    new_insert_rx: std::sync::mpsc::Receiver<NewInsertMode>,
-
-    describe_after_new: bool,
 
     squash_ignore_immutable: bool,
     squash_target: Option<Head>,
@@ -117,8 +109,6 @@ impl<'a> LogTab<'a> {
     #[instrument(level = "info", name = "Initializing log tab", parent = None, skip(background_tasks))]
     pub fn new(background_tasks: BackgroundTasks, head: Head) -> Self {
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
-        let (goto_parent_tx, goto_parent_rx) = std::sync::mpsc::channel();
-        let (new_insert_tx, new_insert_rx) = std::sync::mpsc::channel();
 
         let mut keybinds = LogTabKeybinds::default();
         let mut details_keybinds = DetailsPanelKeybinds::default();
@@ -147,14 +137,6 @@ impl<'a> LogTab<'a> {
             popup: ConfirmDialogState::default(),
             popup_tx,
             popup_rx,
-            goto_parent_tx,
-            goto_parent_rx,
-
-            new_insert_tx,
-            new_insert_rx,
-
-            describe_after_new: false,
-
             squash_ignore_immutable: false,
             squash_target: None,
 
@@ -167,6 +149,12 @@ impl<'a> LogTab<'a> {
 
             stale: true,
         }
+    }
+
+    /// Stop marking the changes that were marked, whatever they were
+    /// marked for having been done to them.
+    pub fn clear_marks(&mut self) {
+        self.log_panel.marked_heads.clear();
     }
 
     /// Move the cursor, updating the details panel. The log itself is
@@ -211,46 +199,30 @@ each other in code:
 * `execute_<action>` - Perform some action after the dialog closed.
 */
 impl<'a> LogTab<'a> {
-    fn handle_new(&mut self, describe: bool) -> Result<Option<AppAction>> {
-        let mark_count = self.log_panel.marked_heads.len();
-        let target: String = if mark_count > 0 {
-            format!("the {mark_count} marked changes")
-        } else {
+    /// A new change from the marked changes, or from the selected one
+    /// when nothing is marked.
+    fn handle_new(&self, describe: bool) -> Option<AppAction> {
+        let marked: Vec<_> = self.log_panel.marked_heads.iter().cloned().collect();
+        let target = if marked.is_empty() {
             self.head.change_id.as_str().chars().take(8).collect()
+        } else {
+            format!("the {} marked changes", marked.len())
         };
-        self.describe_after_new = describe;
-        Ok(Some(AppAction::SetPopup(Box::new(new_insert(
-            self.config.clone(),
-            self.new_insert_tx.clone(),
-            &target,
-        )))))
-    }
+        let revset = Revset::union(&marked).unwrap_or_else(|| Revset::from(&self.head.commit_id));
 
-    // Execute new command, after the insertion point has been picked
-    fn execute_new(&mut self, insert: NewInsertMode) -> Result<Option<AppAction>> {
-        let describe = std::mem::take(&mut self.describe_after_new);
-        let commit_ids: Vec<_> = self.log_panel.marked_heads.iter().cloned().collect();
-        let revset =
-            Revset::union(&commit_ids).unwrap_or_else(|| Revset::from(&self.head.commit_id));
-        // Inserting can hit immutable changes, so report the refusal and
-        // keep the marks for another attempt.
-        if let Err(err) = new_commander().run_new_with_insert(revset, insert) {
-            return Ok(Some(AppAction::SetPopup(Box::new(
-                MessagePopup::new("New", format!("{err:#}")).text_align(Alignment::Left),
-            ))));
-        }
-        self.log_panel.marked_heads.clear();
-        self.set_head(new_commander().get_current_head()?);
-        if describe {
-            return Ok(Some(AppAction::Multiple(vec![
-                AppAction::ChangeHead(self.head.clone()),
-                AppAction::SetPopup(Box::new(DescribePopup::new(self.head.clone(), vec![]))),
-            ])));
-        }
-        Ok(Some(AppAction::Multiple(vec![
-            AppAction::ChangeHead(self.head.clone()),
-            AppAction::RefreshTab,
-        ])))
+        let source = if marked.is_empty() {
+            NewSource::Change
+        } else {
+            NewSource::Marks
+        };
+
+        Some(command::new_change(
+            self.config.clone(),
+            revset,
+            source,
+            &target,
+            describe,
+        ))
     }
 
     fn handle_abandon(&mut self) -> Result<Option<AppAction>> {
@@ -356,7 +328,6 @@ impl<'a> LogTab<'a> {
             }
             _ => Ok(Some(AppAction::SetPopup(Box::new(parent_select(
                 self.config.clone(),
-                self.goto_parent_tx.clone(),
                 &parents,
                 &out_of_view,
             ))))),
@@ -384,7 +355,7 @@ impl<'a> LogTab<'a> {
             }
 
             LogTabEvent::CreateNew { describe } => {
-                return self.handle_new(describe);
+                return Ok(self.handle_new(describe));
             }
             LogTabEvent::Rebase => {
                 let source_change = new_commander().get_current_head()?;
@@ -646,16 +617,6 @@ impl Component for LogTab<'_> {
                 }
                 _ => {}
             }
-        }
-
-        // Moving the selection leaves the repo as it is, so we do not
-        // ask for a refresh.
-        if let Ok(head) = self.goto_parent_rx.try_recv() {
-            return Ok(Some(AppAction::ViewLog(head)));
-        }
-
-        if let Ok(insert) = self.new_insert_rx.try_recv() {
-            return self.execute_new(insert);
         }
 
         Ok(None)
