@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The help popup is now sized to fit what it lists
+- The message popup is now sized to fit its message, rather than always
+  taking up most of the screen
 - The help popup now lists the keybindings next to what they do rather than in
   front of it
 - Pressing `s` on the working copy now offers to squash into the parent (when there is exactly one)

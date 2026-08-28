@@ -17,6 +17,7 @@ use ratatui::style::Color;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Text;
+use ratatui::widgets::Block;
 
 use crate::env::JJLayout;
 
@@ -167,6 +168,17 @@ pub fn centered_rect_line_height(r: Rect, percent_x: u16, lines_y: u16) -> Rect 
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+/// How much wider and taller than its contents a `block` is, in the `area` it
+/// has to draw itself in. Its border is not all of it, it also pads.
+pub fn chrome(block: &Block, area: Rect) -> [u16; 2] {
+    let inner = block.inner(area);
+
+    [
+        area.width.saturating_sub(inner.width),
+        area.height.saturating_sub(inner.height),
+    ]
 }
 
 /// Center a rect of fixed width and height within an outside rect

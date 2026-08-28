@@ -20,6 +20,7 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::styles::create_popup_block;
 use crate::ui::utils::centered_rect_fixed;
+use crate::ui::utils::chrome;
 
 /// Space between the description and the key column of a table
 const COLUMN_SPACING: u16 = 4;
@@ -94,17 +95,6 @@ fn columns<'a>([main, details, global]: [Section<'a>; 3], width: u16) -> Vec<Vec
     }
 
     vec![vec![main, details, global]]
-}
-
-/// How much wider and taller than its contents a `block` is, in the `area` it
-/// has to draw itself in. Its border is not all of it, it also pads.
-fn chrome(block: &Block, area: Rect) -> [u16; 2] {
-    let inner = block.inner(area);
-
-    [
-        area.width.saturating_sub(inner.width),
-        area.height.saturating_sub(inner.height),
-    ]
 }
 
 /// Renders the `sections` stacked in `area`, with a rule between them and
