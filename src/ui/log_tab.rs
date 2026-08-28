@@ -21,6 +21,7 @@ use crate::background_tasks::TaskOutput;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
 use crate::commander::log::Head;
+use crate::commander::log::LOG_LINES_PER_HEAD;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
@@ -59,6 +60,9 @@ pub struct LogTab<'a> {
     background_tasks: BackgroundTasks,
 
     /// The revset filter to apply to jj log
+    log_revset: Option<String>,
+
+    /// Editor for the filter, up while it is being changed
     log_revset_textarea: Option<TextArea<'a>>,
 
     /// The list of changes shown to the left
@@ -130,9 +134,10 @@ impl<'a> LogTab<'a> {
         let pane_divider = PaneDivider::new(config.layout_percent());
 
         Self {
+            log_revset: get_env().default_revset.clone(),
             log_revset_textarea: None,
 
-            log_panel: LogPanel::new(head.clone()),
+            log_panel: LogPanel::new(head.clone(), LOG_LINES_PER_HEAD),
 
             head,
             head_panel: CommitShowPanel::new(TabId::Log, background_tasks.clone()),
@@ -169,7 +174,12 @@ impl<'a> LogTab<'a> {
     /// Update the log panel and diff panel. This will also refresh
     /// the diff cache.
     fn refresh_log_output(&mut self) {
-        self.log_panel.refresh_log_output();
+        let title = match &self.log_revset {
+            Some(log_revset) => format!(" Log for: {log_revset} "),
+            None => " Log ".to_owned(),
+        };
+        self.log_panel
+            .show(new_commander().get_log(&self.log_revset), title);
         self.head_panel.set_active(self.log_panel.log_heads());
         self.sync_head_output();
     }
@@ -371,10 +381,16 @@ impl<'a> LogTab<'a> {
 
     fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<ComponentInputResult> {
         match log_tab_event {
-            LogTabEvent::ScrollToBottom
-            | LogTabEvent::ScrollToTop
-            | LogTabEvent::ToggleHeadMark => {
-                self.log_panel.handle_event(log_tab_event)?;
+            LogTabEvent::ScrollToBottom => {
+                self.log_panel.scroll_relative(isize::MAX);
+                self.sync_head_output();
+            }
+            LogTabEvent::ScrollToTop => {
+                self.log_panel.scroll_relative(-isize::MAX);
+                self.sync_head_output();
+            }
+            LogTabEvent::ToggleHeadMark => {
+                self.log_panel.toggle_head_mark();
                 self.sync_head_output();
             }
             LogTabEvent::Duplicate => {
@@ -509,8 +525,7 @@ impl<'a> LogTab<'a> {
             }
             LogTabEvent::EditRevset => {
                 let mut textarea = TextArea::new(
-                    self.log_panel
-                        .log_revset
+                    self.log_revset
                         .as_ref()
                         .unwrap_or(&"".to_owned())
                         .lines()
@@ -758,7 +773,7 @@ impl Component for LogTab<'_> {
                 match self.keybinds.match_event(key) {
                     LogTabEvent::Save => {
                         let log_revset = log_revset_textarea.lines().join("\n");
-                        self.log_panel.log_revset = if log_revset.trim().is_empty() {
+                        self.log_revset = if log_revset.trim().is_empty() {
                             None
                         } else {
                             Some(log_revset)

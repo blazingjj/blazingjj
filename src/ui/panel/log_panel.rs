@@ -1,5 +1,4 @@
-/*! The log panel shows the list of changes on the left side of the
-log tab. */
+/*! The log panel shows a list of changes on the left side of a tab. */
 
 use std::collections::HashSet;
 
@@ -17,21 +16,16 @@ use crate::commander::CommandError;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::log::LogOutput;
-use crate::commander::new_commander;
 use crate::env::JjConfig;
 use crate::env::get_env;
-use crate::keybinds::LogTabEvent;
-use crate::keybinds::LogTabKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
-use crate::ui::ComponentInputResult;
 use crate::ui::utils::error_text;
 
 /**
-    A panel that displays the output of jj log.
-    This panel is used on the left side of the log tab.
-    It shows a selected change, which is expanded
-    on the right side of the log tab.
+    A panel that displays a graph of changes. This panel is used on the
+    left side of a tab. It shows a selected change, which is expanded on
+    the right side of the tab.
 
     The log operates with two index:
     - line index (into self.log_output.text)
@@ -43,17 +37,20 @@ use crate::ui::utils::error_text;
     as well as for selecting which lines to highlight.
 */
 pub struct LogPanel<'a> {
-    /// Output from 'jj log' as provided by command::get_show_log
+    /// The log to show, or what went wrong reading it
     log_output: Result<LogOutput, CommandError>,
 
-    /// Output from 'jj log' converted to Ratatui Text
+    /// The log converted to Ratatui Text
     log_output_text: Text<'a>,
+
+    /// The title the log is shown under
+    title: String,
+
+    /// How many lines of the graph one head takes
+    lines_per_head: usize,
 
     /// Scroll offset and cursor position
     log_list_state: ListState,
-
-    /// The revision filter used for the log
-    pub log_revset: Option<String>,
 
     /// Currently selected commit
     pub head: Head,
@@ -103,18 +100,15 @@ fn get_head_index(head: &Head, log_output: &Result<LogOutput, CommandError>) -> 
 }
 
 impl<'a> LogPanel<'a> {
-    /// A panel showing `head` selected in an empty log.
-    pub fn new(head: Head) -> Self {
-        let mut keybinds = LogTabKeybinds::default();
-        if let Some(keybinds_config) = new_commander().env.jj_config.keybinds() {
-            keybinds.extend_from_config(keybinds_config);
-        }
-
+    /// A panel showing `head` selected in an empty log. The graphs it is
+    /// later given take `lines_per_head` lines per head.
+    pub fn new(head: Head, lines_per_head: usize) -> Self {
         Self {
             log_output_text: Text::default(),
             log_output: Ok(LogOutput::default()),
+            title: String::new(),
+            lines_per_head,
             log_list_state: ListState::default(),
-            log_revset: new_commander().env.default_revset.clone(),
 
             head,
             marked_heads: HashSet::new(),
@@ -129,9 +123,11 @@ impl<'a> LogPanel<'a> {
     //  Handle jj log output
     //
 
-    /// Run jj log and store output for display
-    pub fn refresh_log_output(&mut self) {
-        self.log_output = new_commander().get_log(&self.log_revset);
+    /// Replace what the panel shows. An error takes the place of the
+    /// graph.
+    pub fn show(&mut self, log_output: Result<LogOutput, CommandError>, title: String) {
+        self.log_output = log_output;
+        self.title = title;
         self.log_output_text = match self.log_output.as_ref() {
             Ok(log_output) => log_output
                 .graph
@@ -238,9 +234,9 @@ impl<'a> LogPanel<'a> {
     /// head-index. Moving the head-index this much causes a full page
     /// scroll.
     pub fn visible_heads(&self) -> isize {
-        // Every item in the log list is one line and every head spans two
-        // of them.
-        self.list_pane.visible_items() / 2
+        // Every item in the log list is one line, and every head spans as
+        // many of them as the graph takes.
+        self.list_pane.visible_items() / self.lines_per_head as isize
     }
 
     /// Move selection to a specific head. This may cause the next draw to
@@ -293,7 +289,7 @@ impl<'a> LogPanel<'a> {
         self.marked_heads.contains(&head.commit_id)
     }
 
-    /// LogTabEvent: Toggle mark on the current head
+    /// Toggle the mark on the current head
     pub fn toggle_head_mark(&mut self) {
         let was_marked = self.is_head_marked(&self.head);
         self.set_head_mark(&self.head.clone(), !was_marked);
@@ -303,28 +299,6 @@ impl<'a> LogPanel<'a> {
     pub fn extract_and_clear_head_marks(&mut self) -> Vec<CommitId> {
         self.marked_heads.drain().collect()
     }
-
-    //
-    //  Event handling
-    //
-
-    pub fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<ComponentInputResult> {
-        match log_tab_event {
-            LogTabEvent::ScrollToBottom => {
-                self.scroll_relative(isize::MAX);
-            }
-            LogTabEvent::ScrollToTop => {
-                self.scroll_relative(-isize::MAX);
-            }
-            LogTabEvent::ToggleHeadMark => {
-                self.toggle_head_mark();
-            }
-            _ => {
-                return Ok(ComponentInputResult::NotHandled);
-            }
-        }
-        Ok(ComponentInputResult::Handled)
-    }
 }
 
 impl Component for LogPanel<'_> {
@@ -333,14 +307,9 @@ impl Component for LogPanel<'_> {
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        let title = match &self.log_revset {
-            Some(log_revset) => &format!(" Log for: {log_revset} "),
-            None => " Log ",
-        };
-
         let log_lines = self.log_lines();
         let log_block = Block::bordered()
-            .title(title)
+            .title(self.title.clone())
             .border_type(BorderType::Rounded);
         self.log_list_state.select(self.selected_log_line());
         let log = List::new(log_lines).scroll_padding(7);
