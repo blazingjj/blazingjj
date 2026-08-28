@@ -27,6 +27,8 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::utils::LargeString;
 use crate::ui::utils::centered_rect;
+use crate::ui::utils::centered_rect_fixed;
+use crate::ui::utils::chrome;
 
 pub struct MessagePopup<'a> {
     title: Line<'a>,
@@ -68,6 +70,22 @@ impl<'a> MessagePopup<'a> {
         })
     }
 
+    /// Where to put the popup in `area`: centered, and no larger than the
+    /// message needs, up to the share of the screen we are willing to take.
+    fn popup_rect(&self, area: Rect, block: &Block, title_width: u16) -> Rect {
+        let max = centered_rect(area, 80, 80);
+        let [extra_width, extra_height] = chrome(block, max);
+
+        // The two rows the scroll indicators live in are there whether or
+        // not they are, and the title has to fit on the top border.
+        let width = (self.messages.width() as u16 + extra_width)
+            .max(title_width + 2)
+            .min(max.width);
+        let height = (self.lines as u16 + 2 + extra_height).min(max.height);
+
+        centered_rect_fixed(area, width, height)
+    }
+
     fn max_scroll(&self) -> usize {
         self.lines.saturating_sub(self.content_height as usize)
     }
@@ -80,19 +98,19 @@ impl<'a> MessagePopup<'a> {
 
 impl Component for MessagePopup<'_> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        let popup_rect = centered_rect(area, 80, 80);
-        f.render_widget(Clear, popup_rect);
-
         let mut title = self.title.clone();
         title.spans = [vec![Span::raw(" ")], title.spans, vec![Span::raw(" ")]].concat();
         title = title.fg(Color::Cyan).bold();
 
         let block = Block::bordered()
-            .title(title)
+            .title(title.clone())
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Color::Green))
             .padding(Padding::horizontal(1));
+
+        let popup_rect = self.popup_rect(area, &block, title.width() as u16);
+        f.render_widget(Clear, popup_rect);
 
         let inner = block.inner(popup_rect);
         let content_rect = inner.inner(Margin {
@@ -182,5 +200,44 @@ impl Component for MessagePopup<'_> {
             },
             _ => Ok(ComponentInputResult::NotHandled),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn popup_rect(title: &'static str, message: &str, area: Rect) -> Rect {
+        let popup = MessagePopup::new(title, message);
+        let block = Block::bordered().padding(Padding::horizontal(1));
+        let title_width = title.chars().count() as u16 + 2;
+
+        popup.popup_rect(area, &block, title_width)
+    }
+
+    #[test]
+    fn a_short_message_gets_a_popup_its_own_size() {
+        let rect = popup_rect("New", "one\ntwo", Rect::new(0, 0, 100, 40));
+
+        // The two lines plus the scroll indicator gaps and the border
+        assert_eq!(rect.height, 6);
+        // The widest line plus the padding and the border
+        assert_eq!(rect.width, 7);
+    }
+
+    #[test]
+    fn the_title_holds_the_popup_open() {
+        let rect = popup_rect("A rather long title", "hi", Rect::new(0, 0, 100, 40));
+
+        assert_eq!(rect.width, 23);
+    }
+
+    #[test]
+    fn a_long_message_stops_at_the_share_of_the_screen_we_take() {
+        let long = "x".repeat(200);
+        let rect = popup_rect("New", &vec![long; 100].join("\n"), Rect::new(0, 0, 100, 40));
+
+        assert_eq!(rect.width, 80);
+        assert_eq!(rect.height, 32);
     }
 }

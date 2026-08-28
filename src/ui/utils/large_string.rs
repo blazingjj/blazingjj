@@ -15,6 +15,32 @@ pub struct LargeString {
     content: String,
     /// First byte of each line in content
     line_start: Vec<usize>,
+    /// Characters in the widest line
+    width: usize,
+}
+
+/// The characters `line` puts on screen, leaving out its terminator and
+/// any ANSI escape sequences.
+fn line_width(line: &str) -> usize {
+    let mut width = 0;
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\x1b' => {
+                // Past the introducer, everything up to and including the
+                // first character in 0x40..=0x7e belongs to the sequence.
+                chars.next();
+                for c in chars.by_ref() {
+                    if ('\x40'..='\x7e').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            '\n' | '\r' => {}
+            _ => width += 1,
+        }
+    }
+    width
 }
 
 impl LargeString {
@@ -43,15 +69,27 @@ impl LargeString {
             i += 1;
         }
         // Create object
+        let width = line_start
+            .iter()
+            .zip(line_start.iter().skip(1).chain([&content.len()]))
+            .map(|(&start, &end)| line_width(&content[start..end]))
+            .max()
+            .unwrap_or(0);
         Self {
             content,
             line_start,
+            width,
         }
     }
 
     /// Number of lines in content
     pub fn lines(&self) -> usize {
         self.line_start.len()
+    }
+
+    /// Characters in the widest line
+    pub fn width(&self) -> usize {
+        self.width
     }
 
     /// Render a range of lines of the content as Text
@@ -68,5 +106,23 @@ impl LargeString {
                 Text::from(format!("{}", err))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn width_is_that_of_the_widest_line() {
+        assert_eq!(LargeString::new("ab\nabcd\nabc".to_owned()).width(), 4);
+        assert_eq!(LargeString::new("abcd\r\nab".to_owned()).width(), 4);
+        assert_eq!(LargeString::new(String::new()).width(), 0);
+    }
+
+    #[test]
+    fn width_leaves_out_ansi_escape_sequences() {
+        let colored = "\x1b[1;31mError\x1b[0m: nope".to_owned();
+        assert_eq!(LargeString::new(colored).width(), "Error: nope".len());
     }
 }
