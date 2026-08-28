@@ -30,7 +30,7 @@ use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::dialog::MessagePopup;
-use crate::ui::dialog::context_menu;
+use crate::ui::dialog::log_context_menu;
 use crate::ui::dialog::parent_select;
 use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::LogPanel;
@@ -169,7 +169,7 @@ impl<'a> LogTab<'a> {
     /// The menu of what can be done to the selected change, put at
     /// `anchor` or centered when there is nowhere to point at.
     fn open_context_menu(&self, anchor: Option<Position>) -> Result<Option<AppAction>> {
-        Ok(Some(AppAction::SetPopup(Box::new(context_menu(
+        Ok(Some(AppAction::SetPopup(Box::new(log_context_menu(
             self.config.clone(),
             anchor,
             &self.head,

@@ -17,6 +17,8 @@ pub enum FilesTabEvent {
     Untrack,
     Restore,
 
+    OpenContextMenu,
+
     Unbound,
 }
 
@@ -27,6 +29,7 @@ impl Default for FilesTabKeybinds {
             keys,
             FilesTabEvent::Untrack => "x",
             FilesTabEvent::Restore => "r",
+            FilesTabEvent::OpenContextMenu => "menu",
         );
         Self { keys }
     }
@@ -44,6 +47,7 @@ impl FilesTabKeybinds {
             self.keys,
             FilesTabEvent::Untrack => "untrack file",
             FilesTabEvent::Restore => "restore file",
+            FilesTabEvent::OpenContextMenu => "open the context menu",
         )
     }
 }

@@ -1,6 +1,6 @@
-/*! The common single-commit operations to run against the currently
-selected change, each of them settled before the menu goes up, so that
-picking one asks for exactly what its keybinding would.
+/*! The common operations to run against whatever a tab has selected,
+each of them settled before the menu goes up, so that picking one asks
+for exactly what its keybinding would.
 */
 
 use anyhow::Result;
@@ -9,6 +9,7 @@ use ratatui::text::Line;
 
 use crate::app::command;
 use crate::app::command::Command;
+use crate::commander::files::File;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
@@ -20,7 +21,7 @@ use crate::ui::dialog::ChoicePopup;
 /// The context menu for `selected`, put where it was opened. Squashing
 /// the change the working copy is on goes to its parent, and rebasing it
 /// has nowhere to go at all, so the menu says as much.
-pub fn context_menu(
+pub fn log_context_menu(
     config: JjConfig,
     anchor: Option<Position>,
     selected: &Head,
@@ -88,4 +89,20 @@ pub fn context_menu(
     ]);
 
     Ok(ChoicePopup::new(config, anchor, "Actions", items))
+}
+
+/// The context menu for `file`.
+pub fn files_context_menu(config: JjConfig, anchor: Option<Position>, file: &File) -> ChoicePopup {
+    let items = vec![
+        (
+            Line::raw("Restore"),
+            AppAction::Run(Command::RestoreFile(file.clone())),
+        ),
+        (
+            Line::raw("Untrack"),
+            AppAction::Run(Command::UntrackFile(file.clone())),
+        ),
+    ];
+
+    ChoicePopup::new(config, anchor, "File actions", items)
 }
