@@ -26,7 +26,9 @@ pub enum NewInsertMode {
 }
 
 impl Commander {
-    /// Create a new change. Maps to `jj new <revset>`.
+    /// Create a new change. Maps to `jj new <revset>`. Only the tests
+    /// create one without saying where it goes.
+    #[cfg(test)]
     pub fn run_new(&self, revset: impl Into<Revset>) -> Result<()> {
         self.run_new_with_insert(revset, NewInsertMode::Child)
     }

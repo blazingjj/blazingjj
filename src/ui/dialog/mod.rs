@@ -16,6 +16,7 @@ mod describe;
 mod help;
 mod loader;
 mod message;
+mod new_insert;
 mod parent_select;
 mod rebase;
 
@@ -27,5 +28,6 @@ pub use describe::DescribePopup;
 pub use help::HelpPopup;
 pub use loader::LoaderPopup;
 pub use message::MessagePopup;
+pub use new_insert::new_insert;
 pub use parent_select::parent_select;
 pub use rebase::RebasePopup;
