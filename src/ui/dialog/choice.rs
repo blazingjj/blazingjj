@@ -10,10 +10,13 @@ use anyhow::anyhow;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyCode;
+use ratatui::crossterm::event::MouseButton;
+use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
+use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
@@ -47,7 +50,10 @@ pub struct ChoicePopup<T> {
     /// Rows listed under the choices that cannot be picked
     footnote: Vec<Line<'static>>,
     list_state: ListState,
-    list_height: u16,
+    /// Whole popup area, updated on every draw
+    popup_area: Rect,
+    /// List area inside the popup, updated on every draw
+    list_area: Rect,
     config: JjConfig,
     tx: Sender<T>,
 }
@@ -64,7 +70,8 @@ impl<T> ChoicePopup<T> {
             items,
             footnote: vec![],
             list_state: ListState::default().with_selected(Some(0)),
-            list_height: 0,
+            popup_area: Rect::ZERO,
+            list_area: Rect::ZERO,
             config,
             tx,
         }
@@ -115,6 +122,18 @@ impl<T> ChoicePopup<T> {
         centered_rect_fixed(area, width, height)
     }
 
+    /// The choice `pos` points at, if it points at one at all. The
+    /// footnote rows are listed below the choices and cannot be picked.
+    fn item_at(&self, pos: Position) -> Option<usize> {
+        if !self.list_area.contains(pos) {
+            return None;
+        }
+        let row = (pos.y - self.list_area.y) as usize;
+        let index = self.list_state.offset() + row;
+
+        (index < self.items.len()).then_some(index)
+    }
+
     fn close() -> Result<ComponentInputResult> {
         Ok(ComponentInputResult::HandledAction(
             AppAction::PopupCanceled,
@@ -138,6 +157,7 @@ impl<T: Clone> Component for ChoicePopup<T> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let block = create_popup_block(self.title);
         let area = self.popup_rect(area, &block);
+        self.popup_area = area;
         f.render_widget(Clear, area);
         f.render_widget(&block, area);
 
@@ -145,6 +165,7 @@ impl<T: Clone> Component for ChoicePopup<T> {
             .direction(Direction::Vertical)
             .constraints([Constraint::Fill(1), Constraint::Length(HELP_HEIGHT)])
             .split(block.inner(area));
+        self.list_area = chunks[0];
 
         let rows: Vec<Line<'static>> = self.rows().cloned().collect();
         let list = List::new(rows)
@@ -152,7 +173,6 @@ impl<T: Clone> Component for ChoicePopup<T> {
             .highlight_style(Style::default().bg(self.config.highlight_color()));
 
         f.render_stateful_widget(list, chunks[0], &mut self.list_state);
-        self.list_height = chunks[0].height;
 
         let help = Paragraph::new(vec![HELP.into()])
             .fg(Color::DarkGray)
@@ -169,16 +189,39 @@ impl<T: Clone> Component for ChoicePopup<T> {
     }
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
-        if let Event::Key(key) = event {
-            match key.code {
+        match event {
+            Event::Key(key) => match key.code {
                 KeyCode::Char('j') | KeyCode::Down => self.scroll(1),
                 KeyCode::Char('k') | KeyCode::Up => self.scroll(-1),
-                KeyCode::Char('J') => self.scroll(self.list_height as isize / 2),
-                KeyCode::Char('K') => self.scroll((self.list_height as isize / 2).saturating_neg()),
+                KeyCode::Char('J') => self.scroll(self.list_area.height as isize / 2),
+                KeyCode::Char('K') => {
+                    self.scroll((self.list_area.height as isize / 2).saturating_neg())
+                }
                 KeyCode::Enter => return self.confirm(),
                 KeyCode::Char('q') | KeyCode::Esc => return Self::close(),
                 _ => {}
+            },
+            // Where the popup sits is only known once it has been drawn,
+            // and events are handled in batches without a draw between
+            // them, so the one that opened us may be in this very batch.
+            Event::Mouse(mouse) if !self.popup_area.is_empty() => {
+                let pos = Position::new(mouse.column, mouse.row);
+                match mouse.kind {
+                    MouseEventKind::ScrollUp => self.scroll(-1),
+                    MouseEventKind::ScrollDown => self.scroll(1),
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        if !self.popup_area.contains(pos) {
+                            return Self::close();
+                        }
+                        if let Some(index) = self.item_at(pos) {
+                            self.list_state.select(Some(index));
+                            return self.confirm();
+                        }
+                    }
+                    _ => {}
+                }
             }
+            _ => {}
         }
         Ok(ComponentInputResult::Handled)
     }
@@ -188,6 +231,11 @@ impl<T: Clone> Component for ChoicePopup<T> {
 mod tests {
     use std::sync::mpsc::Receiver;
     use std::sync::mpsc::channel;
+
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::crossterm::event::KeyModifiers;
+    use ratatui::crossterm::event::MouseEvent;
 
     use super::*;
 
@@ -234,6 +282,155 @@ mod tests {
         ));
 
         assert_eq!(rx.try_recv(), Ok(1));
+    }
+
+    fn mouse(
+        popup: &mut ChoicePopup<u8>,
+        kind: MouseEventKind,
+        column: u16,
+        row: u16,
+    ) -> ComponentInputResult {
+        popup
+            .input(Event::Mouse(MouseEvent {
+                kind,
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            }))
+            .expect("the popup handles mouse events")
+    }
+
+    fn click(popup: &mut ChoicePopup<u8>, column: u16, row: u16) -> ComponentInputResult {
+        mouse(popup, MouseEventKind::Down(MouseButton::Left), column, row)
+    }
+
+    /// A wheel notch over the middle of a popup drawn by `draw`
+    fn wheel(popup: &mut ChoicePopup<u8>, kind: MouseEventKind) -> ComponentInputResult {
+        mouse(popup, kind, 50, 20)
+    }
+
+    /// Put the popup on a 100x40 screen, so that it knows where it is
+    fn draw(popup: &mut ChoicePopup<u8>) {
+        Terminal::new(TestBackend::new(100, 40))
+            .expect("the test backend")
+            .draw(|f| popup.draw(f, f.area()).expect("the popup draws"))
+            .expect("the frame is drawn");
+    }
+
+    #[test]
+    fn the_hit_test_looks_where_the_popup_was_drawn() {
+        let (mut popup, _rx) = popup(3, 2);
+
+        draw(&mut popup);
+
+        // Five rows and the help line under its own border, centered
+        assert_eq!(popup.popup_area, Rect::new(26, 15, 48, 9));
+        // Inside the popup border and its padding, above the help line
+        assert_eq!(popup.list_area, Rect::new(28, 16, 44, 5));
+    }
+
+    #[test]
+    fn clicking_a_choice_sends_it() {
+        let (mut popup, rx) = popup(3, 2);
+        draw(&mut popup);
+
+        // The third row of the list
+        assert!(matches!(
+            click(&mut popup, 30, 18),
+            ComponentInputResult::HandledAction(AppAction::PopupCanceled)
+        ));
+
+        assert_eq!(rx.try_recv(), Ok(2));
+    }
+
+    #[test]
+    fn clicking_a_choice_in_a_scrolled_list_sends_it() {
+        let (mut popup, rx) = popup(30, 0);
+        draw(&mut popup);
+        for _ in 0..29 {
+            press(&mut popup, KeyCode::Char('j'));
+        }
+        // The list is scrolled only when it is drawn again
+        draw(&mut popup);
+        assert_eq!(popup.list_state.offset(), 10);
+
+        // The topmost row on show, which is the eleventh choice
+        let top = popup.list_area.y;
+        assert!(matches!(
+            click(&mut popup, 30, top),
+            ComponentInputResult::HandledAction(AppAction::PopupCanceled)
+        ));
+
+        assert_eq!(rx.try_recv(), Ok(10));
+    }
+
+    #[test]
+    fn clicking_the_footnote_sends_nothing() {
+        let (mut popup, rx) = popup(3, 2);
+        draw(&mut popup);
+
+        // The first row below the three choices
+        assert!(matches!(
+            click(&mut popup, 30, 19),
+            ComponentInputResult::Handled
+        ));
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn clicking_the_help_line_sends_nothing_and_stays_open() {
+        let (mut popup, rx) = popup(3, 2);
+        draw(&mut popup);
+
+        // Below the list, inside the popup
+        assert!(matches!(
+            click(&mut popup, 30, 21),
+            ComponentInputResult::Handled
+        ));
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn clicking_outside_the_popup_cancels() {
+        let (mut popup, rx) = popup(3, 0);
+        draw(&mut popup);
+
+        assert!(matches!(
+            click(&mut popup, 0, 0),
+            ComponentInputResult::HandledAction(AppAction::PopupCanceled)
+        ));
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn the_wheel_moves_the_selection_over_the_choices() {
+        let (mut popup, _rx) = popup(3, 2);
+        draw(&mut popup);
+
+        for _ in 0..5 {
+            wheel(&mut popup, MouseEventKind::ScrollDown);
+        }
+        assert_eq!(popup.list_state.selected(), Some(2));
+
+        for _ in 0..5 {
+            wheel(&mut popup, MouseEventKind::ScrollUp);
+        }
+        assert_eq!(popup.list_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn clicking_before_the_popup_is_drawn_does_not_cancel_it() {
+        let (mut popup, rx) = popup(3, 0);
+
+        assert!(matches!(
+            click(&mut popup, 0, 0),
+            ComponentInputResult::Handled
+        ));
+
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]
