@@ -47,8 +47,6 @@ pub struct LogTabKeybindsConfig {
     pub save: Option<Keybind>,
     pub cancel: Option<Keybind>,
 
-    pub close_popup: Option<Keybind>,
-
     pub toggle_diff_format: Option<Keybind>,
 
     pub goto_parent: Option<Keybind>,

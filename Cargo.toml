@@ -40,7 +40,6 @@ tracing-chrome = "0.7.2"
 tracing-log = "0.2.0"
 tracing-subscriber = "0.3.23"
 ratatui-textarea = "0.9.2"
-tui_confirm_dialog = "0.4.1"
 version-compare = "0.2.1"
 
 # Release build optimize size.

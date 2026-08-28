@@ -1,5 +1,3 @@
-#![expect(clippy::borrow_interior_mutable_const)]
-
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyEventKind;
@@ -8,10 +6,6 @@ use ratatui::widgets::*;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 use tracing::instrument;
-use tui_confirm_dialog::ButtonLabel;
-use tui_confirm_dialog::ConfirmDialog;
-use tui_confirm_dialog::ConfirmDialogState;
-use tui_confirm_dialog::Listener;
 
 use crate::app::TabId;
 use crate::app::command;
@@ -47,10 +41,6 @@ use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::centered_rect_line_height;
 
-const EDIT_POPUP_ID: u16 = 2;
-const ABANDON_POPUP_ID: u16 = 3;
-const SQUASH_POPUP_ID: u16 = 4;
-
 /// Log tab. Shows `jj log` in main panel and shows selected change details of in details panel.
 pub struct LogTab<'a> {
     /// The revset filter to apply to jj log
@@ -68,15 +58,6 @@ pub struct LogTab<'a> {
     /// The currently selected change. It is a copy of `self.log_panel.head`,
     /// so if these differ, we need to update `self.head`
     head: Head,
-
-    popup: ConfirmDialogState,
-    popup_tx: std::sync::mpsc::Sender<Listener>,
-    popup_rx: std::sync::mpsc::Receiver<Listener>,
-
-    squash_ignore_immutable: bool,
-    squash_target: Option<Head>,
-
-    edit_ignore_immutable: bool,
 
     config: JjConfig,
     pane_divider: PaneDivider,
@@ -108,8 +89,6 @@ The main functions are:
 impl<'a> LogTab<'a> {
     #[instrument(level = "info", name = "Initializing log tab", parent = None, skip(background_tasks))]
     pub fn new(background_tasks: BackgroundTasks, head: Head) -> Self {
-        let (popup_tx, popup_rx) = std::sync::mpsc::channel();
-
         let mut keybinds = LogTabKeybinds::default();
         let mut details_keybinds = DetailsPanelKeybinds::default();
         if let Some(keybinds_config) = get_env().jj_config.keybinds() {
@@ -133,14 +112,6 @@ impl<'a> LogTab<'a> {
 
             head,
             head_panel: CommitShowPanel::new(TabId::Log, background_tasks),
-
-            popup: ConfirmDialogState::default(),
-            popup_tx,
-            popup_rx,
-            squash_ignore_immutable: false,
-            squash_target: None,
-
-            edit_ignore_immutable: false,
 
             config,
             pane_divider,
@@ -187,16 +158,9 @@ impl<'a> LogTab<'a> {
 
 /**
 # Event handling
-Event handling happens in [`LogTab::handle_event`]. Over time, this has
-caused it to grow to a very long match with many arms. The size makes it hard
-to see what is going on, and the indentation is very deep.
-
-To fix this, we have begun a new code pattern, were the match arm simply
-calls a function. Most actions are two step operations, first create a dialog
-, then execcute some command. This is reflected in two functions located near
-each other in code:
-* `handle_<action>` - Set up the dialog and show it.
-* `execute_<action>` - Perform some action after the dialog closed.
+[`LogTab::handle_event`] turns an event into the request it stands for,
+taking whatever that request acts on off the selection. The app runs it
+from there.
 */
 impl<'a> LogTab<'a> {
     /// A new change from the marked changes, or from the selected one
@@ -216,82 +180,13 @@ impl<'a> LogTab<'a> {
             NewSource::Marks
         };
 
-        Some(command::new_change(
+        Some(command::ask_new_change(
             self.config.clone(),
             revset,
             source,
             &target,
             describe,
         ))
-    }
-
-    fn handle_abandon(&mut self) -> Result<Option<AppAction>> {
-        // Cannot abandon immutable changes
-        if self.head.immutable {
-            return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
-                "Abandon",
-                "The change cannot be abandoned because it is immutable.",
-            )))));
-        }
-
-        // Ask for confirmation by launching a popup
-        let mark_count = self.log_panel.marked_heads.len();
-        let text = if mark_count > 0 {
-            Text::from(vec![Line::from(format!(
-                "Are you sure you want to abandon {} marked changes?",
-                mark_count
-            ))])
-            .fg(Color::default())
-        } else {
-            Text::from(vec![
-                Line::from("Are you sure you want to abandon this change?"),
-                Line::from(format!("Change: {}", self.head.change_id.as_str())),
-            ])
-            .fg(Color::default())
-        };
-        self.popup = ConfirmDialogState::new(
-            ABANDON_POPUP_ID,
-            Span::styled(" Abandon ", Style::new().bold().cyan()),
-            text,
-        );
-        self.popup
-            .with_yes_button(ButtonLabel::YES.clone())
-            .with_no_button(ButtonLabel::NO.clone())
-            .with_listener(Some(self.popup_tx.clone()))
-            .open();
-        Ok(None)
-    }
-
-    // Execute abandon command, after self.popup returned
-    fn execute_abandon(&mut self) -> Result<Option<AppAction>> {
-        // If none marked, mark current head
-        if self.log_panel.marked_heads.is_empty() {
-            self.log_panel.toggle_head_mark();
-        }
-        // Move selection to parent until it is no longer inside the marked commits
-        let old_selection = self.head.clone();
-        let mut selection = self.head.clone();
-        while self.log_panel.is_head_marked(&selection) {
-            selection = new_commander().get_commit_parent(&selection.commit_id)?;
-        }
-        // Abandon marked commmits
-        let commit_id_list = self.log_panel.extract_and_clear_head_marks();
-        let revset =
-            Revset::union(&commit_id_list).unwrap_or_else(|| Revset::from(&self.head.commit_id));
-        new_commander().run_abandon(revset)?;
-        // Update selection to latest version, in case abandon triggered a rebase.
-        let new_selection = new_commander().get_head_latest(&selection)?;
-        // Update log panel and diff panel
-        self.set_head(new_selection.clone());
-        // If selection was moved, tell the application
-        if new_selection != old_selection {
-            Ok(Some(AppAction::Multiple(vec![
-                AppAction::ChangeHead(self.head.clone()),
-                AppAction::RefreshTab,
-            ])))
-        } else {
-            Ok(Some(AppAction::RefreshTab))
-        }
     }
 
     /// Move the selection to the parent of the current head, asking which
@@ -365,85 +260,26 @@ impl<'a> LogTab<'a> {
                 )))));
             }
             LogTabEvent::Squash { ignore_immutable } => {
-                let current_head = new_commander().get_current_head()?;
-                let target = if self.head.change_id == current_head.change_id {
-                    match new_commander().get_commit_parent(&current_head.commit_id) {
-                        Ok(parent) => {
-                            self.squash_target = Some(parent.clone());
-                            parent
-                        }
-                        Err(_) => {
-                            return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
-                                "Squash",
-                                "Cannot squash onto current change",
-                            )))));
-                        }
-                    }
-                } else {
-                    self.squash_target = None;
-                    self.head.clone()
-                };
-
-                if target.immutable && !ignore_immutable {
-                    return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
-                        "Squash",
-                        "Cannot squash onto immutable change",
-                    )))));
-                }
-
-                let description = if self.squash_target.is_some() {
-                    "Are you sure you want to squash @ into its parent?"
-                } else {
-                    "Are you sure you want to squash @ into this change?"
-                };
-                let mut lines = vec![
-                    Line::from(description),
-                    Line::from(format!("Squash into {}", target.change_id.as_str())),
-                ];
-                if ignore_immutable {
-                    lines.push(Line::from("This change is immutable."));
-                }
-                self.popup = ConfirmDialogState::new(
-                    SQUASH_POPUP_ID,
-                    Span::styled(" Squash ", Style::new().bold().cyan()),
-                    Text::from(lines).fg(Color::default()),
-                );
-                self.popup
-                    .with_yes_button(ButtonLabel::YES.clone())
-                    .with_no_button(ButtonLabel::NO.clone())
-                    .with_listener(Some(self.popup_tx.clone()))
-                    .open();
-                self.squash_ignore_immutable = ignore_immutable;
+                return Ok(Some(command::ask_squash(
+                    self.config.clone(),
+                    &self.head,
+                    ignore_immutable,
+                )?));
             }
             LogTabEvent::EditChange { ignore_immutable } => {
-                if self.head.immutable && !ignore_immutable {
-                    return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
-                        " Edit ",
-                        "The change cannot be edited because it is immutable.",
-                    )))));
-                }
-
-                let mut lines = vec![
-                    Line::from("Are you sure you want to edit an existing change?"),
-                    Line::from(format!("Change: {}", self.head.change_id.as_str())),
-                ];
-                if ignore_immutable {
-                    lines.push(Line::from("This change is immutable."))
-                }
-                self.popup = ConfirmDialogState::new(
-                    EDIT_POPUP_ID,
-                    Span::styled(" Edit ", Style::new().bold().cyan()),
-                    Text::from(lines).fg(Color::default()),
-                );
-                self.popup
-                    .with_yes_button(ButtonLabel::YES.clone())
-                    .with_no_button(ButtonLabel::NO.clone())
-                    .with_listener(Some(self.popup_tx.clone()))
-                    .open();
-                self.edit_ignore_immutable = ignore_immutable;
+                return Ok(Some(command::ask_edit(
+                    self.config.clone(),
+                    &self.head,
+                    ignore_immutable,
+                )));
             }
             LogTabEvent::Abandon => {
-                return self.handle_abandon();
+                let marked = self.log_panel.marked_heads.iter().cloned().collect();
+                return Ok(Some(command::ask_abandon(
+                    self.config.clone(),
+                    &self.head,
+                    marked,
+                )));
             }
             LogTabEvent::Absorb => {
                 return Ok(Some(AppAction::Run(Command::Absorb(self.head.clone()))));
@@ -521,10 +357,7 @@ impl<'a> LogTab<'a> {
 
             // Not operations of their own; the key handler deals with
             // them where they mean something.
-            LogTabEvent::Save
-            | LogTabEvent::Cancel
-            | LogTabEvent::ClosePopup
-            | LogTabEvent::Unbound => {}
+            LogTabEvent::Save | LogTabEvent::Cancel | LogTabEvent::Unbound => {}
         };
         Ok(None)
     }
@@ -587,38 +420,6 @@ impl Component for LogTab<'_> {
     fn update(&mut self) -> Result<Option<AppAction>> {
         self.head_panel.update();
 
-        // Check for popup action
-        if let Ok(res) = self.popup_rx.try_recv()
-            && res.1.unwrap_or(false)
-        {
-            match res.0 {
-                EDIT_POPUP_ID => {
-                    new_commander().run_edit(&self.head.commit_id, self.edit_ignore_immutable)?;
-                    return Ok(Some(AppAction::Multiple(vec![
-                        AppAction::ChangeHead(self.head.clone()),
-                        AppAction::RefreshTab,
-                    ])));
-                }
-                ABANDON_POPUP_ID => {
-                    return self.execute_abandon();
-                }
-                SQUASH_POPUP_ID => {
-                    let target_id = self
-                        .squash_target
-                        .take()
-                        .unwrap_or_else(|| self.head.clone())
-                        .commit_id;
-                    new_commander().run_squash(target_id.as_str(), self.squash_ignore_immutable)?;
-                    self.set_head(new_commander().get_current_head()?);
-                    return Ok(Some(AppAction::Multiple(vec![
-                        AppAction::ChangeHead(self.head.clone()),
-                        AppAction::RefreshTab,
-                    ])));
-                }
-                _ => {}
-            }
-        }
-
         Ok(None)
     }
 
@@ -645,20 +446,6 @@ impl Component for LogTab<'_> {
 
         // Draw change details
         self.head_panel.draw(f, chunks[1]);
-
-        // Draw popup
-        if self.popup.is_opened() {
-            let popup = ConfirmDialog::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Green))
-                .selected_button_style(
-                    Style::default()
-                        .bg(self.config.highlight_color())
-                        .underlined(),
-                );
-            f.render_stateful_widget(popup, area, &mut self.popup);
-        }
 
         // Draw revset textarea
         {
@@ -728,19 +515,6 @@ impl Component for LogTab<'_> {
                 return Ok(ComponentInputResult::Handled);
             }
 
-            if self.popup.is_opened() {
-                if matches!(
-                    self.keybinds.match_event(key),
-                    LogTabEvent::ClosePopup | LogTabEvent::Cancel
-                ) {
-                    self.popup = ConfirmDialogState::default();
-                } else {
-                    self.popup.handle(&key);
-                }
-
-                return Ok(ComponentInputResult::Handled);
-            }
-
             match self.details_keybinds.match_event(key) {
                 DetailsPanelEvent::Unbound => {}
                 ev => {
@@ -752,10 +526,9 @@ impl Component for LogTab<'_> {
             return match self.keybinds.match_event(key) {
                 // Not something the tab acts on here, so whoever else
                 // wants the key is welcome to it.
-                LogTabEvent::Save
-                | LogTabEvent::Cancel
-                | LogTabEvent::ClosePopup
-                | LogTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
+                LogTabEvent::Save | LogTabEvent::Cancel | LogTabEvent::Unbound => {
+                    Ok(ComponentInputResult::NotHandled)
+                }
                 event => Ok(self.handle_event(event)?.into()),
             };
         }

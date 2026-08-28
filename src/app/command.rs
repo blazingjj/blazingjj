@@ -10,6 +10,8 @@ use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::execute;
 use ratatui::layout::Alignment;
+use ratatui::text::Line;
+use ratatui::text::Text;
 
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskOutput;
@@ -23,6 +25,7 @@ use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::ui::AppAction;
+use crate::ui::dialog::ConfirmPopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
@@ -51,6 +54,20 @@ pub enum Command {
         insert: NewInsertMode,
         describe: bool,
     },
+    Squash {
+        target: Head,
+        ignore_immutable: bool,
+    },
+    Edit {
+        revset: Revset,
+        ignore_immutable: bool,
+    },
+    /// Abandon the marked changes, or the selected one when none are
+    /// marked, moving the selection out of them.
+    Abandon {
+        marked: Vec<CommitId>,
+        selected: Head,
+    },
     /// Push the bookmarks pointing at this change, or all of them.
     Push {
         commit_id: CommitId,
@@ -62,6 +79,8 @@ pub enum Command {
     },
     RestoreFile(File),
     UntrackFile(File),
+    DeleteBookmark(String),
+    ForgetBookmark(String),
     TrackBookmark(Bookmark),
     UntrackBookmark(Bookmark),
     /// Move the log onto the change a bookmark points at.
@@ -112,6 +131,52 @@ impl Command {
 
                 Ok(Some(AppAction::Multiple(actions)))
             }
+            Command::Squash {
+                target,
+                ignore_immutable,
+            } => {
+                new_commander().run_squash(target.commit_id.as_str(), ignore_immutable)?;
+                Ok(Some(show_change(new_commander().get_current_head()?)))
+            }
+            Command::Edit {
+                revset,
+                ignore_immutable,
+            } => {
+                new_commander().run_edit(revset, ignore_immutable)?;
+                Ok(Some(show_change(new_commander().get_current_head()?)))
+            }
+            Command::Abandon { marked, selected } => {
+                let (revset, abandoned) = match Revset::union(&marked) {
+                    Some(revset) => (revset, marked.as_slice()),
+                    None => (
+                        Revset::from(&selected.commit_id),
+                        std::slice::from_ref(&selected.commit_id),
+                    ),
+                };
+
+                // The selection has to come out of what is being
+                // abandoned, or it names a change that is no longer there.
+                let mut moved_to = selected.clone();
+                while abandoned.contains(&moved_to.commit_id) {
+                    moved_to = new_commander().get_commit_parent(&moved_to.commit_id)?;
+                }
+
+                new_commander().run_abandon(revset)?;
+
+                // Abandoning may have rebased what the selection landed
+                // on.
+                let moved_to = new_commander().get_head_latest(&moved_to)?;
+                let mut actions = vec![
+                    AppAction::ClearLogMarks,
+                    AppAction::ViewLog(moved_to.clone()),
+                ];
+                if moved_to != selected {
+                    actions.push(AppAction::ChangeHead(moved_to));
+                }
+                actions.push(AppAction::RefreshTab);
+
+                Ok(Some(AppAction::Multiple(actions)))
+            }
             Command::Push {
                 commit_id,
                 all_bookmarks,
@@ -145,6 +210,14 @@ impl Command {
                 }
                 Ok(Some(show_working_copy_files()?))
             }
+            Command::DeleteBookmark(name) => match new_commander().delete_bookmark(&name) {
+                Ok(()) => Ok(Some(AppAction::RefreshTab)),
+                Err(err) => Ok(Some(message("Delete error", err.to_string()))),
+            },
+            Command::ForgetBookmark(name) => match new_commander().forget_bookmark(&name) {
+                Ok(()) => Ok(Some(AppAction::RefreshTab)),
+                Err(err) => Ok(Some(message("Forget error", err.to_string()))),
+            },
             Command::TrackBookmark(bookmark) => {
                 new_commander().track_bookmark(&bookmark)?;
                 Ok(Some(AppAction::RefreshTab))
@@ -162,7 +235,7 @@ impl Command {
 
 /// Asking for a new change from `revset`, which `target` names as the
 /// user sees it: where the change goes is a question of its own.
-pub fn new_change(
+pub fn ask_new_change(
     config: JjConfig,
     revset: Revset,
     source: NewSource,
@@ -177,6 +250,180 @@ pub fn new_change(
             describe,
         })
     })))
+}
+
+/// Asking to squash into `selected`: the target it picks, the refusal
+/// when that target cannot take it, or the question that runs it.
+pub fn ask_squash(config: JjConfig, selected: &Head, ignore_immutable: bool) -> Result<AppAction> {
+    // Squashing the change the working copy is on has nowhere to go but
+    // its parent.
+    let at = new_commander().get_current_head()?;
+    let onto_parent = selected.change_id == at.change_id;
+    let target = if onto_parent {
+        match new_commander().get_commit_parent(&at.commit_id) {
+            Ok(parent) => parent,
+            Err(_) => return Ok(message("Squash", "Cannot squash onto current change")),
+        }
+    } else {
+        selected.clone()
+    };
+
+    if target.immutable && !ignore_immutable {
+        return Ok(message("Squash", "Cannot squash onto immutable change"));
+    }
+
+    let mut lines = vec![
+        Line::from(if onto_parent {
+            "Are you sure you want to squash @ into its parent?"
+        } else {
+            "Are you sure you want to squash @ into this change?"
+        }),
+        Line::from(format!("Squash into {}", target.change_id.as_str())),
+    ];
+    if ignore_immutable {
+        lines.push(Line::from("This change is immutable."));
+    }
+
+    Ok(confirm(
+        config,
+        "Squash",
+        Text::from(lines),
+        Command::Squash {
+            target,
+            ignore_immutable,
+        },
+    ))
+}
+
+/// Asking to edit `target`: the refusal when it is immutable, or the
+/// question that runs it.
+pub fn ask_edit(config: JjConfig, target: &Head, ignore_immutable: bool) -> AppAction {
+    if target.immutable && !ignore_immutable {
+        return message(
+            "Edit",
+            "The change cannot be edited because it is immutable.",
+        );
+    }
+
+    let mut lines = vec![
+        Line::from("Are you sure you want to edit an existing change?"),
+        Line::from(format!("Change: {}", target.change_id.as_str())),
+    ];
+    if ignore_immutable {
+        lines.push(Line::from("This change is immutable."));
+    }
+
+    confirm(
+        config,
+        "Edit",
+        Text::from(lines),
+        Command::Edit {
+            revset: Revset::from(&target.commit_id),
+            ignore_immutable,
+        },
+    )
+}
+
+/// Asking to edit the change a bookmark points at, which unlike a change
+/// picked out of the log has to be looked up to know whether it can be.
+pub fn ask_edit_bookmark(
+    config: JjConfig,
+    bookmark: &Bookmark,
+    ignore_immutable: bool,
+) -> Result<AppAction> {
+    let revset = Revset::expression(bookmark.to_string());
+    if new_commander().check_revision_immutable(revset.as_str())? && !ignore_immutable {
+        return Ok(message(
+            "Edit",
+            "The change cannot be edited because it is immutable.",
+        ));
+    }
+
+    Ok(confirm(
+        config,
+        "Edit",
+        Text::from(vec![
+            Line::from("Are you sure you want to edit an existing change?"),
+            Line::from(format!("Bookmark: {bookmark}")),
+        ]),
+        Command::Edit {
+            revset,
+            ignore_immutable,
+        },
+    ))
+}
+
+/// Asking to abandon the `marked` changes, or `selected` when none are
+/// marked: the refusal when it is immutable, or the question that runs
+/// it.
+pub fn ask_abandon(config: JjConfig, selected: &Head, marked: Vec<CommitId>) -> AppAction {
+    if selected.immutable {
+        return message(
+            "Abandon",
+            "The change cannot be abandoned because it is immutable.",
+        );
+    }
+
+    let text = if marked.is_empty() {
+        Text::from(vec![
+            Line::from("Are you sure you want to abandon this change?"),
+            Line::from(format!("Change: {}", selected.change_id.as_str())),
+        ])
+    } else {
+        Text::from(vec![Line::from(format!(
+            "Are you sure you want to abandon {} marked changes?",
+            marked.len()
+        ))])
+    };
+
+    confirm(
+        config,
+        "Abandon",
+        text,
+        Command::Abandon {
+            marked,
+            selected: selected.clone(),
+        },
+    )
+}
+
+/// Asking to delete the bookmark of this name.
+pub fn ask_delete_bookmark(config: JjConfig, name: &str) -> AppAction {
+    confirm(
+        config,
+        "Delete",
+        Text::from(format!(
+            "Are you sure you want to delete the {name} bookmark?"
+        )),
+        Command::DeleteBookmark(name.to_owned()),
+    )
+}
+
+/// Asking to forget the bookmark of this name.
+pub fn ask_forget_bookmark(config: JjConfig, name: &str) -> AppAction {
+    confirm(
+        config,
+        "Forget",
+        Text::from(format!(
+            "Are you sure you want to forget the {name} bookmark?"
+        )),
+        Command::ForgetBookmark(name.to_owned()),
+    )
+}
+
+/// Put `question` to the user, running `command` if they say yes.
+fn confirm(
+    config: JjConfig,
+    title: &'static str,
+    question: Text<'static>,
+    command: Command,
+) -> AppAction {
+    AppAction::SetPopup(Box::new(ConfirmPopup::new(
+        config,
+        title,
+        question,
+        AppAction::Run(command),
+    )))
 }
 
 /// Put `change` up wherever a change shows, the repo having moved under
@@ -217,4 +464,91 @@ where
     background_tasks.submit_uninterruptible(slot.clone(), operation);
 
     AppAction::SetPopup(Box::new(LoaderPopup::new(operation_name.to_owned(), slot)))
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    use super::*;
+    use crate::commander::ids::ChangeId;
+
+    fn head(change_id: &str, immutable: bool) -> Head {
+        Head {
+            change_id: ChangeId(change_id.to_owned()),
+            commit_id: CommitId(format!("commit-{change_id}")),
+            divergent: false,
+            immutable,
+        }
+    }
+
+    /// What the popup the action puts up says, as one string per row.
+    fn rows(action: AppAction) -> Vec<String> {
+        let AppAction::SetPopup(mut popup) = action else {
+            panic!("the action puts a popup up");
+        };
+
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).expect("the test backend");
+        terminal
+            .draw(|f| popup.draw(f, f.area()).expect("the popup draws"))
+            .expect("the frame is drawn");
+
+        let buffer = terminal.backend().buffer().clone();
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    fn says(action: AppAction, text: &str) -> bool {
+        rows(action).iter().any(|row| row.contains(text))
+    }
+
+    #[test]
+    fn an_immutable_change_is_refused_rather_than_asked_about() {
+        assert!(says(
+            ask_edit(JjConfig::default(), &head("a", true), false),
+            "because it is immutable"
+        ));
+    }
+
+    #[test]
+    fn an_immutable_change_is_asked_about_when_immutability_is_ignored() {
+        assert!(says(
+            ask_edit(JjConfig::default(), &head("a", true), true),
+            "This change is immutable"
+        ));
+    }
+
+    #[test]
+    fn abandoning_names_the_selected_change_when_none_are_marked() {
+        assert!(says(
+            ask_abandon(JjConfig::default(), &head("a", false), vec![]),
+            "Change: a"
+        ));
+    }
+
+    #[test]
+    fn abandoning_counts_the_marked_changes_rather_than_naming_them() {
+        let marked = vec![CommitId("commit-a".into()), CommitId("commit-b".into())];
+
+        assert!(says(
+            ask_abandon(JjConfig::default(), &head("a", false), marked),
+            "abandon 2 marked changes"
+        ));
+    }
+
+    #[test]
+    fn an_immutable_selection_is_never_abandoned_even_with_others_marked() {
+        let marked = vec![CommitId("commit-a".into())];
+
+        assert!(says(
+            ask_abandon(JjConfig::default(), &head("a", true), marked),
+            "because it is immutable"
+        ));
+    }
 }

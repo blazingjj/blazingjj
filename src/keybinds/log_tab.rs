@@ -21,8 +21,6 @@ pub enum LogTabEvent {
     Save,
     Cancel,
 
-    ClosePopup,
-
     ScrollToBottom,
     ScrollToTop,
 
@@ -69,7 +67,6 @@ impl Default for LogTabKeybinds {
             keys,
             LogTabEvent::Save => "ctrl+s",
             LogTabEvent::Cancel => "esc",
-            LogTabEvent::ClosePopup => "q",
             LogTabEvent::ScrollToBottom => "ctrl+end",
             LogTabEvent::ScrollToTop => "ctrl+home",
             LogTabEvent::ToggleHeadMark => "space",
@@ -122,7 +119,6 @@ impl LogTabKeybinds {
             self.keys,
             LogTabEvent::Save => config.save,
             LogTabEvent::Cancel => config.cancel,
-            LogTabEvent::ClosePopup => config.close_popup,
             LogTabEvent::GotoParent => config.goto_parent,
             LogTabEvent::Duplicate => config.duplicate,
             LogTabEvent::CreateNew { describe: false } => config.create_new,
