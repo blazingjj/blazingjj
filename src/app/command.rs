@@ -20,11 +20,15 @@ use crate::commander::bookmarks::Bookmark;
 use crate::commander::files::File;
 use crate::commander::ids::CommitId;
 use crate::commander::jj::NewInsertMode;
+use crate::commander::jj::RebaseSource;
+use crate::commander::jj::RebaseTarget;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::ui::AppAction;
+use crate::ui::dialog::BookmarkNameMode;
+use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::ConfirmPopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
@@ -68,6 +72,16 @@ pub enum Command {
         marked: Vec<CommitId>,
         selected: Head,
     },
+    Describe {
+        head: Head,
+        description: String,
+    },
+    Rebase {
+        source: Head,
+        source_mode: RebaseSource,
+        target: Head,
+        target_mode: RebaseTarget,
+    },
     /// Push the bookmarks pointing at this change, or all of them.
     Push {
         commit_id: CommitId,
@@ -79,6 +93,17 @@ pub enum Command {
     },
     RestoreFile(File),
     UntrackFile(File),
+    CreateBookmark(String),
+    RenameBookmark {
+        old_name: String,
+        new_name: String,
+    },
+    /// Put the bookmark of this name on the commit, creating it if there
+    /// is no bookmark by that name yet.
+    SetBookmark {
+        name: String,
+        commit_id: CommitId,
+    },
     DeleteBookmark(String),
     ForgetBookmark(String),
     TrackBookmark(Bookmark),
@@ -177,6 +202,29 @@ impl Command {
 
                 Ok(Some(AppAction::Multiple(actions)))
             }
+            Command::Describe { head, description } => {
+                new_commander().run_describe(&head.commit_id, &description)?;
+                Ok(Some(AppAction::Multiple(vec![
+                    AppAction::ViewLog(new_commander().get_head_latest(&head)?),
+                    AppAction::RefreshTab,
+                ])))
+            }
+            Command::Rebase {
+                source,
+                source_mode,
+                target,
+                target_mode,
+            } => {
+                if let Err(err) = new_commander().run_rebase(
+                    source_mode,
+                    &source.commit_id,
+                    target_mode,
+                    &target.commit_id,
+                ) {
+                    return Ok(Some(message("Error", err.to_string())));
+                }
+                Ok(Some(AppAction::RefreshTab))
+            }
             Command::Push {
                 commit_id,
                 all_bookmarks,
@@ -209,6 +257,37 @@ impl Command {
                     )));
                 }
                 Ok(Some(show_working_copy_files()?))
+            }
+            Command::CreateBookmark(name) => match new_commander().create_bookmark(&name) {
+                Ok(_) => Ok(Some(AppAction::Multiple(vec![
+                    AppAction::ViewBookmark(name),
+                    AppAction::RefreshTab,
+                ]))),
+                // Put the question back with what was typed, since a
+                // refused name is usually one to correct rather than one
+                // to give up on.
+                Err(err) => Ok(Some(AppAction::SetPopup(Box::new(
+                    BookmarkNamePopup::refused(BookmarkNameMode::Create, name, err),
+                )))),
+            },
+            Command::RenameBookmark { old_name, new_name } => {
+                match new_commander().rename_bookmark(&old_name, &new_name) {
+                    Ok(()) => Ok(Some(AppAction::Multiple(vec![
+                        AppAction::ViewBookmark(new_name),
+                        AppAction::RefreshTab,
+                    ]))),
+                    Err(err) => Ok(Some(AppAction::SetPopup(Box::new(
+                        BookmarkNamePopup::refused(
+                            BookmarkNameMode::Rename { old_name },
+                            new_name,
+                            err,
+                        ),
+                    )))),
+                }
+            }
+            Command::SetBookmark { name, commit_id } => {
+                new_commander().set_bookmark_commit(&name, &commit_id)?;
+                Ok(Some(AppAction::RefreshTab))
             }
             Command::DeleteBookmark(name) => match new_commander().delete_bookmark(&name) {
                 Ok(()) => Ok(Some(AppAction::RefreshTab)),

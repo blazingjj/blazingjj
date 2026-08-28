@@ -40,15 +40,16 @@ use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidget;
 
+use crate::app::command::Command;
+use crate::commander::jj::RebaseSource;
+use crate::commander::jj::RebaseTarget;
 use crate::commander::log::Head;
-use crate::commander::new_commander;
 use crate::keybinds::rebase_popup::CutOption;
 use crate::keybinds::rebase_popup::PasteOption;
 use crate::keybinds::rebase_popup::PopupAction;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
-use crate::ui::dialog::MessagePopup;
 use crate::ui::utils::centered_rect_fixed;
 
 type Keybinds = crate::keybinds::rebase_popup::Keybinds;
@@ -84,25 +85,22 @@ impl RebasePopup {
         PopupAction::None
     }
 
-    /// Run the command that the popup is currently configured to do
-    fn run_command(&self) -> Result<()> {
-        let src_mode = match self.source_mode {
-            CutOption::IncludeDescendants => "-s",
-            CutOption::IncludeBranch => "-b",
-            CutOption::SingleRevision => "-r",
-        };
-        let tgt_mode = match self.target_mode {
-            PasteOption::NewBranch => "-d",
-            PasteOption::InsertAfter => "-A",
-            PasteOption::InsertBefore => "-B",
-        };
-        new_commander().run_rebase(
-            src_mode,
-            &self.source_rev.commit_id,
-            tgt_mode,
-            &self.target_rev.commit_id,
-        )?;
-        Ok(())
+    /// The rebase the popup is currently configured to ask for.
+    fn command(&self) -> Command {
+        Command::Rebase {
+            source: self.source_rev.clone(),
+            source_mode: match self.source_mode {
+                CutOption::IncludeDescendants => RebaseSource::Descendants,
+                CutOption::IncludeBranch => RebaseSource::Branch,
+                CutOption::SingleRevision => RebaseSource::SingleRevision,
+            },
+            target: self.target_rev.clone(),
+            target_mode: match self.target_mode {
+                PasteOption::NewBranch => RebaseTarget::Onto,
+                PasteOption::InsertAfter => RebaseTarget::After,
+                PasteOption::InsertBefore => RebaseTarget::Before,
+            },
+        }
     }
 }
 
@@ -191,12 +189,9 @@ impl Component for RebasePopup {
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
         match self.match_event(event) {
-            PopupAction::Ok => match self.run_command() {
-                Ok(()) => Ok(ComponentInputResult::HandledAction(AppAction::PopupDone)),
-                Err(e) => Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                    Box::new(MessagePopup::new("Error", e.to_string())),
-                ))),
-            },
+            PopupAction::Ok => Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
+                vec![AppAction::ClosePopup, AppAction::Run(self.command())],
+            ))),
             PopupAction::Cancel => Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup)),
             PopupAction::SetSourceMode(m) => {
                 self.source_mode = m;

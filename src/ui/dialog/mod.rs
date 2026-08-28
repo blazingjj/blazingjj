@@ -21,6 +21,7 @@ mod new_insert;
 mod parent_select;
 mod rebase;
 
+pub use bookmark_name::BookmarkNameMode;
 pub use bookmark_name::BookmarkNamePopup;
 pub use bookmark_set::BookmarkSetPopup;
 pub use choice::ChoicePopup;

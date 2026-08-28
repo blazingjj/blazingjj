@@ -5,6 +5,7 @@ use ratatui::crossterm::event::KeyEventKind;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 use tracing::instrument;
+use tracing::warn;
 
 use crate::app::TabId;
 use crate::app::command;
@@ -48,9 +49,6 @@ pub struct BookmarksTab {
 
     bookmark_panel: CommitShowPanel,
 
-    bookmark_name_popup_tx: std::sync::mpsc::Sender<String>,
-    bookmark_name_popup_rx: std::sync::mpsc::Receiver<String>,
-
     config: JjConfig,
     keybinds: BookmarksTabKeybinds,
     details_keybinds: DetailsPanelKeybinds,
@@ -93,8 +91,6 @@ impl BookmarksTab {
     /// A stale tab holding no bookmarks yet.
     #[instrument(level = "info", name = "Initializing bookmarks tab", parent = None, skip(background_tasks))]
     pub fn new(background_tasks: BackgroundTasks) -> Self {
-        let (bookmark_name_popup_tx, bookmark_name_popup_rx) = std::sync::mpsc::channel();
-
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
         let keybinds = BookmarksTabKeybinds::default();
@@ -109,9 +105,6 @@ impl BookmarksTab {
             show_all: false,
 
             bookmark_panel: CommitShowPanel::new(TabId::Bookmarks, background_tasks),
-
-            bookmark_name_popup_tx,
-            bookmark_name_popup_rx,
 
             config,
             keybinds,
@@ -153,6 +146,27 @@ impl BookmarksTab {
             .collect();
         self.bookmark_panel.set_active(heads);
 
+        self.show_bookmark();
+    }
+
+    /// Read the bookmarks afresh and move the selection to the one of
+    /// this name, which may have only just come into being. Leaves the
+    /// selection where it is when there is no such bookmark.
+    pub fn select_bookmark(&mut self, name: &str) {
+        self.refresh_bookmarks();
+
+        let found = self.bookmarks_output.iter().flatten().find(
+            |line| matches!(line, BookmarkLine::Parsed { bookmark, .. } if bookmark.name == name),
+        );
+        let Some(found) = found.cloned() else {
+            // The bookmark was just created or renamed, so a list without
+            // it is one we failed to read rather than one it is missing
+            // from.
+            warn!("The {name} bookmark is not in the list we just read");
+            return;
+        };
+
+        self.bookmark = Some(found);
         self.show_bookmark();
     }
 
@@ -218,17 +232,14 @@ impl BookmarksTab {
             }
             BookmarksTabEvent::CreateBookmark => {
                 return Ok(Some(AppAction::SetPopup(Box::new(
-                    BookmarkNamePopup::new_create(self.bookmark_name_popup_tx.clone()),
+                    BookmarkNamePopup::new_create(),
                 ))));
             }
             BookmarksTabEvent::RenameBookmark => {
                 if let Some(bookmark) = self.listed_bookmark() {
                     let old_name = bookmark.name.clone();
                     return Ok(Some(AppAction::SetPopup(Box::new(
-                        BookmarkNamePopup::new_rename(
-                            old_name,
-                            self.bookmark_name_popup_tx.clone(),
-                        ),
+                        BookmarkNamePopup::new_rename(old_name),
                     ))));
                 }
             }
@@ -341,19 +352,6 @@ impl Tab for BookmarksTab {
 impl Component for BookmarksTab {
     fn update(&mut self) -> Result<Option<AppAction>> {
         self.bookmark_panel.update();
-
-        if let Ok(name) = self.bookmark_name_popup_rx.try_recv() {
-            self.refresh_bookmarks();
-            if let Some(bookmark) = self.bookmarks_output.as_ref().ok().and_then(|list| {
-                list.iter().find(|b| match b {
-                    BookmarkLine::Unparsable(_) => false,
-                    BookmarkLine::Parsed { bookmark, .. } => bookmark.name == name,
-                })
-            }) {
-                self.bookmark = Some(bookmark.clone());
-                self.show_bookmark();
-            }
-        }
 
         Ok(None)
     }

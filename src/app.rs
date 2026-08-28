@@ -279,6 +279,10 @@ impl<'a> App<'a> {
                 self.log.set_head(head);
                 self.set_tab(TabId::Log);
             }
+            AppAction::ViewBookmark(name) => {
+                self.set_tab(TabId::Bookmarks);
+                self.bookmarks.select_bookmark(&name);
+            }
             AppAction::ChangeHead(head) => {
                 self.files.set_head(&head)?;
                 self.evolog.set_head(&head);

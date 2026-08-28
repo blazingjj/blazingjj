@@ -25,6 +25,9 @@ pub enum AppAction {
     ViewVersionFiles(Head),
     ViewEvolog(Head),
     ViewLog(Head),
+    /// Show the bookmark of this name, which may have just come into
+    /// being.
+    ViewBookmark(String),
     ChangeHead(Head),
     /// Put this popup up, in place of whatever is up now.
     SetPopup(Box<dyn Component>),
