@@ -10,6 +10,7 @@ use ratatui::prelude::*;
 use tracing::instrument;
 
 use crate::app::TabId;
+use crate::app::command;
 use crate::app::command::Command;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
@@ -29,6 +30,7 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
+use crate::ui::dialog::evolog_context_menu;
 use crate::ui::panel::EvologShowPanel;
 use crate::ui::panel::LogPanel;
 use crate::ui::panel::MouseInput;
@@ -114,19 +116,23 @@ impl<'a> EvologTab<'a> {
         self.sync_entry_output();
     }
 
+    /// The menu of what can be done to the selected version, put at
+    /// `anchor` or centered when there is nowhere to point at.
+    fn open_context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
+        Some(AppAction::SetPopup(Box::new(evolog_context_menu(
+            self.config.clone(),
+            anchor,
+            &self.entry_panel.head,
+            &self.change,
+        ))))
+    }
+
     fn handle_event(&mut self, event: EvologTabEvent) -> Result<Option<AppAction>> {
         let entry = &self.entry_panel.head;
 
         match event {
             EvologTabEvent::OpenFiles => {
-                // The newest version is the change as it stands, so the
-                // files tab may as well keep up with it
-                let action = if entry.commit_id == self.change.commit_id {
-                    AppAction::ViewFiles(entry.clone())
-                } else {
-                    AppAction::ViewVersionFiles(entry.clone())
-                };
-                return Ok(Some(action));
+                return Ok(Some(command::show_version_files(entry, &self.change)));
             }
             EvologTabEvent::Duplicate => {
                 // The duplicate is a change of its own, so it shows up in
@@ -139,6 +145,9 @@ impl<'a> EvologTab<'a> {
                 return Ok(Some(AppAction::Run(Command::Copy(
                     entry.commit_id.as_str().to_owned(),
                 ))));
+            }
+            EvologTabEvent::OpenContextMenu => {
+                return Ok(self.open_context_menu(self.entry_panel.selected_position()));
             }
             // Not an operation of its own; the key handler deals with it.
             EvologTabEvent::Unbound => {}
@@ -202,6 +211,7 @@ impl Tab for EvologTab<'_> {
 impl Component for EvologTab<'_> {
     fn update(&mut self) -> Result<Option<AppAction>> {
         self.patch_panel.update();
+
         Ok(None)
     }
 
@@ -259,7 +269,16 @@ impl Component for EvologTab<'_> {
                         self.sync_entry_output();
                     }
                 }
-                MouseInput::Context(_) => {}
+                // The graph takes lines of its own, which name no version
+                // for a menu to act on.
+                MouseInput::Context(index) => {
+                    if let Some(entry) = self.entry_panel.head_at_log_line(index) {
+                        self.entry_panel.set_head_in_place(entry);
+                        self.sync_entry_output();
+                        let anchor = Position::new(mouse.column, mouse.row);
+                        return Ok(self.open_context_menu(Some(anchor)).into());
+                    }
+                }
                 MouseInput::Handled => {}
                 MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
             }

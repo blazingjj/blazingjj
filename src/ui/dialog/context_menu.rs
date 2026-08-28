@@ -106,3 +106,28 @@ pub fn files_context_menu(config: JjConfig, anchor: Option<Position>, file: &Fil
 
     ChoicePopup::new(config, anchor, "File actions", items)
 }
+
+/// The context menu for `version` of `change`.
+pub fn evolog_context_menu(
+    config: JjConfig,
+    anchor: Option<Position>,
+    version: &Head,
+    change: &Head,
+) -> ChoicePopup {
+    let items = vec![
+        (
+            Line::raw("Show files"),
+            command::show_version_files(version, change),
+        ),
+        (
+            Line::raw("Duplicate"),
+            AppAction::Run(Command::Duplicate(Revset::from(&version.commit_id))),
+        ),
+        (
+            Line::raw("Copy commit id"),
+            AppAction::Run(Command::Copy(version.commit_id.as_str().to_owned())),
+        ),
+    ];
+
+    ChoicePopup::new(config, anchor, "Version actions", items)
+}

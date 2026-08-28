@@ -329,6 +329,17 @@ pub fn ask_new_change_from_selection(
     ask_new_change(config, revset, source, &target, describe)
 }
 
+/// Asking to see the files of one version of `change`. The newest
+/// version is the change as it stands, so the files tab may as well keep
+/// up with it.
+pub fn show_version_files(version: &Head, change: &Head) -> AppAction {
+    if version.commit_id == change.commit_id {
+        AppAction::ViewFiles(version.clone())
+    } else {
+        AppAction::ViewVersionFiles(version.clone())
+    }
+}
+
 /// Asking to describe `head`: the refusal when it is immutable, or the
 /// editor with what it says now.
 pub fn describe(head: &Head) -> Result<AppAction> {
