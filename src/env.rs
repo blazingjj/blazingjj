@@ -8,12 +8,15 @@ It is a combination of
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::bail;
 use ratatui::style::Color;
 use serde::Deserialize;
+use serde::Deserializer;
+use serde::de;
 
 use crate::commander::MIN_SETTABLE_WIDTH;
 use crate::commander::RemoveEndLine;
@@ -51,6 +54,10 @@ pub struct JjConfigBlazingjj {
     layout: JJLayout,
     layout_percent: u16,
     keybinds: Option<KeybindsConfig>,
+    /// How long to wait between checks for work done outside the app, or
+    /// None to only check when one is asked for.
+    #[serde(deserialize_with = "deserialize_poll_interval")]
+    poll_interval: Option<Duration>,
 }
 
 impl Default for JjConfigBlazingjj {
@@ -58,6 +65,7 @@ impl Default for JjConfigBlazingjj {
         Self {
             highlight_color: Color::Rgb(50, 50, 150),
             layout_percent: 50,
+            poll_interval: Some(Duration::from_secs(1)),
             // Standard defaults for the rest
             diff_format: None,
             diff_tool: None,
@@ -66,6 +74,16 @@ impl Default for JjConfigBlazingjj {
             keybinds: None,
         }
     }
+}
+
+/// Reads a number of seconds, of which zero means never checking.
+fn deserialize_poll_interval<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Duration>, D::Error> {
+    let seconds = f64::deserialize(deserializer)?;
+    let interval = Duration::try_from_secs_f64(seconds).map_err(de::Error::custom)?;
+
+    Ok(Some(interval).filter(|interval| !interval.is_zero()))
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -126,6 +144,10 @@ impl JjConfig {
 
     pub fn keybinds(&self) -> Option<&KeybindsConfig> {
         self.blazingjj.keybinds.as_ref()
+    }
+
+    pub fn poll_interval(&self) -> Option<Duration> {
+        self.blazingjj.poll_interval
     }
 }
 
@@ -264,5 +286,28 @@ mod tests {
         );
         assert_eq!(diff_tool.render_width(MIN_SETTABLE_WIDTH - 1), 0);
         assert_eq!(diff_tool.render_width(0), 0);
+    }
+
+    #[test]
+    fn poll_interval() {
+        assert_eq!(
+            JjConfig::default().poll_interval(),
+            Some(Duration::from_secs(1))
+        );
+
+        // As `jj config list` prints it: a dotted key.
+        let config: JjConfig = toml::from_str("blazingjj.poll-interval = 0.5\n").unwrap();
+        assert_eq!(config.poll_interval(), Some(Duration::from_millis(500)));
+
+        let config: JjConfig = toml::from_str("blazingjj.poll-interval = 0\n").unwrap();
+        assert_eq!(config.poll_interval(), None);
+
+        // Anything that is not a length of time is a config error, as a
+        // bad value is for every other setting.
+        for interval in ["-1", "nan", "inf", "1e30", "\"1s\"", "true"] {
+            let config =
+                toml::from_str::<JjConfig>(&format!("blazingjj.poll-interval = {interval}\n"));
+            assert!(config.is_err(), "{interval}");
+        }
     }
 }

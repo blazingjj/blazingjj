@@ -1,3 +1,5 @@
+mod repo_watch;
+
 use core::fmt;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -22,7 +24,11 @@ use tracing::instrument;
 use tracing::trace;
 use tracing::warn;
 
+use crate::app::repo_watch::Check;
+use crate::app::repo_watch::Moment;
+use crate::app::repo_watch::RepoWatch;
 use crate::background_tasks::BackgroundTasks;
+use crate::background_tasks::TaskOutput;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
 use crate::commander::ids::OperationId;
@@ -71,8 +77,15 @@ pub struct Stats {
     pub start_time: Instant,
 }
 
-/// How long after a check of what the repo is at the next one is due.
-const OP_ID_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+/// What handling an event leaves for the main loop to do.
+pub enum Handled {
+    /// Nothing the app shows can have changed.
+    Nothing,
+    /// What the app shows may have changed.
+    Redraw,
+    /// The app was asked to stop.
+    Stop,
+}
 
 pub struct App<'a> {
     // user interface
@@ -85,12 +98,7 @@ pub struct App<'a> {
     pub stats: Stats,
     global_keybinds: GlobalKeybinds,
 
-    repo_op_id: Option<OperationId>,
-    next_op_id_check: Instant,
-
-    /// Whether the next check may leave the working copy alone rather
-    /// than snapshotting it.
-    ignore_working_copy: bool,
+    repo_watch: RepoWatch,
 
     // event handling
     running: Arc<AtomicBool>,
@@ -121,9 +129,7 @@ impl<'a> App<'a> {
             },
             global_keybinds,
 
-            repo_op_id: None,
-            next_op_id_check: Instant::now(),
-            ignore_working_copy: false,
+            repo_watch: RepoWatch::new(get_env().jj_config.poll_interval(), Instant::now()),
 
             running,
             event_source,
@@ -159,23 +165,51 @@ impl<'a> App<'a> {
     }
 
     pub fn set_tab(&mut self, tab: TabId) {
-        info!("Setting tab to {}", tab);
-        self.current_tab = tab;
-    }
-
-    /// Mark every tab stale if the repo has moved since the last check,
-    /// then read the current tab if it is stale. Returns whether
-    /// anything on screen changed.
-    pub fn refresh_view(&mut self) -> Result<bool> {
-        if self.check_repo_moved() {
-            trace!("The repo has moved, so every tab is stale");
-            for tab in TabId::VALUES {
-                self.get_tab(tab).mark_stale();
-            }
+        // Asking for the tab already on screen is not asking for it to
+        // move.
+        if tab == self.current_tab {
+            return;
         }
 
-        if !self.get_current_tab().is_stale() {
+        info!("Setting tab to {}", tab);
+        self.current_tab = tab;
+        // The user is not reading the tab they are switching to yet, so
+        // nothing moves under them if we bring it up to date.
+        self.repo_watch.catching_up();
+    }
+
+    /// How long until the app next checks for work done outside it, or
+    /// None if there is nothing to wake up for.
+    pub fn time_until_poll(&self) -> Option<Duration> {
+        self.repo_watch.time_until_poll(self.moment())
+    }
+
+    fn moment(&self) -> Moment {
+        Moment {
+            at: Instant::now(),
+            checking: self.background_tasks.is_running(&TaskSlot::RepoOpId),
+            room: self.background_tasks.has_room(),
+        }
+    }
+
+    /// Start a check of what the repo is at if one is called for, and
+    /// catch the current tab up unless refreshing it now would move what
+    /// the user is reading. Returns whether anything on screen changed.
+    pub fn refresh_view(&mut self) -> Result<bool> {
+        // A popup covers the tab a check would read for, and keeps the
+        // loop running for its own sake.
+        if self.popup.is_some() {
             return Ok(false);
+        }
+
+        if let Some(check) = self.repo_watch.check_to_start(self.moment()) {
+            self.submit_repo_check(check);
+        }
+
+        let stale = self.get_current_tab().is_stale();
+        let hint_changed = self.repo_watch.leave_stale(stale);
+        if self.repo_watch.waiting_for_refresh() || !stale {
+            return Ok(hint_changed);
         }
 
         self.get_current_tab().refresh()?;
@@ -183,43 +217,36 @@ impl<'a> App<'a> {
         Ok(true)
     }
 
-    /// Ask for the next check to read the repo without waiting out
-    /// [OP_ID_CHECK_INTERVAL], and snapshot the working copy while at it.
-    fn request_check_with_snapshot(&mut self) {
-        self.next_op_id_check = Instant::now();
-        self.ignore_working_copy = false;
+    /// Read what operation the repo is at, keeping the slot until the
+    /// check is done rather than letting newer work kill it.
+    fn submit_repo_check(&mut self, check: Check) {
+        self.background_tasks
+            .submit_uninterruptible(TaskSlot::RepoOpId, move || {
+                let mut commander = new_commander();
+                if !check.snapshot {
+                    commander.ignore_working_copy();
+                }
+                Ok(commander.get_operation_id()?.0)
+            });
     }
 
-    /// Read what operation the repo is at once the last check is an
-    /// [OP_ID_CHECK_INTERVAL] old, or as soon as one was asked for, and
-    /// remember it. Reports whether it differs from what was remembered
-    /// before; a check that is not due yet or that fails reports no
-    /// movement.
-    fn check_repo_moved(&mut self) -> bool {
-        if Instant::now() < self.next_op_id_check {
-            return false;
-        }
-
-        let mut commander = new_commander();
-        if self.ignore_working_copy {
-            commander.ignore_working_copy();
-        }
-
-        let result = commander.get_operation_id();
-        self.next_op_id_check = Instant::now() + OP_ID_CHECK_INTERVAL;
-
-        let operation_id = match result {
-            Ok(operation_id) => operation_id,
+    /// Take what a check found and mark every tab stale if the repo has
+    /// moved since the last one.
+    fn repo_checked(&mut self, output: TaskOutput) {
+        let op_id = match output {
+            Ok(op_id) => Some(OperationId(op_id)),
             Err(err) => {
                 warn!("Could not read what the repo is at: {err}");
-                return false;
+                None
             }
         };
-        self.ignore_working_copy = true;
 
-        let moved = self.repo_op_id.as_ref() != Some(&operation_id);
-        self.repo_op_id = Some(operation_id);
-        moved
+        if self.repo_watch.checked(Instant::now(), op_id) {
+            trace!("The repo has moved, so every tab is stale");
+            for tab in TabId::VALUES {
+                self.get_tab(tab).mark_stale();
+            }
+        }
     }
 
     pub fn get_tab(&mut self, tab: TabId) -> &mut dyn Tab {
@@ -272,9 +299,13 @@ impl<'a> App<'a> {
             }
             AppAction::RefreshTab => {
                 self.get_current_tab().mark_stale();
-                // Whatever asks for this has likely moved the repo, so
-                // the other tabs want checking without delay.
-                self.next_op_id_check = Instant::now();
+                // Whatever asks for this has likely moved the repo, and
+                // snapshotted while at it, so the other tabs want
+                // checking without delay but not another snapshot.
+                self.repo_watch.ask_check(Check {
+                    snapshot: false,
+                    ours: true,
+                });
             }
         }
 
@@ -336,16 +367,28 @@ impl<'a> App<'a> {
             f.render_widget(tabs, header_chunks[0]);
         }
         {
-            let tabs = Paragraph::new("q: quit | ?: help | R: refresh | 1-4: change tab")
-                .fg(Color::DarkGray)
-                .block(
-                    Block::bordered()
-                        .title(" blazingjj ")
-                        .border_type(BorderType::Rounded)
-                        .fg(Color::default()),
-                );
+            // The app is not going to pick it up, so light up the key
+            // that does.
+            let refresh_style = if self.repo_watch.waiting_for_refresh() {
+                Style::default().fg(Color::Red)
+            } else {
+                Style::default()
+            };
 
-            f.render_widget(tabs, header_chunks[1]);
+            let hints = Paragraph::new(Line::from(vec![
+                Span::raw("q: quit | ?: help | "),
+                Span::styled("R: refresh", refresh_style),
+                Span::raw(" | 1-4: change tab"),
+            ]))
+            .fg(Color::DarkGray)
+            .block(
+                Block::bordered()
+                    .title(" blazingjj ")
+                    .border_type(BorderType::Rounded)
+                    .fg(Color::default()),
+            );
+
+            f.render_widget(hints, header_chunks[1]);
         }
 
         self.get_current_tab().draw(f, chunks[1])?;
@@ -387,10 +430,16 @@ impl<'a> App<'a> {
     }
 
     /// Hand the output of a finished task to whoever asked for it
-    fn handle_task_result(&mut self, result: TaskResult) -> Result<()> {
+    fn handle_task_result(&mut self, result: TaskResult) -> Result<Handled> {
         self.background_tasks.finish(&result);
 
         let consumer: Option<&mut dyn Component> = match result.slot {
+            // The check is the app's own, and puts nothing on screen
+            // itself.
+            TaskSlot::RepoOpId => {
+                self.repo_checked(result.output);
+                return Ok(Handled::Nothing);
+            }
             TaskSlot::CommitShow(tab, _)
             | TaskSlot::FileDiff(tab, _)
             | TaskSlot::EvologShow(tab, _) => Some(self.get_tab(tab)),
@@ -403,33 +452,43 @@ impl<'a> App<'a> {
         };
         let Some(consumer) = consumer else {
             trace!("Dropping task result, its consumer is gone");
-            return Ok(());
+            return Ok(Handled::Nothing);
         };
 
         if let Some(app_action) = consumer.task_done(result)? {
             self.handle_action(app_action)?;
         }
-        Ok(())
+        Ok(Handled::Redraw)
     }
 
     /// Process an AppEvent
     #[instrument(level = "trace", skip(self))]
-    pub fn input(&mut self, event: AppEvent) -> Result<bool> {
+    pub fn input(&mut self, event: AppEvent) -> Result<Handled> {
         let event = match event {
             AppEvent::UserInput(event) => event,
             AppEvent::TaskDone(result) => {
                 trace!("Processing task result");
-                self.handle_task_result(result)?;
-                return Ok(false); // do not terminate the app
+                return self.handle_task_result(result);
             }
         };
         trace!("Processing user input");
 
-        // Coming back to the window is worth a check, as the repo may
-        // well have moved while we were not being watched.
-        if event == event::Event::FocusGained {
-            self.request_check_with_snapshot();
-            return Ok(false);
+        match event {
+            // Coming back to the window is worth a check, as the repo
+            // may well have moved while we were not being watched.
+            event::Event::FocusGained => {
+                self.repo_watch.set_focus(true);
+                self.repo_watch.ask_check(Check {
+                    snapshot: true,
+                    ours: false,
+                });
+                return Ok(Handled::Nothing);
+            }
+            event::Event::FocusLost => {
+                self.repo_watch.set_focus(false);
+                return Ok(Handled::Nothing);
+            }
+            _ => {}
         }
 
         if let Some(popup) = self.popup.as_mut() {
@@ -486,7 +545,10 @@ impl<'a> App<'a> {
                                 self.get_current_tab().focus_current()?;
                             }
                             GlobalEvent::Refresh => {
-                                self.request_check_with_snapshot();
+                                self.repo_watch.ask_check(Check {
+                                    snapshot: true,
+                                    ours: true,
+                                });
                                 self.get_current_tab().drop_caches();
                                 self.handle_action(AppAction::RefreshTab)?;
                             }
@@ -502,7 +564,7 @@ impl<'a> App<'a> {
                             GlobalEvent::OpenHelp => self.open_help()?,
                             GlobalEvent::Quit => {
                                 self.running.store(false, Ordering::Relaxed);
-                                return Ok(true);
+                                return Ok(Handled::Stop);
                             }
                             GlobalEvent::Unbound => {}
                         }
@@ -511,6 +573,6 @@ impl<'a> App<'a> {
             };
         }
 
-        Ok(false)
+        Ok(Handled::Redraw)
     }
 }

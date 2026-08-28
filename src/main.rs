@@ -40,6 +40,7 @@ mod event;
 mod keybinds;
 mod ui;
 use crate::app::App;
+use crate::app::Handled;
 use crate::commander::Commander;
 use crate::env::Env;
 use crate::env::set_env;
@@ -163,68 +164,64 @@ fn init_env() -> Result<Env> {
 
 fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
     app.launch_input_channel();
-    let mut idle = false;
+    let mut quiet = false;
     loop {
         let mut changed = app.update()?;
 
         changed |= app.refresh_view()?;
 
-        // Waking up to find that nothing has happened must not cost a
-        // frame, or the app would rebuild the whole display for it.
-        if changed || !idle {
+        // Waking up on a timer to find nothing has happened must not
+        // cost a frame, or an app nobody is touching would rebuild the
+        // whole display every poll interval.
+        if changed || !quiet {
             terminal.draw(|f| {
                 let _ = app.draw(f, f.area());
             })?;
         }
 
         match input_to_app(app)? {
-            Input::Stop => return Ok(()),
-            Input::Handled => idle = false,
-            Input::Idle => idle = true,
+            Handled::Stop => return Ok(()),
+            Handled::Redraw => quiet = false,
+            Handled::Nothing => quiet = true,
         }
     }
 }
 
-/// What waiting for input produced.
-enum Input {
-    /// The app was asked to stop.
-    Stop,
-    /// Events were handled, so what the app shows may have changed.
-    Handled,
-    /// Nothing arrived before the wait ran out.
-    Idle,
-}
-
 /// Let app process all input events in queue before returning.
-fn input_to_app(app: &mut App) -> Result<Input> {
+fn input_to_app(app: &mut App) -> Result<Handled> {
     // Duration::MAX overflows the timespec struct used by kevent/kqueue on macOS,
     // causing EINVAL (os error 22). Use a safe large value instead.
     const FOREVER: Duration = Duration::from_secs(24 * 3600);
 
     // Something that counts up on its own needs a frame every 100ms.
-    // Everything else is delivered on the event channel, so there is
-    // nothing to wake up for.
+    // Otherwise the app may be due to check for work done outside it.
+    // With neither, everything is delivered on the event channel, so
+    // there is nothing to wake up for.
     let wait_duration = if app.needs_periodic_redraw() {
         Duration::from_millis(100)
     } else {
-        FOREVER
+        app.time_until_poll()
+            .map_or(FOREVER, |until| until.min(FOREVER))
     };
 
     // Handle all pending events in the queue.
     // Stop if an event requested the app to stop.
     let mut event = app.try_recv_app_event(wait_duration);
     app.stats.start_time = Instant::now();
-    let handled = event.is_some();
-    let mut should_stop: bool = false;
-    while event.is_some() && !should_stop {
-        should_stop = app.input(event.unwrap())?;
+    let mut changed = false;
+    while let Some(next) = event.take() {
+        match app.input(next)? {
+            Handled::Stop => return Ok(Handled::Stop),
+            Handled::Redraw => changed = true,
+            Handled::Nothing => {}
+        }
         event = app.try_recv_app_event(Duration::ZERO);
     }
 
-    Ok(match (should_stop, handled) {
-        (true, _) => Input::Stop,
-        (false, true) => Input::Handled,
-        (false, false) => Input::Idle,
+    Ok(if changed {
+        Handled::Redraw
+    } else {
+        Handled::Nothing
     })
 }
 
