@@ -19,6 +19,7 @@ use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
 use crate::commander::CommandError;
 use crate::commander::bookmarks::BookmarkLine;
+use crate::commander::jj::NewInsertMode;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
@@ -35,6 +36,7 @@ use crate::ui::Tab;
 use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::MessagePopup;
+use crate::ui::dialog::new_insert;
 use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::ListPane;
 use crate::ui::panel::MouseInput;
@@ -51,7 +53,6 @@ struct ForgetBookmark {
 
 const DELETE_BRANCH_POPUP_ID: u16 = 1;
 const FORGET_BRANCH_POPUP_ID: u16 = 2;
-const NEW_POPUP_ID: u16 = 3;
 const EDIT_POPUP_ID: u16 = 4;
 
 /// Bookmarks tab. Shows bookmarks in main panel and selected bookmark current change in details panel.
@@ -79,6 +80,9 @@ pub struct BookmarksTab {
 
     bookmark_name_popup_tx: std::sync::mpsc::Sender<String>,
     bookmark_name_popup_rx: std::sync::mpsc::Receiver<String>,
+
+    new_insert_tx: std::sync::mpsc::Sender<NewInsertMode>,
+    new_insert_rx: std::sync::mpsc::Receiver<NewInsertMode>,
 
     config: JjConfig,
     keybinds: BookmarksTabKeybinds,
@@ -124,6 +128,7 @@ impl BookmarksTab {
     pub fn new(background_tasks: BackgroundTasks) -> Self {
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
         let (bookmark_name_popup_tx, bookmark_name_popup_rx) = std::sync::mpsc::channel();
+        let (new_insert_tx, new_insert_rx) = std::sync::mpsc::channel();
 
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
@@ -153,6 +158,9 @@ impl BookmarksTab {
 
             bookmark_name_popup_tx,
             bookmark_name_popup_rx,
+
+            new_insert_tx,
+            new_insert_rx,
 
             config,
             keybinds,
@@ -228,6 +236,32 @@ impl BookmarksTab {
             self.show_bookmark();
         }
     }
+
+    /// Create the new change, once the insertion point has been picked.
+    fn execute_new(&mut self, insert: NewInsertMode) -> Result<Option<AppAction>> {
+        let describe = std::mem::take(&mut self.describe_after_new);
+        let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() else {
+            return Ok(None);
+        };
+
+        // Inserting can hit immutable changes, so report the refusal
+        // rather than moving on.
+        let revset = Revset::expression(bookmark.to_string());
+        if let Err(err) = new_commander().run_new_with_insert(revset, insert) {
+            return Ok(Some(AppAction::SetPopup(Box::new(
+                MessagePopup::new("New", format!("{err:#}")).text_align(Alignment::Left),
+            ))));
+        }
+
+        let head = new_commander().get_current_head()?;
+        if describe {
+            return Ok(Some(AppAction::SetPopup(Box::new(DescribePopup::new(
+                head,
+                vec![],
+            )))));
+        }
+        Ok(Some(AppAction::ViewLog(head)))
+    }
 }
 
 impl Tab for BookmarksTab {
@@ -274,6 +308,10 @@ impl Component for BookmarksTab {
     fn update(&mut self) -> Result<Option<AppAction>> {
         self.bookmark_panel.update();
 
+        if let Ok(insert) = self.new_insert_rx.try_recv() {
+            return self.execute_new(insert);
+        }
+
         // Check for popup action
         if let Ok(res) = self.popup_rx.try_recv()
             && res.1.unwrap_or(false)
@@ -302,21 +340,6 @@ impl Component for BookmarksTab {
                                     err.to_string(),
                                 )))));
                             }
-                        }
-                    }
-                }
-                NEW_POPUP_ID => {
-                    if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
-                        new_commander().run_new(Revset::expression(bookmark.to_string()))?;
-                        let head = new_commander().get_current_head()?;
-                        if self.describe_after_new {
-                            self.describe_after_new = false;
-                            return Ok(Some(AppAction::SetPopup(Box::new(DescribePopup::new(
-                                head,
-                                vec![],
-                            )))));
-                        } else {
-                            return Ok(Some(AppAction::ViewLog(head)));
                         }
                     }
                 }
@@ -578,21 +601,14 @@ impl Component for BookmarksTab {
                     if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
                         && bookmark.present
                     {
-                        self.popup = ConfirmDialogState::new(
-                            NEW_POPUP_ID,
-                            Span::styled(" New ", Style::new().bold().cyan()),
-                            Text::from(vec![
-                                Line::from("Are you sure you want to create a new change?"),
-                                Line::from(format!("Bookmark: {bookmark}")),
-                            ]),
-                        );
-                        self.popup
-                            .with_yes_button(ButtonLabel::YES.clone())
-                            .with_no_button(ButtonLabel::NO.clone())
-                            .with_listener(Some(self.popup_tx.clone()))
-                            .open();
-
                         self.describe_after_new = describe;
+                        return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                            Box::new(new_insert(
+                                self.config.clone(),
+                                self.new_insert_tx.clone(),
+                                &bookmark.to_string(),
+                            )),
+                        )));
                     }
                 }
                 BookmarksTabEvent::EditChange { ignore_immutable } => {

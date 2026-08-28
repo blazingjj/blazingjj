@@ -37,11 +37,11 @@ use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::dialog::BookmarkSetPopup;
-use crate::ui::dialog::ChoicePopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
+use crate::ui::dialog::new_insert;
 use crate::ui::dialog::parent_select;
 use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::LogPanel;
@@ -240,27 +240,12 @@ impl<'a> LogTab<'a> {
         } else {
             self.head.change_id.as_str().chars().take(8).collect()
         };
-        let items = vec![
-            (
-                Line::raw(format!("New child of {target}")),
-                NewInsertMode::Child,
-            ),
-            (
-                Line::raw(format!("Insert after {target}")),
-                NewInsertMode::After,
-            ),
-            (
-                Line::raw(format!("Insert before {target}")),
-                NewInsertMode::Before,
-            ),
-        ];
         self.describe_after_new = describe;
         Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-            Box::new(ChoicePopup::new(
+            Box::new(new_insert(
                 self.config.clone(),
                 self.new_insert_tx.clone(),
-                "New",
-                items,
+                &target,
             )),
         )))
     }

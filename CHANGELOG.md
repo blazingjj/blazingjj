@@ -45,7 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mouse as well: the wheel scrolls it, a click picks a parent, and a click
   outside dismisses it
 - The new-change dialog now asks where to put the change, so it can also be
-  inserted before or after the selected one rather than only as its child
+  inserted before or after the selected one rather than only as its child; the
+  bookmarks tab asks the same instead of only confirming
 - Work done outside the app, such as a jj command run in another terminal, is
   picked up on its own while the terminal window has no focus
 - `blazingjj.poll-interval` to set how often the app checks for it, or `0` to
