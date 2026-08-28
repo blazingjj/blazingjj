@@ -33,8 +33,13 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::styles::create_popup_block;
 use crate::ui::utils::centered_rect;
+use crate::ui::utils::centered_rect_fixed;
+use crate::ui::utils::chrome;
 
 const HELP: &str = "j/k: scroll | Enter: select | Escape: cancel";
+
+/// The help line and the border it sits under
+const HELP_HEIGHT: u16 = 2;
 
 pub struct ChoicePopup<T> {
     title: &'static str,
@@ -80,6 +85,36 @@ impl<T> ChoicePopup<T> {
         ));
     }
 
+    /// Every row the list holds, pickable or not
+    fn rows(&self) -> impl Iterator<Item = &Line<'static>> {
+        self.items
+            .iter()
+            .map(|(label, _)| label)
+            .chain(self.footnote.iter())
+    }
+
+    /// Where to put the popup in `area`: centered, and no larger than the
+    /// list needs, up to the share of the screen we are willing to take.
+    fn popup_rect(&self, area: Rect, block: &Block) -> Rect {
+        let max = centered_rect(area, 50, 60);
+        let [extra_width, extra_height] = chrome(block, max);
+
+        let rows_width = self.rows().map(Line::width).max().unwrap_or(0) as u16;
+        // The title sits in the top border, padded by a space on either
+        // side and between the two corners.
+        let title_width = Line::raw(self.title).width() as u16 + 4;
+        let width = rows_width
+            .max(Line::raw(HELP).width() as u16)
+            .saturating_add(extra_width)
+            .max(title_width)
+            .min(max.width);
+        let height = (self.rows().count() as u16 + HELP_HEIGHT)
+            .saturating_add(extra_height)
+            .min(max.height);
+
+        centered_rect_fixed(area, width, height)
+    }
+
     fn close() -> Result<ComponentInputResult> {
         Ok(ComponentInputResult::HandledAction(
             AppAction::PopupCanceled,
@@ -102,21 +137,16 @@ impl<T> ChoicePopup<T> {
 impl<T: Clone> Component for ChoicePopup<T> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let block = create_popup_block(self.title);
-        let area = centered_rect(area, 50, 60);
+        let area = self.popup_rect(area, &block);
         f.render_widget(Clear, area);
         f.render_widget(&block, area);
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Fill(1), Constraint::Length(2)])
+            .constraints([Constraint::Fill(1), Constraint::Length(HELP_HEIGHT)])
             .split(block.inner(area));
 
-        let rows: Vec<Line<'_>> = self
-            .items
-            .iter()
-            .map(|(label, _)| label.clone())
-            .chain(self.footnote.iter().cloned())
-            .collect();
+        let rows: Vec<Line<'static>> = self.rows().cloned().collect();
         let list = List::new(rows)
             .scroll_padding(3)
             .highlight_style(Style::default().bg(self.config.highlight_color()));
@@ -204,6 +234,71 @@ mod tests {
         ));
 
         assert_eq!(rx.try_recv(), Ok(1));
+    }
+
+    #[test]
+    fn the_popup_is_no_larger_than_the_list() {
+        let (popup, _rx) = popup(3, 2);
+        let block = create_popup_block("Choose");
+
+        let rect = popup.popup_rect(Rect::new(0, 0, 100, 40), &block);
+
+        // The five rows, plus the popup border around them
+        assert_eq!(rect.height, 5 + HELP_HEIGHT + 2);
+        // The help line is wider than any row, and the popup borders and
+        // pads around it
+        assert_eq!(rect.width, Line::raw(HELP).width() as u16 + 4);
+    }
+
+    #[test]
+    fn a_row_wider_than_the_help_line_widens_the_popup() {
+        let (tx, _rx) = channel();
+        let label = "x".repeat(Line::raw(HELP).width() + 10);
+        let popup = ChoicePopup::new(
+            JjConfig::default(),
+            tx,
+            "Choose",
+            vec![(Line::raw(label.clone()), 0u8)],
+        );
+
+        let rect = popup.popup_rect(Rect::new(0, 0, 200, 40), &create_popup_block("Choose"));
+
+        assert_eq!(rect.width, label.len() as u16 + 4);
+    }
+
+    #[test]
+    fn a_long_list_stops_at_the_share_of_the_screen_we_take() {
+        let (popup, _rx) = popup(200, 0);
+
+        let rect = popup.popup_rect(Rect::new(0, 0, 100, 40), &create_popup_block("Choose"));
+
+        assert_eq!(rect.height, 24);
+    }
+
+    #[test]
+    fn a_wide_row_stops_at_the_share_of_the_screen_we_take() {
+        let (tx, _rx) = channel();
+        let popup = ChoicePopup::new(
+            JjConfig::default(),
+            tx,
+            "Choose",
+            vec![(Line::raw("x".repeat(200)), 0u8)],
+        );
+
+        let rect = popup.popup_rect(Rect::new(0, 0, 100, 40), &create_popup_block("Choose"));
+
+        assert_eq!(rect.width, 50);
+    }
+
+    #[test]
+    fn a_title_wider_than_the_rows_still_fits_between_the_corners() {
+        let (tx, _rx) = channel();
+        let title = "A rather wordy popup title that outgrows its help line";
+        let popup = ChoicePopup::new(JjConfig::default(), tx, title, vec![(Line::raw("x"), 0u8)]);
+
+        let rect = popup.popup_rect(Rect::new(0, 0, 200, 40), &create_popup_block(title));
+
+        assert_eq!(rect.width, title.len() as u16 + 4);
     }
 
     #[test]
