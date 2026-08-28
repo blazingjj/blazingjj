@@ -252,7 +252,7 @@ impl Commander {
         commit_id: &CommitId,
         diff_format: &DiffFormat,
         ignore_working_copy: bool,
-    ) -> JjCommand<'_> {
+    ) -> JjCommand {
         let mut args = vec![
             "evolog",
             "-r",
@@ -279,7 +279,7 @@ impl Commander {
         commit_id: &CommitId,
         diff_format: &DiffFormat,
         ignore_working_copy: bool,
-    ) -> JjCommand<'_> {
+    ) -> JjCommand {
         let mut args = vec!["show", commit_id.as_str()];
         args.append(&mut diff_format.get_args());
 
