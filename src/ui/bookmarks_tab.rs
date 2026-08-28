@@ -263,28 +263,26 @@ impl BookmarksTab {
         Ok(Some(AppAction::ViewLog(head)))
     }
 
-    fn handle_event(&mut self, event: BookmarksTabEvent) -> Result<ComponentInputResult> {
+    fn handle_event(&mut self, event: BookmarksTabEvent) -> Result<Option<AppAction>> {
         match event {
             BookmarksTabEvent::ToggleShowAll => {
                 self.show_all = !self.show_all;
                 self.refresh_bookmarks();
             }
             BookmarksTabEvent::CreateBookmark => {
-                return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                    Box::new(BookmarkNamePopup::new_create(
-                        self.bookmark_name_popup_tx.clone(),
-                    )),
-                )));
+                return Ok(Some(AppAction::SetPopup(Box::new(
+                    BookmarkNamePopup::new_create(self.bookmark_name_popup_tx.clone()),
+                ))));
             }
             BookmarksTabEvent::RenameBookmark => {
                 if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
                     let old_name = bookmark.name.clone();
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(BookmarkNamePopup::new_rename(
+                    return Ok(Some(AppAction::SetPopup(Box::new(
+                        BookmarkNamePopup::new_rename(
                             old_name,
                             self.bookmark_name_popup_tx.clone(),
-                        )),
-                    )));
+                        ),
+                    ))));
                 }
             }
             BookmarksTabEvent::DeleteBookmark => {
@@ -334,7 +332,7 @@ impl BookmarksTab {
                     && bookmark.present
                 {
                     new_commander().track_bookmark(bookmark)?;
-                    return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
+                    return Ok(Some(AppAction::RefreshTab));
                 }
             }
             BookmarksTabEvent::UntrackBookmark => {
@@ -343,7 +341,7 @@ impl BookmarksTab {
                     && bookmark.present
                 {
                     new_commander().untrack_bookmark(bookmark)?;
-                    return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
+                    return Ok(Some(AppAction::RefreshTab));
                 }
             }
             BookmarksTabEvent::NewChange { describe } => {
@@ -351,13 +349,11 @@ impl BookmarksTab {
                     && bookmark.present
                 {
                     self.describe_after_new = describe;
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(new_insert(
-                            self.config.clone(),
-                            self.new_insert_tx.clone(),
-                            &bookmark.to_string(),
-                        )),
-                    )));
+                    return Ok(Some(AppAction::SetPopup(Box::new(new_insert(
+                        self.config.clone(),
+                        self.new_insert_tx.clone(),
+                        &bookmark.to_string(),
+                    )))));
                 }
             }
             BookmarksTabEvent::EditChange { ignore_immutable } => {
@@ -367,12 +363,10 @@ impl BookmarksTab {
                     if new_commander().check_revision_immutable(&bookmark.to_string())?
                         && !ignore_immutable
                     {
-                        return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                            Box::new(MessagePopup::new(
-                                "Edit",
-                                "The change cannot be edited because it is immutable.",
-                            )),
-                        )));
+                        return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
+                            "Edit",
+                            "The change cannot be edited because it is immutable.",
+                        )))));
                     }
 
                     self.popup = ConfirmDialogState::new(
@@ -395,15 +389,16 @@ impl BookmarksTab {
                 if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
                     && bookmark.present
                 {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::ViewLog(
+                    return Ok(Some(AppAction::ViewLog(
                         new_commander().get_bookmark_head(bookmark)?,
                     )));
                 }
             }
-            BookmarksTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
+            // Not an operation of its own; the key handler deals with it.
+            BookmarksTabEvent::Unbound => {}
         }
 
-        Ok(ComponentInputResult::Handled)
+        Ok(None)
     }
 }
 
@@ -658,7 +653,12 @@ impl Component for BookmarksTab {
                 }
             }
 
-            return self.handle_event(self.keybinds.match_event(key));
+            return match self.keybinds.match_event(key) {
+                // Not the tab's to act on, so whoever else wants the key
+                // is welcome to it.
+                BookmarksTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
+                event => Ok(self.handle_event(event)?.into()),
+            };
         }
 
         if let Event::Mouse(mouse) = event {

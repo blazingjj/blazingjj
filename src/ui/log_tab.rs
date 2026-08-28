@@ -233,7 +233,7 @@ each other in code:
 * `execute_<action>` - Perform some action after the dialog closed.
 */
 impl<'a> LogTab<'a> {
-    fn handle_new(&mut self, describe: bool) -> Result<ComponentInputResult> {
+    fn handle_new(&mut self, describe: bool) -> Result<Option<AppAction>> {
         let mark_count = self.log_panel.marked_heads.len();
         let target: String = if mark_count > 0 {
             format!("the {mark_count} marked changes")
@@ -241,13 +241,11 @@ impl<'a> LogTab<'a> {
             self.head.change_id.as_str().chars().take(8).collect()
         };
         self.describe_after_new = describe;
-        Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-            Box::new(new_insert(
-                self.config.clone(),
-                self.new_insert_tx.clone(),
-                &target,
-            )),
-        )))
+        Ok(Some(AppAction::SetPopup(Box::new(new_insert(
+            self.config.clone(),
+            self.new_insert_tx.clone(),
+            &target,
+        )))))
     }
 
     // Execute new command, after the insertion point has been picked
@@ -277,15 +275,13 @@ impl<'a> LogTab<'a> {
         ])))
     }
 
-    fn handle_abandon(&mut self) -> Result<ComponentInputResult> {
+    fn handle_abandon(&mut self) -> Result<Option<AppAction>> {
         // Cannot abandon immutable changes
         if self.head.immutable {
-            return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                Box::new(MessagePopup::new(
-                    "Abandon",
-                    "The change cannot be abandoned because it is immutable.",
-                )),
-            )));
+            return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
+                "Abandon",
+                "The change cannot be abandoned because it is immutable.",
+            )))));
         }
 
         // Ask for confirmation by launching a popup
@@ -313,7 +309,7 @@ impl<'a> LogTab<'a> {
             .with_no_button(ButtonLabel::NO.clone())
             .with_listener(Some(self.popup_tx.clone()))
             .open();
-        Ok(ComponentInputResult::Handled)
+        Ok(None)
     }
 
     // Execute abandon command, after self.popup returned
@@ -350,11 +346,12 @@ impl<'a> LogTab<'a> {
 
     /// Move the selection to the parent of the current head, asking which
     /// one unless there is a single parent to go to.
-    fn handle_goto_parent(&mut self) -> Result<ComponentInputResult> {
+    fn handle_goto_parent(&mut self) -> Result<Option<AppAction>> {
         let message = |text: &str| {
-            Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                Box::new(MessagePopup::new("Go to parent", text)),
-            )))
+            Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
+                "Go to parent",
+                text,
+            )))))
         };
 
         let parents = match new_commander().get_commit_parents(&self.head.commit_id) {
@@ -377,20 +374,18 @@ impl<'a> LogTab<'a> {
             0 => message("The log holds no parent of this change"),
             1 => {
                 self.set_head(parents.remove(0).head);
-                Ok(ComponentInputResult::Handled)
+                Ok(None)
             }
-            _ => Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                Box::new(parent_select(
-                    self.config.clone(),
-                    self.goto_parent_tx.clone(),
-                    &parents,
-                    &out_of_view,
-                )),
-            ))),
+            _ => Ok(Some(AppAction::SetPopup(Box::new(parent_select(
+                self.config.clone(),
+                self.goto_parent_tx.clone(),
+                &parents,
+                &out_of_view,
+            ))))),
         }
     }
 
-    fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<ComponentInputResult> {
+    fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<Option<AppAction>> {
         match log_tab_event {
             LogTabEvent::ScrollToBottom => {
                 self.log_panel.scroll_relative(isize::MAX);
@@ -406,7 +401,7 @@ impl<'a> LogTab<'a> {
             }
             LogTabEvent::Duplicate => {
                 let _ = new_commander().run_duplicate(&self.head.change_id.to_string());
-                return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
+                return Ok(Some(AppAction::RefreshTab));
             }
 
             LogTabEvent::CreateNew { describe } => {
@@ -414,9 +409,10 @@ impl<'a> LogTab<'a> {
             }
             LogTabEvent::Rebase => {
                 let source_change = new_commander().get_current_head()?;
-                return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                    Box::new(RebasePopup::new(source_change, self.head.clone())),
-                )));
+                return Ok(Some(AppAction::SetPopup(Box::new(RebasePopup::new(
+                    source_change,
+                    self.head.clone(),
+                )))));
             }
             LogTabEvent::Squash { ignore_immutable } => {
                 let current_head = new_commander().get_current_head()?;
@@ -427,12 +423,10 @@ impl<'a> LogTab<'a> {
                             parent
                         }
                         Err(_) => {
-                            return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                                Box::new(MessagePopup::new(
-                                    "Squash",
-                                    "Cannot squash onto current change",
-                                )),
-                            )));
+                            return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
+                                "Squash",
+                                "Cannot squash onto current change",
+                            )))));
                         }
                     }
                 } else {
@@ -441,12 +435,10 @@ impl<'a> LogTab<'a> {
                 };
 
                 if target.immutable && !ignore_immutable {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(MessagePopup::new(
-                            "Squash",
-                            "Cannot squash onto immutable change",
-                        )),
-                    )));
+                    return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
+                        "Squash",
+                        "Cannot squash onto immutable change",
+                    )))));
                 }
 
                 let description = if self.squash_target.is_some() {
@@ -475,12 +467,10 @@ impl<'a> LogTab<'a> {
             }
             LogTabEvent::EditChange { ignore_immutable } => {
                 if self.head.immutable && !ignore_immutable {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(MessagePopup::new(
-                            " Edit ",
-                            "The change cannot be edited because it is immutable.",
-                        )),
-                    )));
+                    return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
+                        " Edit ",
+                        "The change cannot be edited because it is immutable.",
+                    )))));
                 }
 
                 let mut lines = vec![
@@ -508,30 +498,27 @@ impl<'a> LogTab<'a> {
             LogTabEvent::Absorb => {
                 new_commander().run_absorb(&self.head.commit_id)?;
                 self.set_head(new_commander().get_head_latest(&self.head)?);
-                return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                    vec![
-                        AppAction::ChangeHead(self.head.clone()),
-                        AppAction::RefreshTab,
-                    ],
-                )));
+                return Ok(Some(AppAction::Multiple(vec![
+                    AppAction::ChangeHead(self.head.clone()),
+                    AppAction::RefreshTab,
+                ])));
             }
             LogTabEvent::Describe => {
                 if self.head.immutable {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(MessagePopup::new(
-                            "Describe",
-                            "The change cannot be described because it is immutable.",
-                        )),
-                    )));
+                    return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
+                        "Describe",
+                        "The change cannot be described because it is immutable.",
+                    )))));
                 } else {
                     let lines = new_commander()
                         .get_commit_description(&self.head.commit_id)?
                         .split("\n")
                         .map(|line| line.to_string())
                         .collect();
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(DescribePopup::new(self.head.clone(), lines)),
-                    )));
+                    return Ok(Some(AppAction::SetPopup(Box::new(DescribePopup::new(
+                        self.head.clone(),
+                        lines,
+                    )))));
                 }
             }
             LogTabEvent::EditRevset => {
@@ -545,26 +532,20 @@ impl<'a> LogTab<'a> {
                 );
                 textarea.move_cursor(CursorMove::End);
                 self.log_revset_textarea = Some(textarea);
-                return Ok(ComponentInputResult::Handled);
+                return Ok(None);
             }
             LogTabEvent::SetBookmark => {
-                return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                    Box::new(BookmarkSetPopup::new(
-                        self.config.clone(),
-                        Some(self.head.change_id.clone()),
-                        self.head.commit_id.clone(),
-                    )),
-                )));
+                return Ok(Some(AppAction::SetPopup(Box::new(BookmarkSetPopup::new(
+                    self.config.clone(),
+                    Some(self.head.change_id.clone()),
+                    self.head.commit_id.clone(),
+                )))));
             }
             LogTabEvent::OpenFiles => {
-                return Ok(ComponentInputResult::HandledAction(AppAction::ViewFiles(
-                    self.head.clone(),
-                )));
+                return Ok(Some(AppAction::ViewFiles(self.head.clone())));
             }
             LogTabEvent::OpenEvolog => {
-                return Ok(ComponentInputResult::HandledAction(AppAction::ViewEvolog(
-                    self.head.clone(),
-                )));
+                return Ok(Some(AppAction::ViewEvolog(self.head.clone())));
             }
             LogTabEvent::CopyChangeId => {
                 // Copy change ID to clipboard using crossterm
@@ -588,14 +569,14 @@ impl<'a> LogTab<'a> {
             } => {
                 let commit_id = self.head.commit_id.clone();
 
-                return Ok(ComponentInputResult::HandledAction(self.run_with_loader(
+                return Ok(Some(self.run_with_loader(
                     "Pushing",
                     TaskSlot::GitPush,
                     move || Ok(new_commander().git_push(all_bookmarks, allow_new, &commit_id)?),
                 )));
             }
             LogTabEvent::Fetch { all_remotes } => {
-                return Ok(ComponentInputResult::HandledAction(self.run_with_loader(
+                return Ok(Some(self.run_with_loader(
                     "Fetching",
                     TaskSlot::GitFetch,
                     move || Ok(new_commander().git_fetch(all_remotes)?),
@@ -605,12 +586,14 @@ impl<'a> LogTab<'a> {
                 return self.handle_goto_parent();
             }
 
+            // Not operations of their own; the key handler deals with
+            // them where they mean something.
             LogTabEvent::Save
             | LogTabEvent::Cancel
             | LogTabEvent::ClosePopup
-            | LogTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
+            | LogTabEvent::Unbound => {}
         };
-        Ok(ComponentInputResult::Handled)
+        Ok(None)
     }
 }
 
@@ -843,8 +826,15 @@ impl Component for LogTab<'_> {
                 }
             }
 
-            let log_tab_event = self.keybinds.match_event(key);
-            return self.handle_event(log_tab_event);
+            return match self.keybinds.match_event(key) {
+                // Not something the tab acts on here, so whoever else
+                // wants the key is welcome to it.
+                LogTabEvent::Save
+                | LogTabEvent::Cancel
+                | LogTabEvent::ClosePopup
+                | LogTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
+                event => Ok(self.handle_event(event)?.into()),
+            };
         }
 
         if let Event::Mouse(mouse_event) = event {

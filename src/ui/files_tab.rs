@@ -257,31 +257,31 @@ impl FilesTab {
         Ok(())
     }
 
-    fn handle_event(&mut self, event: FilesTabEvent) -> Result<ComponentInputResult> {
+    fn handle_event(&mut self, event: FilesTabEvent) -> Result<Option<AppAction>> {
         match event {
             FilesTabEvent::Untrack => {
                 // this works even for deleted files because jj doesn't return error in that case
                 if self.untrack_file().is_err() {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(MessagePopup::new(
-                            "Can't untrack file",
-                            "Make sure that file is ignored",
-                        )),
-                    )));
+                    return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
+                        "Can't untrack file",
+                        "Make sure that file is ignored",
+                    )))));
                 }
                 self.follow_current_head()?;
-                Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab))
+                Ok(Some(AppAction::RefreshTab))
             }
             FilesTabEvent::Restore => {
                 if let Err(err) = self.restore_file() {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(MessagePopup::new("Can't restore file", err.to_string())),
-                    )));
+                    return Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
+                        "Can't restore file",
+                        err.to_string(),
+                    )))));
                 }
                 self.follow_current_head()?;
-                Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab))
+                Ok(Some(AppAction::RefreshTab))
             }
-            FilesTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
+            // Not an operation of its own; the key handler deals with it.
+            FilesTabEvent::Unbound => Ok(None),
         }
     }
 
@@ -485,7 +485,12 @@ impl Component for FilesTab {
                 }
             }
 
-            return self.handle_event(self.keybinds.match_event(key));
+            return match self.keybinds.match_event(key) {
+                // Not the tab's to act on, so whoever else wants the key
+                // is welcome to it.
+                FilesTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
+                event => Ok(self.handle_event(event)?.into()),
+            };
         }
 
         if let Event::Mouse(mouse) = event {

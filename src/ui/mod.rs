@@ -49,6 +49,15 @@ pub enum ComponentInputResult {
     Dismissed,
 }
 
+impl From<Option<AppAction>> for ComponentInputResult {
+    fn from(app_action: Option<AppAction>) -> Self {
+        match app_action {
+            Some(app_action) => ComponentInputResult::HandledAction(app_action),
+            None => ComponentInputResult::Handled,
+        }
+    }
+}
+
 /// How far to move the selection in a tab's main panel.
 #[derive(Debug, Clone, Copy)]
 pub enum Scroll {
