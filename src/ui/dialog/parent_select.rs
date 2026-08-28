@@ -1,32 +1,18 @@
-use anyhow::Result;
-use ratatui::Frame;
-use ratatui::crossterm::event::Event;
-use ratatui::crossterm::event::KeyCode;
-use ratatui::layout::Alignment;
-use ratatui::layout::Constraint;
-use ratatui::layout::Direction;
-use ratatui::layout::Layout;
-use ratatui::layout::Rect;
+/*! The parents of a change, as the choices for moving the log's
+selection onto one of them.
+*/
+
+use std::sync::mpsc::Sender;
+
 use ratatui::style::Color;
 use ratatui::style::Style;
-use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
-use ratatui::widgets::Block;
-use ratatui::widgets::BorderType;
-use ratatui::widgets::Borders;
-use ratatui::widgets::Clear;
-use ratatui::widgets::List;
-use ratatui::widgets::ListState;
-use ratatui::widgets::Paragraph;
 
+use crate::commander::log::Head;
 use crate::commander::log::Parent;
 use crate::env::JjConfig;
-use crate::ui::AppAction;
-use crate::ui::Component;
-use crate::ui::ComponentInputResult;
-use crate::ui::styles::create_popup_block;
-use crate::ui::utils::centered_rect;
+use crate::ui::dialog::ChoicePopup;
 
 /// The row a parent gets in the list, dimmed when it cannot be selected.
 fn parent_line(parent: &Parent, dimmed: bool) -> Line<'static> {
@@ -47,131 +33,52 @@ fn parent_line(parent: &Parent, dimmed: bool) -> Line<'static> {
     Line::from(vec![Span::styled(change_id, change_id_style), description])
 }
 
-pub struct ParentSelectPopup {
-    parents: Vec<Parent>,
-    /// The parents the log does not hold. We list them so that the merge
-    /// is shown in full, but they cannot be selected.
-    out_of_view: Vec<Parent>,
-    list_state: ListState,
-    list_height: u16,
+/// A popup offering the `parents` to pick from. Those `out_of_view` are
+/// listed underneath so that the merge is shown in full, but cannot be
+/// picked.
+pub fn parent_select(
     config: JjConfig,
-}
+    tx: Sender<Head>,
+    parents: &[Parent],
+    out_of_view: &[Parent],
+) -> ChoicePopup<Head> {
+    let items = parents
+        .iter()
+        .map(|parent| (parent_line(parent, false), parent.head.clone()))
+        .collect();
+    let popup = ChoicePopup::new(config, tx, "Select parent", items);
 
-impl ParentSelectPopup {
-    pub fn new(parents: Vec<Parent>, out_of_view: Vec<Parent>, config: JjConfig) -> Self {
-        Self {
-            parents,
-            out_of_view,
-            list_state: ListState::default().with_selected(Some(0)),
-            list_height: 0,
-            config,
-        }
+    if out_of_view.is_empty() {
+        return popup;
     }
 
-    fn scroll(&mut self, scroll: isize) {
-        self.list_state.select(Some(
-            self.list_state
-                .selected()
-                .map(|selected| selected.saturating_add_signed(scroll))
-                .unwrap_or(0)
-                .min(self.parents.len().saturating_sub(1)),
-        ));
-    }
-}
+    let mut footnote = vec![
+        Line::default(),
+        Line::from(Span::styled(
+            " ── Not in the log view ──",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+    footnote.extend(out_of_view.iter().map(|parent| parent_line(parent, true)));
 
-impl Component for ParentSelectPopup {
-    fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        let block = create_popup_block("Select parent");
-        let area = centered_rect(area, 50, 60);
-        f.render_widget(Clear, area);
-        f.render_widget(&block, area);
-
-        let popup_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Fill(1), Constraint::Length(2)])
-            .split(block.inner(area));
-
-        let mut list_items: Vec<Line<'_>> = self
-            .parents
-            .iter()
-            .map(|parent| parent_line(parent, false))
-            .collect();
-
-        if !self.out_of_view.is_empty() {
-            list_items.push(Line::default());
-            list_items.push(Line::from(Span::styled(
-                " ── Not in the log view ──",
-                Style::default().fg(Color::DarkGray),
-            )));
-            list_items.extend(
-                self.out_of_view
-                    .iter()
-                    .map(|parent| parent_line(parent, true)),
-            );
-        }
-
-        let list = List::new(list_items)
-            .scroll_padding(3)
-            .highlight_style(Style::default().bg(self.config.highlight_color()));
-
-        f.render_stateful_widget(list, popup_chunks[0], &mut self.list_state);
-        self.list_height = popup_chunks[0].height;
-
-        let help = Paragraph::new(vec!["j/k: scroll | Enter: select | Escape: cancel".into()])
-            .fg(Color::DarkGray)
-            .alignment(Alignment::Center)
-            .block(
-                Block::default()
-                    .borders(Borders::TOP)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::DarkGray)),
-            );
-
-        f.render_widget(help, popup_chunks[1]);
-        Ok(())
-    }
-
-    fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
-        if let Event::Key(key) = event {
-            match key.code {
-                KeyCode::Char('j') | KeyCode::Down => self.scroll(1),
-                KeyCode::Char('k') | KeyCode::Up => self.scroll(-1),
-                KeyCode::Char('J') => self.scroll(self.list_height as isize / 2),
-                KeyCode::Char('K') => self.scroll((self.list_height as isize / 2).saturating_neg()),
-                KeyCode::Enter => {
-                    if let Some(parent) = self
-                        .list_state
-                        .selected()
-                        .and_then(|index| self.parents.get(index))
-                    {
-                        // Moving the selection leaves the repo as it is, so
-                        // we take the popup down without a refresh.
-                        return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                            vec![
-                                AppAction::PopupCanceled,
-                                AppAction::ViewLog(parent.head.clone()),
-                            ],
-                        )));
-                    }
-                }
-                KeyCode::Char('q') | KeyCode::Esc => {
-                    return Ok(ComponentInputResult::HandledAction(
-                        AppAction::PopupCanceled,
-                    ));
-                }
-                _ => {}
-            }
-        }
-        Ok(ComponentInputResult::Handled)
-    }
+    popup.footnote(footnote)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc::Receiver;
+    use std::sync::mpsc::channel;
+
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
+    use ratatui::crossterm::event::Event;
+    use ratatui::crossterm::event::KeyCode;
+
     use super::*;
     use crate::commander::ids::ChangeId;
     use crate::commander::ids::CommitId;
-    use crate::commander::log::Head;
+    use crate::ui::Component;
 
     fn parents(range: std::ops::Range<usize>) -> Vec<Parent> {
         range
@@ -187,60 +94,115 @@ mod tests {
             .collect()
     }
 
-    fn popup(count: usize, out_of_view: usize) -> ParentSelectPopup {
-        ParentSelectPopup::new(
-            parents(0..count),
-            parents(count..count + out_of_view),
-            JjConfig::default(),
+    fn popup(in_view: usize, out_of_view: usize) -> (ChoicePopup<Head>, Receiver<Head>) {
+        let (tx, rx) = channel();
+        let all = parents(0..in_view + out_of_view);
+
+        (
+            parent_select(JjConfig::default(), tx, &all[..in_view], &all[in_view..]),
+            rx,
         )
     }
 
-    fn press(popup: &mut ParentSelectPopup, key: KeyCode) -> ComponentInputResult {
+    /// What the popup puts on a 100x40 screen
+    fn render(popup: &mut ChoicePopup<Head>) -> Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).expect("the test backend");
+        terminal
+            .draw(|f| popup.draw(f, f.area()).expect("the popup draws"))
+            .expect("the frame is drawn");
+
+        terminal.backend().buffer().clone()
+    }
+
+    fn rows(buffer: &Buffer) -> Vec<String> {
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    fn press(popup: &mut ChoicePopup<Head>, key: KeyCode) {
         popup
             .input(Event::Key(key.into()))
-            .expect("the popup handles key presses")
+            .expect("the popup handles key presses");
     }
 
     #[test]
-    fn scrolling_is_clamped_to_the_parents_in_view() {
-        let mut popup = popup(3, 2);
+    fn picking_a_parent_sends_its_head() {
+        let (mut popup, rx) = popup(3, 0);
+
+        press(&mut popup, KeyCode::Char('j'));
+        press(&mut popup, KeyCode::Enter);
+
+        assert_eq!(
+            rx.try_recv().map(|head| head.change_id.0),
+            Ok("change1".into())
+        );
+    }
+
+    #[test]
+    fn parents_out_of_view_are_listed_below_a_separator() {
+        let (mut popup, _rx) = popup(2, 1);
+
+        let buffer = render(&mut popup);
+        let listed: Vec<String> = rows(&buffer)
+            .into_iter()
+            .filter(|row| row.contains("change") || row.contains("Not in the log view"))
+            .collect();
+
+        assert!(listed[0].contains("change0"), "{listed:?}");
+        assert!(listed[1].contains("change1"), "{listed:?}");
+        assert!(
+            listed[2].contains("── Not in the log view ──"),
+            "{listed:?}"
+        );
+        assert!(listed[3].contains("change2"), "{listed:?}");
+    }
+
+    #[test]
+    fn parents_out_of_view_cannot_be_picked() {
+        let (mut popup, rx) = popup(2, 2);
 
         for _ in 0..5 {
             press(&mut popup, KeyCode::Char('j'));
         }
-        assert_eq!(popup.list_state.selected(), Some(2));
+        press(&mut popup, KeyCode::Enter);
 
-        for _ in 0..5 {
-            press(&mut popup, KeyCode::Char('k'));
-        }
-        assert_eq!(popup.list_state.selected(), Some(0));
+        assert_eq!(
+            rx.try_recv().map(|head| head.change_id.0),
+            Ok("change1".into())
+        );
     }
 
     #[test]
-    fn enter_shows_the_selected_parent_in_the_log() {
-        let mut popup = popup(3, 0);
+    fn nothing_is_listed_below_the_parents_when_they_are_all_in_view() {
+        let (mut popup, _rx) = popup(2, 0);
 
-        press(&mut popup, KeyCode::Char('j'));
+        let buffer = render(&mut popup);
 
-        let ComponentInputResult::HandledAction(AppAction::Multiple(actions)) =
-            press(&mut popup, KeyCode::Enter)
-        else {
-            panic!("selecting a parent should take the popup down and show it");
-        };
-        let [AppAction::PopupCanceled, AppAction::ViewLog(head)] = actions.as_slice() else {
-            panic!("selecting a parent should take the popup down and show it");
-        };
-
-        assert_eq!(head.commit_id, CommitId("commit1".to_owned()));
+        assert!(
+            !rows(&buffer)
+                .iter()
+                .any(|row| row.contains("Not in the log view"))
+        );
     }
 
     #[test]
-    fn cancelling_selects_no_parent() {
-        let mut popup = popup(3, 0);
+    fn a_parent_without_a_description_says_so() {
+        let (tx, _rx) = channel();
+        let mut parent = parents(0..1);
+        parent[0].description = String::new();
+        let mut popup = parent_select(JjConfig::default(), tx, &parent, &[]);
 
-        assert!(matches!(
-            press(&mut popup, KeyCode::Esc),
-            ComponentInputResult::HandledAction(AppAction::PopupCanceled)
-        ));
+        let buffer = render(&mut popup);
+
+        assert!(
+            rows(&buffer)
+                .iter()
+                .any(|row| row.contains("change0 (no description)"))
+        );
     }
 }

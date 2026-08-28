@@ -36,7 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The dedicated `Menu` key can now be used in keybindings, spelled `menu`
 - Keybinding to move the log tab selection to the parent commit (`-`), asking
   which one when a merge has more than one parent in the log view; parents
-  outside it are listed alongside but cannot be selected
+  outside it are listed alongside but cannot be selected. The popup takes the
+  mouse as well: the wheel scrolls it, a click picks a parent, and a click
+  outside dismisses it
 
 ### Changed
 
