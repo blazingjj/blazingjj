@@ -81,6 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Switching tabs right after an operation no longer briefly shows what they
+  held before it
 - Going to the current change (`@`) now shows it right away, rather than
   leaving the tab on the change it was on until the view is refreshed by hand
 - Creating a change from the bookmarks tab now brings the view up to date,

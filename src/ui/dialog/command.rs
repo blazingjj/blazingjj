@@ -114,7 +114,7 @@ impl Component for CommandPopup<'_> {
                                 MessagePopup::new(format!("jj {command_input}"), output_str)
                                     .text_align(Alignment::Left),
                             )),
-                            AppAction::RefreshTab,
+                            AppAction::MarkTabsStale,
                         ],
                     )));
                 }

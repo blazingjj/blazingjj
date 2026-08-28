@@ -244,9 +244,14 @@ impl<'a> App<'a> {
 
         if self.repo_watch.checked(Instant::now(), op_id) {
             trace!("The repo has moved, so every tab is stale");
-            for tab in TabId::VALUES {
-                self.get_tab(tab).mark_stale();
-            }
+            self.mark_all_stale();
+        }
+    }
+
+    /// Every tab is behind on what it shows, whoever moved the repo.
+    fn mark_all_stale(&mut self) {
+        for tab in TabId::VALUES {
+            self.get_tab(tab).mark_stale();
         }
     }
 
@@ -292,7 +297,7 @@ impl<'a> App<'a> {
             }
             AppAction::PopupDone => {
                 self.popup = None;
-                self.handle_action(AppAction::RefreshTab)?;
+                self.handle_action(AppAction::MarkTabsStale)?;
             }
             AppAction::ClosePopup => {
                 self.popup = None;
@@ -310,11 +315,11 @@ impl<'a> App<'a> {
                     self.handle_action(app_action)?;
                 }
             }
-            AppAction::RefreshTab => {
-                self.get_current_tab().mark_stale();
-                // Whatever asks for this has likely moved the repo, and
-                // snapshotted while at it, so the other tabs want
-                // checking without delay but not another snapshot.
+            AppAction::MarkTabsStale => {
+                self.mark_all_stale();
+                // We moved the repo ourselves and snapshotted while at
+                // it, so the check is only there to keep the operation
+                // id we compare against up to date.
                 self.repo_watch.ask_check(Check {
                     snapshot: false,
                     ours: true,
@@ -576,7 +581,10 @@ impl<'a> App<'a> {
                                     ours: true,
                                 });
                                 self.get_current_tab().drop_caches();
-                                self.handle_action(AppAction::RefreshTab)?;
+                                // The check above is the one we want, so
+                                // there is nothing left but to have every
+                                // tab read itself again.
+                                self.mark_all_stale();
                             }
                             GlobalEvent::NextTab => self.set_next_tab_with_offset(1),
                             GlobalEvent::PrevTab => self.set_next_tab_with_offset(-1),

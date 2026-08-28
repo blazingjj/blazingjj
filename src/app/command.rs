@@ -122,7 +122,7 @@ impl Command {
             }
             Command::Duplicate(revset) => {
                 let _ = new_commander().run_duplicate(revset.as_str());
-                Ok(Some(AppAction::RefreshTab))
+                Ok(Some(AppAction::MarkTabsStale))
             }
             Command::Absorb(head) => {
                 new_commander().run_absorb(&head.commit_id)?;
@@ -198,7 +198,7 @@ impl Command {
                 if moved_to != selected {
                     actions.push(AppAction::ChangeHead(moved_to));
                 }
-                actions.push(AppAction::RefreshTab);
+                actions.push(AppAction::MarkTabsStale);
 
                 Ok(Some(AppAction::Multiple(actions)))
             }
@@ -206,7 +206,7 @@ impl Command {
                 new_commander().run_describe(&head.commit_id, &description)?;
                 Ok(Some(AppAction::Multiple(vec![
                     AppAction::ViewLog(new_commander().get_head_latest(&head)?),
-                    AppAction::RefreshTab,
+                    AppAction::MarkTabsStale,
                 ])))
             }
             Command::Rebase {
@@ -223,7 +223,7 @@ impl Command {
                 ) {
                     return Ok(Some(message("Error", err.to_string())));
                 }
-                Ok(Some(AppAction::RefreshTab))
+                Ok(Some(AppAction::MarkTabsStale))
             }
             Command::Push {
                 commit_id,
@@ -261,7 +261,7 @@ impl Command {
             Command::CreateBookmark(name) => match new_commander().create_bookmark(&name) {
                 Ok(_) => Ok(Some(AppAction::Multiple(vec![
                     AppAction::ViewBookmark(name),
-                    AppAction::RefreshTab,
+                    AppAction::MarkTabsStale,
                 ]))),
                 // Put the question back with what was typed, since a
                 // refused name is usually one to correct rather than one
@@ -274,7 +274,7 @@ impl Command {
                 match new_commander().rename_bookmark(&old_name, &new_name) {
                     Ok(()) => Ok(Some(AppAction::Multiple(vec![
                         AppAction::ViewBookmark(new_name),
-                        AppAction::RefreshTab,
+                        AppAction::MarkTabsStale,
                     ]))),
                     Err(err) => Ok(Some(AppAction::SetPopup(Box::new(
                         BookmarkNamePopup::refused(
@@ -287,23 +287,23 @@ impl Command {
             }
             Command::SetBookmark { name, commit_id } => {
                 new_commander().set_bookmark_commit(&name, &commit_id)?;
-                Ok(Some(AppAction::RefreshTab))
+                Ok(Some(AppAction::MarkTabsStale))
             }
             Command::DeleteBookmark(name) => match new_commander().delete_bookmark(&name) {
-                Ok(()) => Ok(Some(AppAction::RefreshTab)),
+                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
                 Err(err) => Ok(Some(message("Delete error", err.to_string()))),
             },
             Command::ForgetBookmark(name) => match new_commander().forget_bookmark(&name) {
-                Ok(()) => Ok(Some(AppAction::RefreshTab)),
+                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
                 Err(err) => Ok(Some(message("Forget error", err.to_string()))),
             },
             Command::TrackBookmark(bookmark) => {
                 new_commander().track_bookmark(&bookmark)?;
-                Ok(Some(AppAction::RefreshTab))
+                Ok(Some(AppAction::MarkTabsStale))
             }
             Command::UntrackBookmark(bookmark) => {
                 new_commander().untrack_bookmark(&bookmark)?;
-                Ok(Some(AppAction::RefreshTab))
+                Ok(Some(AppAction::MarkTabsStale))
             }
             Command::ShowBookmarkInLog(bookmark) => Ok(Some(AppAction::ViewLog(
                 new_commander().get_bookmark_head(&bookmark)?,
@@ -511,7 +511,7 @@ fn show_change(change: Head) -> AppAction {
     AppAction::Multiple(vec![
         AppAction::ViewLog(change.clone()),
         AppAction::ChangeHead(change),
-        AppAction::RefreshTab,
+        AppAction::MarkTabsStale,
     ])
 }
 
@@ -520,7 +520,7 @@ fn show_change(change: Head) -> AppAction {
 fn show_working_copy_files() -> Result<AppAction> {
     Ok(AppAction::Multiple(vec![
         AppAction::ViewFiles(new_commander().get_current_head()?),
-        AppAction::RefreshTab,
+        AppAction::MarkTabsStale,
     ]))
 }
 

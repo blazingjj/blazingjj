@@ -40,7 +40,9 @@ pub enum AppAction {
     /// them.
     ClearLogMarks,
     Multiple(Vec<AppAction>),
-    RefreshTab,
+    /// Have every tab read itself again before it is next drawn, the
+    /// operation that has just run having moved the repo.
+    MarkTabsStale,
     /// Run this operation and do whatever it asks for in turn. Whoever
     /// raises one has named it in full, so the app can run it without
     /// asking anything of the component the request came from.
