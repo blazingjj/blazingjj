@@ -33,5 +33,5 @@ pub fn new_insert(
         ),
     ];
 
-    ChoicePopup::new(config, tx, "New", items)
+    ChoicePopup::new(config, tx, None, "New", items)
 }
