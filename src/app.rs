@@ -40,6 +40,7 @@ use crate::ui::Tab;
 use crate::ui::bookmarks_tab::BookmarksTab;
 use crate::ui::dialog::CommandPopup;
 use crate::ui::dialog::HelpPopup;
+use crate::ui::evolog_tab::EvologTab;
 use crate::ui::files_tab::FilesTab;
 use crate::ui::log_tab::LogTab;
 
@@ -48,6 +49,7 @@ pub enum TabId {
     Log,
     Files,
     Bookmarks,
+    Evolog,
 }
 
 impl fmt::Display for TabId {
@@ -56,12 +58,13 @@ impl fmt::Display for TabId {
             TabId::Log => write!(f, "Log"),
             TabId::Files => write!(f, "Files"),
             TabId::Bookmarks => write!(f, "Bookmarks"),
+            TabId::Evolog => write!(f, "Evolog"),
         }
     }
 }
 
 impl TabId {
-    pub const VALUES: [Self; 3] = [TabId::Log, TabId::Files, TabId::Bookmarks];
+    pub const VALUES: [Self; 4] = [TabId::Log, TabId::Files, TabId::Bookmarks, TabId::Evolog];
 }
 
 pub struct Stats {
@@ -77,6 +80,7 @@ pub struct App<'a> {
     pub log: LogTab<'a>,
     pub files: FilesTab,
     pub bookmarks: BookmarksTab,
+    pub evolog: EvologTab<'a>,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     global_keybinds: GlobalKeybinds,
@@ -110,6 +114,7 @@ impl<'a> App<'a> {
             log: LogTab::new(background_tasks.clone(), current_head.clone()),
             files: FilesTab::new(&current_head, background_tasks.clone()),
             bookmarks: BookmarksTab::new(background_tasks.clone()),
+            evolog: EvologTab::new(&current_head, background_tasks.clone()),
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
@@ -222,6 +227,7 @@ impl<'a> App<'a> {
             TabId::Log => &mut self.log,
             TabId::Files => &mut self.files,
             TabId::Bookmarks => &mut self.bookmarks,
+            TabId::Evolog => &mut self.evolog,
         }
     }
 
@@ -233,12 +239,21 @@ impl<'a> App<'a> {
                 self.set_tab(TabId::Files);
                 self.files.set_head(&head)?;
             }
+            AppAction::ViewVersionFiles(version) => {
+                self.set_tab(TabId::Files);
+                self.files.set_version(&version)?;
+            }
+            AppAction::ViewEvolog(head) => {
+                self.set_tab(TabId::Evolog);
+                self.evolog.set_head(&head);
+            }
             AppAction::ViewLog(head) => {
                 self.log.set_head(head);
                 self.set_tab(TabId::Log);
             }
             AppAction::ChangeHead(head) => {
                 self.files.set_head(&head)?;
+                self.evolog.set_head(&head);
             }
             AppAction::SetPopup(popup) => {
                 self.popup = Some(popup);
@@ -321,7 +336,7 @@ impl<'a> App<'a> {
             f.render_widget(tabs, header_chunks[0]);
         }
         {
-            let tabs = Paragraph::new("q: quit | ?: help | R: refresh | 1/2/3: change tab")
+            let tabs = Paragraph::new("q: quit | ?: help | R: refresh | 1-4: change tab")
                 .fg(Color::DarkGray)
                 .block(
                     Block::bordered()
@@ -376,7 +391,9 @@ impl<'a> App<'a> {
         self.background_tasks.finish(&result);
 
         let consumer: Option<&mut dyn Component> = match result.slot {
-            TaskSlot::CommitShow(tab, _) | TaskSlot::FileDiff(tab, _) => Some(self.get_tab(tab)),
+            TaskSlot::CommitShow(tab, _)
+            | TaskSlot::FileDiff(tab, _)
+            | TaskSlot::EvologShow(tab, _) => Some(self.get_tab(tab)),
             // The cast reborrows the popup for the body rather than for
             // the lifetime the app is tied to.
             TaskSlot::GitPush | TaskSlot::GitFetch => self
@@ -478,6 +495,7 @@ impl<'a> App<'a> {
                             GlobalEvent::LogTab => self.set_tab(TabId::Log),
                             GlobalEvent::FilesTab => self.set_tab(TabId::Files),
                             GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks),
+                            GlobalEvent::EvologTab => self.set_tab(TabId::Evolog),
                             GlobalEvent::CommandPopup => {
                                 self.popup = Some(Box::new(CommandPopup::new()));
                             }

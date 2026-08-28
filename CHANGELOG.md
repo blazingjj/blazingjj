@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Evolog tab, listing the versions a change has had and showing what the rewrite
+  that produced the selected one changed; opened for the change selected in the
+  log tab with `v` (`open-evolog`), or from the tab bar with `4`. A version's
+  files open with `Enter`, `D` duplicates it as a new change, and `Y` yanks its
+  revision
 - The help popup now scrolls with the mouse wheel
 - Keybinding for jj absorb (`A`)
 - Global keybindings under `[blazingjj.keybinds]` (`scroll-down`, `scroll-up`,

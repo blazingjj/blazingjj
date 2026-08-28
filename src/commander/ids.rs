@@ -36,6 +36,10 @@ impl Display for ChangeId {
     }
 }
 
+/// How many characters of a commit id we show, which is the fewest jj
+/// puts in a log.
+const SHORT_COMMIT_ID_LEN: usize = 8;
+
 /// Wrapper around commit ID.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Deserialize)]
 pub struct CommitId(pub String);
@@ -47,6 +51,11 @@ impl CommitId {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// The leading [SHORT_COMMIT_ID_LEN] characters of the id.
+    pub fn short(&self) -> &str {
+        &self.0[..SHORT_COMMIT_ID_LEN.min(self.0.len())]
     }
 
     // pub fn as_string(&self) -> String {

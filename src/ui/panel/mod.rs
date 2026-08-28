@@ -1,5 +1,6 @@
 mod commit_show;
 mod details_panel;
+mod evolog_show;
 mod list_pane;
 mod log_panel;
 mod output_cache;
@@ -10,6 +11,8 @@ pub use commit_show::CommitShowPanel;
 pub use details_panel::DetailsPanel;
 pub use details_panel::LargeStringContent;
 pub use details_panel::TextContent;
+pub use evolog_show::EvologShowKey;
+pub use evolog_show::EvologShowPanel;
 pub use list_pane::ListPane;
 pub use log_panel::LogPanel;
 pub use output_cache::OutputKey;

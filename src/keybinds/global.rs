@@ -31,6 +31,7 @@ pub enum GlobalEvent {
     LogTab,
     FilesTab,
     BookmarksTab,
+    EvologTab,
 
     CommandPopup,
     OpenHelp,
@@ -58,6 +59,7 @@ impl Default for GlobalKeybinds {
             GlobalEvent::LogTab => "1",
             GlobalEvent::FilesTab => "2",
             GlobalEvent::BookmarksTab => "3",
+            GlobalEvent::EvologTab => "4",
             GlobalEvent::CommandPopup => ":",
             GlobalEvent::OpenHelp => "?",
             GlobalEvent::Quit => "q",
@@ -104,6 +106,7 @@ impl GlobalKeybinds {
             GlobalEvent::LogTab => "log tab",
             GlobalEvent::FilesTab => "files tab",
             GlobalEvent::BookmarksTab => "bookmarks tab",
+            GlobalEvent::EvologTab => "evolog tab",
             GlobalEvent::CommandPopup => "run jj command",
             GlobalEvent::OpenHelp => "open help",
             GlobalEvent::Quit => "quit",

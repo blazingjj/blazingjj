@@ -44,6 +44,13 @@ pub struct Parent {
     pub description: String,
 }
 
+/// How many lines `builtin_log_compact` writes per head, which is what
+/// [Commander::get_log] renders the graph with.
+pub const LOG_LINES_PER_HEAD: usize = 2;
+
+/// How many lines [EVOLOG_TEMPLATE] writes per head.
+pub const EVOLOG_LINES_PER_HEAD: usize = 3;
+
 #[derive(Clone, Debug, Default)]
 pub struct LogOutput {
     pub graph: String,
@@ -114,6 +121,21 @@ fn parents_template() -> String {
     )
 }
 
+/// Template rendering an evolog entry the way `builtin_evolog_compact`
+/// does, except that the operation always takes a line of its own. The
+/// builtin leaves it out for an entry recorded before jj tracked which
+/// operation produced one, which would make entries take a varying number
+/// of lines, and the heads read alongside them no longer line up with the
+/// graph.
+const EVOLOG_TEMPLATE: &str = r#"
+    builtin_log_compact(commit)
+    ++ separate(" ",
+        label("separator", "--"),
+        "operation",
+        if(operation, operation.id().short() ++ " " ++ operation.description().first_line(), "unknown"),
+    ) ++ "\n"
+"#;
+
 /// Parse the record one line of template output describes.
 ///
 /// jj draws the graph in front of what the template writes, so the object
@@ -146,46 +168,35 @@ impl Commander {
         .run()
     }
 
-    /// Get log. Returns human readable log and mapping to log line to head.
-    /// Leaves the working copy alone.
-    /// Maps to `jj log --ignore-working-copy`
-    #[instrument(level = "trace", skip(self))]
-    pub fn get_log(&self, revset: &Option<String>) -> Result<LogOutput, CommandError> {
-        let mut args = vec![];
-
-        if let Some(revset) = revset {
-            args.push("-r");
-            args.push(revset);
-        }
-
-        // Force builtin_log_compact which uses 2 lines per change
+    /// A graph of changes and the head behind each of its lines.
+    ///
+    /// `command` is the whole invocation except `graph_template`, which
+    /// draws the graph in `lines_per_head` lines per head, and `commit` is
+    /// the template expression naming the commit it renders. Leaves the
+    /// working copy alone.
+    fn get_graph_log(
+        &self,
+        command: &[&str],
+        graph_template: &str,
+        commit: &str,
+        lines_per_head: usize,
+    ) -> Result<LogOutput, CommandError> {
         let graph = self
-            .jj([
-                vec!["log", "--template", "builtin_log_compact"],
-                args.clone(),
-            ]
-            .concat())
+            .jj([command, &["--template", graph_template]].concat())
             .color()
             .ignore_working_copy()
             .run()?;
 
-        // Extract the log one more time, but this time use a template
-        // which describes the head behind each line. Since jj has
-        // 2 lines per change, there will also be two lines with head info.
-        // The number of lines in graph and the number of items in graph_heads
-        // should be identical.
-        let head = head_template("self");
+        // Read the graph once more, this time with a template describing
+        // the head behind each of its lines, so that a graph line is an
+        // index into the heads. The root commit breaks that, taking a
+        // single line however many the template writes, but it comes last
+        // and so only leaves heads past the end of the graph.
+        let head = head_template(commit);
+        let heads_template =
+            std::iter::repeat_n(head.as_str(), lines_per_head).join(r#" ++ "\n" ++ "#);
         let graph_heads: Vec<Option<Head>> = self
-            .jj([
-                vec![
-                    "log",
-                    "--template",
-                    // Match builtin_log_compact with 2 lines per change
-                    &format!(r#"{head} ++ "\n" ++ {head}"#),
-                ],
-                args,
-            ]
-            .concat())
+            .jj([command, &["--template", &heads_template]].concat())
             .ignore_working_copy()
             .run()?
             .lines()
@@ -199,6 +210,66 @@ impl Commander {
             graph_heads,
             heads,
         })
+    }
+
+    /// Get log. Returns human readable log and mapping to log line to head.
+    /// Leaves the working copy alone.
+    /// Maps to `jj log --ignore-working-copy`
+    #[instrument(level = "trace", skip(self))]
+    pub fn get_log(&self, revset: &Option<String>) -> Result<LogOutput, CommandError> {
+        let mut command = vec!["log"];
+        if let Some(revset) = revset {
+            command.push("-r");
+            command.push(revset);
+        }
+
+        self.get_graph_log(&command, "builtin_log_compact", "self", LOG_LINES_PER_HEAD)
+    }
+
+    /// Get the evolog of a commit: the versions it came out of, newest
+    /// first. A squash folds two changes into one, so these are not all
+    /// of one change. Leaves the working copy alone.
+    /// Maps to `jj evolog -r <commit> --ignore-working-copy`
+    #[instrument(level = "trace", skip(self))]
+    pub fn get_evolog(&self, commit_id: &CommitId) -> Result<LogOutput, CommandError> {
+        self.get_graph_log(
+            &["evolog", "-r", commit_id.as_str()],
+            EVOLOG_TEMPLATE,
+            "commit",
+            EVOLOG_LINES_PER_HEAD,
+        )
+    }
+
+    /// Create the JjCommand for the evolog entry of a commit, showing
+    /// what the rewrite that produced it changed.
+    ///
+    /// The entry is asked for by commit id, which names it even once it is
+    /// hidden, and the limit keeps the versions before it out of the
+    /// output.
+    #[instrument(level = "trace", skip(self))]
+    pub fn build_jj_evolog_entry(
+        &self,
+        commit_id: &CommitId,
+        diff_format: &DiffFormat,
+        ignore_working_copy: bool,
+    ) -> JjCommand<'_> {
+        let mut args = vec![
+            "evolog",
+            "-r",
+            commit_id.as_str(),
+            "--limit",
+            "1",
+            "--no-graph",
+            "--patch",
+        ];
+        args.append(&mut diff_format.get_args());
+
+        let mut command = self.jj(args);
+        if ignore_working_copy {
+            command = command.ignore_working_copy();
+        }
+
+        command
     }
 
     /// Create the JjCommmand for `jj show <commit>`
@@ -442,6 +513,91 @@ mod tests {
         let _bound = settings.bind_to_scope();
 
         assert_debug_snapshot!(show);
+
+        Ok(())
+    }
+
+    #[test]
+    fn get_evolog() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        fs::write(test_repo.directory.path().join("README"), b"AAA")?;
+        test_repo.commander.jj(["describe", "-m", "first"]).run()?;
+        let head = test_repo.commander.get_current_head()?;
+
+        let evolog = test_repo.commander.get_evolog(&head.commit_id)?;
+
+        // Every entry is a version of the change, the newest first
+        assert_eq!(evolog.heads.first(), Some(&head));
+        assert!(evolog.heads.len() > 1);
+        assert!(
+            evolog
+                .heads
+                .iter()
+                .all(|entry| entry.change_id == head.change_id)
+        );
+
+        // The heads line up with the graph they were read alongside
+        assert_eq!(evolog.graph.lines().count(), evolog.graph_heads.len());
+        assert!(evolog.graph_heads.iter().all(Option::is_some));
+
+        Ok(())
+    }
+
+    /// A squash gives the change a second line of predecessors, which the
+    /// graph draws an edge for. That edge shares a line with the entry it
+    /// belongs to, so the entries still take three lines each.
+    #[test]
+    fn get_evolog_of_a_squashed_change() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        fs::write(test_repo.directory.path().join("README"), b"AAA")?;
+        test_repo.commander.jj(["describe", "-m", "first"]).run()?;
+        test_repo.commander.jj(["new", "-m", "second"]).run()?;
+        fs::write(test_repo.directory.path().join("README"), b"BBB")?;
+        test_repo
+            .commander
+            .jj(["squash", "-u", "--into", "@-"])
+            .run()?;
+        let working_copy = test_repo.commander.get_current_head()?;
+        let head = test_repo
+            .commander
+            .get_commit_parent(&working_copy.commit_id)?;
+
+        let evolog = test_repo.commander.get_evolog(&head.commit_id)?;
+
+        // The versions of the change squashed in are entries of their own
+        assert!(
+            evolog
+                .heads
+                .iter()
+                .any(|entry| entry.change_id != head.change_id)
+        );
+
+        assert_eq!(evolog.graph.lines().count(), evolog.graph_heads.len());
+        assert!(evolog.graph_heads.iter().all(Option::is_some));
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_evolog_entry() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        fs::write(test_repo.directory.path().join("README"), b"AAA")?;
+        let head = test_repo.commander.get_current_head()?;
+        let evolog = test_repo.commander.get_evolog(&head.commit_id)?;
+
+        let entry = test_repo
+            .commander
+            .build_jj_evolog_entry(&head.commit_id, &DiffFormat::Git, false)
+            .run_cancellable(&CancelToken::new())?;
+
+        // The entry says what the rewrite that produced this version
+        // changed, and nothing of the versions before it
+        assert!(entry.contains(head.commit_id.short()));
+        assert!(entry.contains("+AAA"));
+        assert!(!entry.contains(evolog.heads[1].commit_id.short()));
 
         Ok(())
     }

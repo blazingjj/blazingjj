@@ -47,6 +47,10 @@ pub struct FilesTab {
     head: Head,
     is_current_head: bool,
 
+    /// Whether `head` stays on its commit as the change it belongs to is
+    /// rewritten, rather than moving to the newest version of it
+    pinned: bool,
+
     files_output: Result<Vec<File>, CommandError>,
     conflicts_output: Vec<Conflict>,
     files_pane: ListPane,
@@ -141,6 +145,7 @@ impl FilesTab {
         Self {
             head: current_head.clone(),
             is_current_head: true,
+            pinned: false,
 
             files_output: Ok(Vec::new()),
             file: None,
@@ -160,8 +165,21 @@ impl FilesTab {
         }
     }
 
+    /// Show the files of `head`, following the change it belongs to as it
+    /// is rewritten.
     pub fn set_head(&mut self, head: &Head) -> Result<()> {
+        self.show_head(head, false)
+    }
+
+    /// Show the files of one version of a change, which stays where it is
+    /// however the change moves on.
+    pub fn set_version(&mut self, version: &Head) -> Result<()> {
+        self.show_head(version, true)
+    }
+
+    fn show_head(&mut self, head: &Head, pinned: bool) -> Result<()> {
         self.head = head.clone();
+        self.pinned = pinned;
         self.is_current_head = self.head == new_commander().get_current_head()?;
 
         self.refresh_files()?;
@@ -218,6 +236,7 @@ impl FilesTab {
     /// reading the files there.
     fn follow_current_head(&mut self) -> Result<()> {
         self.head = new_commander().get_current_head()?;
+        self.pinned = false;
         self.file = None;
         Ok(())
     }
@@ -261,7 +280,9 @@ impl FilesTab {
 impl Tab for FilesTab {
     fn refresh(&mut self) -> Result<()> {
         self.is_current_head = self.head == new_commander().get_current_head()?;
-        self.head = new_commander().get_head_latest(&self.head)?;
+        if !self.pinned {
+            self.head = new_commander().get_head_latest(&self.head)?;
+        }
         self.refresh_files()?;
         // The change may have moved on, which the key notices. A
         // selection that still means the same diff keeps the one it
@@ -393,6 +414,8 @@ impl Component for FilesTab {
 
             let title_change = if self.is_current_head {
                 format!("@ ({})", self.head.change_id)
+            } else if self.pinned {
+                format!("{} {}", self.head.change_id, self.head.commit_id.short())
             } else {
                 self.head.change_id.as_string()
             };
