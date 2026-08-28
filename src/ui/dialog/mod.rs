@@ -10,6 +10,7 @@ until it sends [`AppAction::PopupDone`](crate::ui::AppAction) or
 
 mod bookmark_name;
 mod bookmark_set;
+mod choice;
 mod command;
 mod describe;
 mod help;
@@ -20,10 +21,11 @@ mod rebase;
 
 pub use bookmark_name::BookmarkNamePopup;
 pub use bookmark_set::BookmarkSetPopup;
+pub use choice::ChoicePopup;
 pub use command::CommandPopup;
 pub use describe::DescribePopup;
 pub use help::HelpPopup;
 pub use loader::LoaderPopup;
 pub use message::MessagePopup;
-pub use parent_select::ParentSelectPopup;
+pub use parent_select::parent_select;
 pub use rebase::RebasePopup;

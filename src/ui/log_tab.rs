@@ -38,8 +38,8 @@ use crate::ui::dialog::BookmarkSetPopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
-use crate::ui::dialog::ParentSelectPopup;
 use crate::ui::dialog::RebasePopup;
+use crate::ui::dialog::parent_select;
 use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::LogPanel;
 use crate::ui::panel::MouseInput;
@@ -74,6 +74,9 @@ pub struct LogTab<'a> {
     popup: ConfirmDialogState,
     popup_tx: std::sync::mpsc::Sender<Listener>,
     popup_rx: std::sync::mpsc::Receiver<Listener>,
+
+    goto_parent_tx: std::sync::mpsc::Sender<Head>,
+    goto_parent_rx: std::sync::mpsc::Receiver<Head>,
 
     describe_after_new: bool,
 
@@ -113,6 +116,7 @@ impl<'a> LogTab<'a> {
     #[instrument(level = "info", name = "Initializing log tab", parent = None, skip(background_tasks))]
     pub fn new(background_tasks: BackgroundTasks, head: Head) -> Self {
         let (popup_tx, popup_rx) = std::sync::mpsc::channel();
+        let (goto_parent_tx, goto_parent_rx) = std::sync::mpsc::channel();
 
         let mut keybinds = LogTabKeybinds::default();
         let mut details_keybinds = DetailsPanelKeybinds::default();
@@ -142,6 +146,9 @@ impl<'a> LogTab<'a> {
             popup: ConfirmDialogState::default(),
             popup_tx,
             popup_rx,
+
+            goto_parent_tx,
+            goto_parent_rx,
 
             describe_after_new: false,
 
@@ -360,10 +367,11 @@ impl<'a> LogTab<'a> {
                 Ok(ComponentInputResult::Handled)
             }
             _ => Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                Box::new(ParentSelectPopup::new(
-                    parents,
-                    out_of_view,
+                Box::new(parent_select(
                     self.config.clone(),
+                    self.goto_parent_tx.clone(),
+                    &parents,
+                    &out_of_view,
                 )),
             ))),
         }
@@ -673,6 +681,12 @@ impl Component for LogTab<'_> {
                 }
                 _ => {}
             }
+        }
+
+        // Moving the selection leaves the repo as it is, so we do not
+        // ask for a refresh.
+        if let Ok(head) = self.goto_parent_rx.try_recv() {
+            return Ok(Some(AppAction::ViewLog(head)));
         }
 
         Ok(None)
