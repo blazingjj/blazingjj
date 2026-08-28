@@ -2,6 +2,7 @@
 */
 pub mod bookmarks_tab;
 pub mod dialog;
+pub mod evolog_tab;
 pub mod files_tab;
 pub mod log_tab;
 pub mod panel;
@@ -18,6 +19,10 @@ use crate::commander::log::Head;
 /// Action commmands from component to application
 pub enum AppAction {
     ViewFiles(Head),
+    /// Show the files of one version of a change, as opposed to those of
+    /// the change as it stands.
+    ViewVersionFiles(Head),
+    ViewEvolog(Head),
     ViewLog(Head),
     ChangeHead(Head),
     /// Put this popup up, in place of whatever is up now.

@@ -550,6 +550,11 @@ impl<'a> LogTab<'a> {
                     self.head.clone(),
                 )));
             }
+            LogTabEvent::OpenEvolog => {
+                return Ok(ComponentInputResult::HandledAction(AppAction::ViewEvolog(
+                    self.head.clone(),
+                )));
+            }
             LogTabEvent::CopyChangeId => {
                 // Copy change ID to clipboard using crossterm
                 let change_id = self.head.change_id.as_str();

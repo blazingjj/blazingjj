@@ -23,6 +23,7 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Fetch/push with `f`/`p`
   - Squash current changes to selected change with `s`/`S`
   - Yank change ID/revision to the system clipboard with `y`/`Y`
+  - See how a change evolved with `v`
 - Files
   - View files in current change and diff in side panel
   - See a change's files from the log tab with `Enter`
@@ -34,6 +35,15 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Create with `c`, rename with `r`, delete with `d`, forget with `f`
   - Track bookmarks with `t`, untrack bookmarks with `T`
   - Create new change with `n`, edit change with `e`/`E`
+- Evolog
+  - View the versions a change has had and what the rewrite that produced the
+    selected one changed
+  - See a change's evolog from the log tab with `v`
+  - View a version's files with `Enter`
+  - Duplicate a version as a new change with `D`, to recover what a rewrite
+    folded away
+  - Yank a version's revision to the system clipboard with `Y`
+  - Toggle between color words and git diff with `w`
 - Command log: View every command blazingjj executes
 - Config: Configure blazingjj with your jj config
 - Command box: Run jj commands directly in blazingjj with `:`

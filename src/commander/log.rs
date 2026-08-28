@@ -48,6 +48,9 @@ pub struct Parent {
 /// [Commander::get_log] renders the graph with.
 pub const LOG_LINES_PER_HEAD: usize = 2;
 
+/// How many lines [EVOLOG_TEMPLATE] writes per head.
+pub const EVOLOG_LINES_PER_HEAD: usize = 3;
+
 #[derive(Clone, Debug, Default)]
 pub struct LogOutput {
     pub graph: String,
@@ -117,6 +120,21 @@ fn parents_template() -> String {
 "#
     )
 }
+
+/// Template rendering an evolog entry the way `builtin_evolog_compact`
+/// does, except that the operation always takes a line of its own. The
+/// builtin leaves it out for an entry recorded before jj tracked which
+/// operation produced one, which would make entries take a varying number
+/// of lines, and the heads read alongside them no longer line up with the
+/// graph.
+const EVOLOG_TEMPLATE: &str = r#"
+    builtin_log_compact(commit)
+    ++ separate(" ",
+        label("separator", "--"),
+        "operation",
+        if(operation, operation.id().short() ++ " " ++ operation.description().first_line(), "unknown"),
+    ) ++ "\n"
+"#;
 
 /// Parse the record one line of template output describes.
 ///
@@ -206,6 +224,52 @@ impl Commander {
         }
 
         self.get_graph_log(&command, "builtin_log_compact", "self", LOG_LINES_PER_HEAD)
+    }
+
+    /// Get the evolog of a commit: the versions it came out of, newest
+    /// first. A squash folds two changes into one, so these are not all
+    /// of one change. Leaves the working copy alone.
+    /// Maps to `jj evolog -r <commit> --ignore-working-copy`
+    #[instrument(level = "trace", skip(self))]
+    pub fn get_evolog(&self, commit_id: &CommitId) -> Result<LogOutput, CommandError> {
+        self.get_graph_log(
+            &["evolog", "-r", commit_id.as_str()],
+            EVOLOG_TEMPLATE,
+            "commit",
+            EVOLOG_LINES_PER_HEAD,
+        )
+    }
+
+    /// Create the JjCommand for the evolog entry of a commit, showing
+    /// what the rewrite that produced it changed.
+    ///
+    /// The entry is asked for by commit id, which names it even once it is
+    /// hidden, and the limit keeps the versions before it out of the
+    /// output.
+    #[instrument(level = "trace", skip(self))]
+    pub fn build_jj_evolog_entry(
+        &self,
+        commit_id: &CommitId,
+        diff_format: &DiffFormat,
+        ignore_working_copy: bool,
+    ) -> JjCommand<'_> {
+        let mut args = vec![
+            "evolog",
+            "-r",
+            commit_id.as_str(),
+            "--limit",
+            "1",
+            "--no-graph",
+            "--patch",
+        ];
+        args.append(&mut diff_format.get_args());
+
+        let mut command = self.jj(args);
+        if ignore_working_copy {
+            command = command.ignore_working_copy();
+        }
+
+        command
     }
 
     /// Create the JjCommmand for `jj show <commit>`
@@ -449,6 +513,91 @@ mod tests {
         let _bound = settings.bind_to_scope();
 
         assert_debug_snapshot!(show);
+
+        Ok(())
+    }
+
+    #[test]
+    fn get_evolog() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        fs::write(test_repo.directory.path().join("README"), b"AAA")?;
+        test_repo.commander.jj(["describe", "-m", "first"]).run()?;
+        let head = test_repo.commander.get_current_head()?;
+
+        let evolog = test_repo.commander.get_evolog(&head.commit_id)?;
+
+        // Every entry is a version of the change, the newest first
+        assert_eq!(evolog.heads.first(), Some(&head));
+        assert!(evolog.heads.len() > 1);
+        assert!(
+            evolog
+                .heads
+                .iter()
+                .all(|entry| entry.change_id == head.change_id)
+        );
+
+        // The heads line up with the graph they were read alongside
+        assert_eq!(evolog.graph.lines().count(), evolog.graph_heads.len());
+        assert!(evolog.graph_heads.iter().all(Option::is_some));
+
+        Ok(())
+    }
+
+    /// A squash gives the change a second line of predecessors, which the
+    /// graph draws an edge for. That edge shares a line with the entry it
+    /// belongs to, so the entries still take three lines each.
+    #[test]
+    fn get_evolog_of_a_squashed_change() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        fs::write(test_repo.directory.path().join("README"), b"AAA")?;
+        test_repo.commander.jj(["describe", "-m", "first"]).run()?;
+        test_repo.commander.jj(["new", "-m", "second"]).run()?;
+        fs::write(test_repo.directory.path().join("README"), b"BBB")?;
+        test_repo
+            .commander
+            .jj(["squash", "-u", "--into", "@-"])
+            .run()?;
+        let working_copy = test_repo.commander.get_current_head()?;
+        let head = test_repo
+            .commander
+            .get_commit_parent(&working_copy.commit_id)?;
+
+        let evolog = test_repo.commander.get_evolog(&head.commit_id)?;
+
+        // The versions of the change squashed in are entries of their own
+        assert!(
+            evolog
+                .heads
+                .iter()
+                .any(|entry| entry.change_id != head.change_id)
+        );
+
+        assert_eq!(evolog.graph.lines().count(), evolog.graph_heads.len());
+        assert!(evolog.graph_heads.iter().all(Option::is_some));
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_evolog_entry() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        fs::write(test_repo.directory.path().join("README"), b"AAA")?;
+        let head = test_repo.commander.get_current_head()?;
+        let evolog = test_repo.commander.get_evolog(&head.commit_id)?;
+
+        let entry = test_repo
+            .commander
+            .build_jj_evolog_entry(&head.commit_id, &DiffFormat::Git, false)
+            .run_cancellable(&CancelToken::new())?;
+
+        // The entry says what the rewrite that produced this version
+        // changed, and nothing of the versions before it
+        assert!(entry.contains(head.commit_id.short()));
+        assert!(entry.contains("+AAA"));
+        assert!(!entry.contains(evolog.heads[1].commit_id.short()));
 
         Ok(())
     }

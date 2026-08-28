@@ -15,7 +15,7 @@ In below examples default values are used.
 
 These work in every tab. The scroll bindings also apply as defaults to the
 popups, which can override them in their own section. Selecting a tab by its
-number in the tab bar (`1`, `2`, `3`) is not configurable.
+number in the tab bar (`1` to `4`) is not configurable.
 
 ```toml
 [blazingjj.keybinds]
@@ -76,6 +76,7 @@ describe = "d"
 edit-revset = "r"
 set-bookmark = "b"
 open-files = "enter"
+open-evolog = "v"
 copy-change-id = "y"
 copy-rev = "shift+y"
 
