@@ -44,6 +44,10 @@ pub struct Parent {
     pub description: String,
 }
 
+/// How many lines `builtin_log_compact` writes per head, which is what
+/// [Commander::get_log] renders the graph with.
+pub const LOG_LINES_PER_HEAD: usize = 2;
+
 #[derive(Clone, Debug, Default)]
 pub struct LogOutput {
     pub graph: String,
@@ -146,46 +150,35 @@ impl Commander {
         .run()
     }
 
-    /// Get log. Returns human readable log and mapping to log line to head.
-    /// Leaves the working copy alone.
-    /// Maps to `jj log --ignore-working-copy`
-    #[instrument(level = "trace", skip(self))]
-    pub fn get_log(&self, revset: &Option<String>) -> Result<LogOutput, CommandError> {
-        let mut args = vec![];
-
-        if let Some(revset) = revset {
-            args.push("-r");
-            args.push(revset);
-        }
-
-        // Force builtin_log_compact which uses 2 lines per change
+    /// A graph of changes and the head behind each of its lines.
+    ///
+    /// `command` is the whole invocation except `graph_template`, which
+    /// draws the graph in `lines_per_head` lines per head, and `commit` is
+    /// the template expression naming the commit it renders. Leaves the
+    /// working copy alone.
+    fn get_graph_log(
+        &self,
+        command: &[&str],
+        graph_template: &str,
+        commit: &str,
+        lines_per_head: usize,
+    ) -> Result<LogOutput, CommandError> {
         let graph = self
-            .jj([
-                vec!["log", "--template", "builtin_log_compact"],
-                args.clone(),
-            ]
-            .concat())
+            .jj([command, &["--template", graph_template]].concat())
             .color()
             .ignore_working_copy()
             .run()?;
 
-        // Extract the log one more time, but this time use a template
-        // which describes the head behind each line. Since jj has
-        // 2 lines per change, there will also be two lines with head info.
-        // The number of lines in graph and the number of items in graph_heads
-        // should be identical.
-        let head = head_template("self");
+        // Read the graph once more, this time with a template describing
+        // the head behind each of its lines, so that a graph line is an
+        // index into the heads. The root commit breaks that, taking a
+        // single line however many the template writes, but it comes last
+        // and so only leaves heads past the end of the graph.
+        let head = head_template(commit);
+        let heads_template =
+            std::iter::repeat_n(head.as_str(), lines_per_head).join(r#" ++ "\n" ++ "#);
         let graph_heads: Vec<Option<Head>> = self
-            .jj([
-                vec![
-                    "log",
-                    "--template",
-                    // Match builtin_log_compact with 2 lines per change
-                    &format!(r#"{head} ++ "\n" ++ {head}"#),
-                ],
-                args,
-            ]
-            .concat())
+            .jj([command, &["--template", &heads_template]].concat())
             .ignore_working_copy()
             .run()?
             .lines()
@@ -199,6 +192,20 @@ impl Commander {
             graph_heads,
             heads,
         })
+    }
+
+    /// Get log. Returns human readable log and mapping to log line to head.
+    /// Leaves the working copy alone.
+    /// Maps to `jj log --ignore-working-copy`
+    #[instrument(level = "trace", skip(self))]
+    pub fn get_log(&self, revset: &Option<String>) -> Result<LogOutput, CommandError> {
+        let mut command = vec!["log"];
+        if let Some(revset) = revset {
+            command.push("-r");
+            command.push(revset);
+        }
+
+        self.get_graph_log(&command, "builtin_log_compact", "self", LOG_LINES_PER_HEAD)
     }
 
     /// Create the JjCommmand for `jj show <commit>`
