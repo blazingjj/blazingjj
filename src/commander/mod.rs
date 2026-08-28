@@ -73,6 +73,11 @@ const JJ_VERSION_IGNORE_HELP: &str = "If you want to continue anyway, use --igno
 /// size, so it makes no difference to what they print.
 pub const MIN_SETTABLE_WIDTH: usize = 20;
 
+/// The editor a command run with [JjCommand::no_editor] is given. There is
+/// no such program, so jj names it in the error it fails with, which is how
+/// a command that wanted an editor is recognized.
+pub const NO_EDITOR: &str = "blazingjj-no-editor";
+
 impl DiffFormat {
     pub fn get_args(&self) -> Vec<&str> {
         match self {
@@ -285,6 +290,17 @@ impl JjCommand {
         self
     }
 
+    /// Leave the command no editor to open, so that one meant to be used
+    /// interactively fails instead of taking the terminal from under the
+    /// app. A failure is told apart from any other by [NO_EDITOR].
+    pub fn no_editor(mut self) -> Self {
+        for setting in ["ui.editor", "ui.diff-editor", "ui.merge-editor"] {
+            self.args.push("--config".into());
+            self.args.push(format!("{setting}=\"{NO_EDITOR}\"").into());
+        }
+        self
+    }
+
     /// Feed `stdin` to the command on standard input.
     ///
     /// Useful for commands like `jj describe --stdin`, where passing the value
@@ -474,6 +490,8 @@ pub fn get_output_args(color: bool, quiet: bool) -> Vec<String> {
 
 #[cfg(test)]
 pub mod tests {
+    use std::time::Duration;
+
     use tempfile::TempDir;
 
     use super::*;
@@ -557,6 +575,31 @@ pub mod tests {
             .jj(["bookmark", "list"])
             .run_foreground()?;
         assert!(status.success());
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_command_that_wants_an_editor_fails_instead_of_waiting_for_one() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        // Should the command get an editor after all, it waits on it for
+        // as long as this test is left to run.
+        let cancel = CancelToken::new();
+        let watchdog = cancel.clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_secs(30));
+            watchdog.cancel();
+        });
+
+        let err = test_repo
+            .commander
+            .jj(["describe"])
+            .no_editor()
+            .run_cancellable(&cancel)
+            .expect_err("describe has no editor to open");
+
+        assert!(err.to_string().contains(NO_EDITOR), "{err}");
 
         Ok(())
     }

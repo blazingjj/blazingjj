@@ -25,6 +25,7 @@ pub use bookmark_name::BookmarkNameMode;
 pub use bookmark_name::BookmarkNamePopup;
 pub use bookmark_set::BookmarkSetPopup;
 pub use choice::ChoicePopup;
+pub use command::CommandMode;
 pub use command::CommandPopup;
 pub use confirm::ConfirmPopup;
 pub use context_menu::bookmarks_context_menu;

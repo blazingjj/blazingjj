@@ -83,6 +83,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whatever the tab has selected: a change, a file, a version or a bookmark
 - `blazingjj.describe-mode` to set what describing a change puts up, the
   built-in editor or an interactive `jj describe`
+- `!` opens the command popup with the terminal handed to what is run, so
+  that commands wanting an editor, such as `describe` or `split`, can be
+  used; running one with `:` offers to run it in the terminal rather than
+  hanging
 
 ### Changed
 

@@ -32,6 +32,7 @@ next-tab = "l"
 prev-tab = "h"
 
 command-popup = ":"
+interactive-command-popup = "!"
 quit = ["q", "ctrl+c"]
 ```
 

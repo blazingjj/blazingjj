@@ -16,6 +16,7 @@ pub struct KeybindsConfig {
     pub prev_tab: Option<Keybind>,
 
     pub command_popup: Option<Keybind>,
+    pub interactive_command_popup: Option<Keybind>,
     pub quit: Option<Keybind>,
 
     pub log_tab: Option<LogTabKeybindsConfig>,

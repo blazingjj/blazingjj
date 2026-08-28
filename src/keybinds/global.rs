@@ -34,6 +34,7 @@ pub enum GlobalEvent {
     EvologTab,
 
     CommandPopup,
+    InteractiveCommandPopup,
     OpenHelp,
     Quit,
 
@@ -61,6 +62,7 @@ impl Default for GlobalKeybinds {
             GlobalEvent::BookmarksTab => "3",
             GlobalEvent::EvologTab => "4",
             GlobalEvent::CommandPopup => ":",
+            GlobalEvent::InteractiveCommandPopup => "!",
             GlobalEvent::OpenHelp => "?",
             GlobalEvent::Quit => "q",
             GlobalEvent::Quit => "ctrl+c",
@@ -87,6 +89,7 @@ impl GlobalKeybinds {
             GlobalEvent::NextTab => config.next_tab,
             GlobalEvent::PrevTab => config.prev_tab,
             GlobalEvent::CommandPopup => config.command_popup,
+            GlobalEvent::InteractiveCommandPopup => config.interactive_command_popup,
             GlobalEvent::Quit => config.quit,
         );
     }
@@ -107,6 +110,7 @@ impl GlobalKeybinds {
             GlobalEvent::BookmarksTab => "bookmarks tab",
             GlobalEvent::EvologTab => "evolog tab",
             GlobalEvent::CommandPopup => "run jj command",
+            GlobalEvent::InteractiveCommandPopup => "run jj command interactively",
             GlobalEvent::OpenHelp => "open help",
             GlobalEvent::Quit => "quit",
         )

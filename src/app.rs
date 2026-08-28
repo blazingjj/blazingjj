@@ -47,6 +47,7 @@ use crate::ui::Interactive;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::bookmarks_tab::BookmarksTab;
+use crate::ui::dialog::CommandMode;
 use crate::ui::dialog::CommandPopup;
 use crate::ui::dialog::HelpPopup;
 use crate::ui::evolog_tab::EvologTab;
@@ -685,7 +686,12 @@ impl<'a> App<'a> {
                             GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks),
                             GlobalEvent::EvologTab => self.set_tab(TabId::Evolog),
                             GlobalEvent::CommandPopup => {
-                                self.popup = Some(Box::new(CommandPopup::new()));
+                                self.popup =
+                                    Some(Box::new(CommandPopup::new(CommandMode::Capture)));
+                            }
+                            GlobalEvent::InteractiveCommandPopup => {
+                                self.popup =
+                                    Some(Box::new(CommandPopup::new(CommandMode::Interactive)));
                             }
                             GlobalEvent::OpenHelp => self.open_help()?,
                             GlobalEvent::Quit => {
