@@ -262,6 +262,149 @@ impl BookmarksTab {
         }
         Ok(Some(AppAction::ViewLog(head)))
     }
+
+    fn handle_event(&mut self, event: BookmarksTabEvent) -> Result<ComponentInputResult> {
+        match event {
+            BookmarksTabEvent::ToggleShowAll => {
+                self.show_all = !self.show_all;
+                self.refresh_bookmarks();
+            }
+            BookmarksTabEvent::CreateBookmark => {
+                return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                    Box::new(BookmarkNamePopup::new_create(
+                        self.bookmark_name_popup_tx.clone(),
+                    )),
+                )));
+            }
+            BookmarksTabEvent::RenameBookmark => {
+                if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
+                    let old_name = bookmark.name.clone();
+                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                        Box::new(BookmarkNamePopup::new_rename(
+                            old_name,
+                            self.bookmark_name_popup_tx.clone(),
+                        )),
+                    )));
+                }
+            }
+            BookmarksTabEvent::DeleteBookmark => {
+                if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
+                    self.delete = Some(DeleteBookmark {
+                        name: bookmark.name.clone(),
+                    });
+                    self.popup = ConfirmDialogState::new(
+                        DELETE_BRANCH_POPUP_ID,
+                        Span::styled(" Delete ", Style::new().bold().cyan()),
+                        Text::from(vec![Line::from(format!(
+                            "Are you sure you want to delete the {} bookmark?",
+                            bookmark.name
+                        ))]),
+                    );
+                    self.popup
+                        .with_yes_button(ButtonLabel::YES.clone())
+                        .with_no_button(ButtonLabel::NO.clone())
+                        .with_listener(Some(self.popup_tx.clone()))
+                        .open();
+                }
+            }
+            BookmarksTabEvent::ForgetBookmark => {
+                if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
+                    self.forget = Some(ForgetBookmark {
+                        name: bookmark.name.clone(),
+                    });
+                    self.popup = ConfirmDialogState::new(
+                        FORGET_BRANCH_POPUP_ID,
+                        Span::styled(" Forget ", Style::new().bold().cyan()),
+                        Text::from(vec![Line::from(format!(
+                            "Are you sure you want to forget the {} bookmark?",
+                            bookmark.name
+                        ))]),
+                    );
+                    self.popup
+                        .with_yes_button(ButtonLabel::YES.clone())
+                        .with_no_button(ButtonLabel::NO.clone())
+                        .with_listener(Some(self.popup_tx.clone()))
+                        .open();
+                }
+            }
+            // TODO: Ask for confirmation?
+            BookmarksTabEvent::TrackBookmark => {
+                if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
+                    && bookmark.remote.is_some()
+                    && bookmark.present
+                {
+                    new_commander().track_bookmark(bookmark)?;
+                    return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
+                }
+            }
+            BookmarksTabEvent::UntrackBookmark => {
+                if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
+                    && bookmark.remote.is_some()
+                    && bookmark.present
+                {
+                    new_commander().untrack_bookmark(bookmark)?;
+                    return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
+                }
+            }
+            BookmarksTabEvent::NewChange { describe } => {
+                if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
+                    && bookmark.present
+                {
+                    self.describe_after_new = describe;
+                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                        Box::new(new_insert(
+                            self.config.clone(),
+                            self.new_insert_tx.clone(),
+                            &bookmark.to_string(),
+                        )),
+                    )));
+                }
+            }
+            BookmarksTabEvent::EditChange { ignore_immutable } => {
+                if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
+                    && bookmark.present
+                {
+                    if new_commander().check_revision_immutable(&bookmark.to_string())?
+                        && !ignore_immutable
+                    {
+                        return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                            Box::new(MessagePopup::new(
+                                "Edit",
+                                "The change cannot be edited because it is immutable.",
+                            )),
+                        )));
+                    }
+
+                    self.popup = ConfirmDialogState::new(
+                        EDIT_POPUP_ID,
+                        Span::styled(" Edit ", Style::new().bold().cyan()),
+                        Text::from(vec![
+                            Line::from("Are you sure you want to edit an existing change?"),
+                            Line::from(format!("Bookmark: {bookmark}")),
+                        ]),
+                    );
+                    self.popup
+                        .with_yes_button(ButtonLabel::YES.clone())
+                        .with_no_button(ButtonLabel::NO.clone())
+                        .with_listener(Some(self.popup_tx.clone()))
+                        .open();
+                    self.edit_ignore_immutable = ignore_immutable;
+                }
+            }
+            BookmarksTabEvent::ViewInLog => {
+                if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
+                    && bookmark.present
+                {
+                    return Ok(ComponentInputResult::HandledAction(AppAction::ViewLog(
+                        new_commander().get_bookmark_head(bookmark)?,
+                    )));
+                }
+            }
+            BookmarksTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
+        }
+
+        Ok(ComponentInputResult::Handled)
+    }
 }
 
 impl Tab for BookmarksTab {
@@ -515,144 +658,7 @@ impl Component for BookmarksTab {
                 }
             }
 
-            match self.keybinds.match_event(key) {
-                BookmarksTabEvent::ToggleShowAll => {
-                    self.show_all = !self.show_all;
-                    self.refresh_bookmarks();
-                }
-                BookmarksTabEvent::CreateBookmark => {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(BookmarkNamePopup::new_create(
-                            self.bookmark_name_popup_tx.clone(),
-                        )),
-                    )));
-                }
-                BookmarksTabEvent::RenameBookmark => {
-                    if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
-                        let old_name = bookmark.name.clone();
-                        return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                            Box::new(BookmarkNamePopup::new_rename(
-                                old_name,
-                                self.bookmark_name_popup_tx.clone(),
-                            )),
-                        )));
-                    }
-                }
-                BookmarksTabEvent::DeleteBookmark => {
-                    if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
-                        self.delete = Some(DeleteBookmark {
-                            name: bookmark.name.clone(),
-                        });
-                        self.popup = ConfirmDialogState::new(
-                            DELETE_BRANCH_POPUP_ID,
-                            Span::styled(" Delete ", Style::new().bold().cyan()),
-                            Text::from(vec![Line::from(format!(
-                                "Are you sure you want to delete the {} bookmark?",
-                                bookmark.name
-                            ))]),
-                        );
-                        self.popup
-                            .with_yes_button(ButtonLabel::YES.clone())
-                            .with_no_button(ButtonLabel::NO.clone())
-                            .with_listener(Some(self.popup_tx.clone()))
-                            .open();
-                    }
-                }
-                BookmarksTabEvent::ForgetBookmark => {
-                    if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref() {
-                        self.forget = Some(ForgetBookmark {
-                            name: bookmark.name.clone(),
-                        });
-                        self.popup = ConfirmDialogState::new(
-                            FORGET_BRANCH_POPUP_ID,
-                            Span::styled(" Forget ", Style::new().bold().cyan()),
-                            Text::from(vec![Line::from(format!(
-                                "Are you sure you want to forget the {} bookmark?",
-                                bookmark.name
-                            ))]),
-                        );
-                        self.popup
-                            .with_yes_button(ButtonLabel::YES.clone())
-                            .with_no_button(ButtonLabel::NO.clone())
-                            .with_listener(Some(self.popup_tx.clone()))
-                            .open();
-                    }
-                }
-                // TODO: Ask for confirmation?
-                BookmarksTabEvent::TrackBookmark => {
-                    if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
-                        && bookmark.remote.is_some()
-                        && bookmark.present
-                    {
-                        new_commander().track_bookmark(bookmark)?;
-                        return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
-                    }
-                }
-                BookmarksTabEvent::UntrackBookmark => {
-                    if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
-                        && bookmark.remote.is_some()
-                        && bookmark.present
-                    {
-                        new_commander().untrack_bookmark(bookmark)?;
-                        return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
-                    }
-                }
-                BookmarksTabEvent::NewChange { describe } => {
-                    if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
-                        && bookmark.present
-                    {
-                        self.describe_after_new = describe;
-                        return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                            Box::new(new_insert(
-                                self.config.clone(),
-                                self.new_insert_tx.clone(),
-                                &bookmark.to_string(),
-                            )),
-                        )));
-                    }
-                }
-                BookmarksTabEvent::EditChange { ignore_immutable } => {
-                    if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
-                        && bookmark.present
-                    {
-                        if new_commander().check_revision_immutable(&bookmark.to_string())?
-                            && !ignore_immutable
-                        {
-                            return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                                Box::new(MessagePopup::new(
-                                    "Edit",
-                                    "The change cannot be edited because it is immutable.",
-                                )),
-                            )));
-                        }
-
-                        self.popup = ConfirmDialogState::new(
-                            EDIT_POPUP_ID,
-                            Span::styled(" Edit ", Style::new().bold().cyan()),
-                            Text::from(vec![
-                                Line::from("Are you sure you want to edit an existing change?"),
-                                Line::from(format!("Bookmark: {bookmark}")),
-                            ]),
-                        );
-                        self.popup
-                            .with_yes_button(ButtonLabel::YES.clone())
-                            .with_no_button(ButtonLabel::NO.clone())
-                            .with_listener(Some(self.popup_tx.clone()))
-                            .open();
-                        self.edit_ignore_immutable = ignore_immutable;
-                    }
-                }
-                BookmarksTabEvent::ViewInLog => {
-                    if let Some(BookmarkLine::Parsed { bookmark, .. }) = self.bookmark.as_ref()
-                        && bookmark.present
-                    {
-                        return Ok(ComponentInputResult::HandledAction(AppAction::ViewLog(
-                            new_commander().get_bookmark_head(bookmark)?,
-                        )));
-                    }
-                }
-                BookmarksTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
-            };
+            return self.handle_event(self.keybinds.match_event(key));
         }
 
         if let Event::Mouse(mouse) = event {

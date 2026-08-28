@@ -257,6 +257,34 @@ impl FilesTab {
         Ok(())
     }
 
+    fn handle_event(&mut self, event: FilesTabEvent) -> Result<ComponentInputResult> {
+        match event {
+            FilesTabEvent::Untrack => {
+                // this works even for deleted files because jj doesn't return error in that case
+                if self.untrack_file().is_err() {
+                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                        Box::new(MessagePopup::new(
+                            "Can't untrack file",
+                            "Make sure that file is ignored",
+                        )),
+                    )));
+                }
+                self.follow_current_head()?;
+                Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab))
+            }
+            FilesTabEvent::Restore => {
+                if let Err(err) = self.restore_file() {
+                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
+                        Box::new(MessagePopup::new("Can't restore file", err.to_string())),
+                    )));
+                }
+                self.follow_current_head()?;
+                Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab))
+            }
+            FilesTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
+        }
+    }
+
     fn scroll_files(&mut self, scroll: isize) {
         if let Ok(files) = self.files_output.as_ref() {
             let current_file_index = self.get_current_file_index();
@@ -457,31 +485,7 @@ impl Component for FilesTab {
                 }
             }
 
-            match self.keybinds.match_event(key) {
-                FilesTabEvent::Untrack => {
-                    // this works even for deleted files because jj doesn't return error in that case
-                    if self.untrack_file().is_err() {
-                        return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                            Box::new(MessagePopup::new(
-                                "Can't untrack file",
-                                "Make sure that file is ignored",
-                            )),
-                        )));
-                    }
-                    self.follow_current_head()?;
-                    return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
-                }
-                FilesTabEvent::Restore => {
-                    if let Err(err) = self.restore_file() {
-                        return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                            Box::new(MessagePopup::new("Can't restore file", err.to_string())),
-                        )));
-                    }
-                    self.follow_current_head()?;
-                    return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
-                }
-                FilesTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
-            };
+            return self.handle_event(self.keybinds.match_event(key));
         }
 
         if let Event::Mouse(mouse) = event {
