@@ -329,6 +329,22 @@ pub fn ask_new_change_from_selection(
     ask_new_change(config, revset, source, &target, describe)
 }
 
+/// Asking for a new change from the one a bookmark points at.
+pub fn ask_new_change_from_bookmark(
+    config: JjConfig,
+    bookmark: &Bookmark,
+    head: &Head,
+    describe: bool,
+) -> AppAction {
+    ask_new_change(
+        config,
+        Revset::from(&head.commit_id),
+        NewSource::Change,
+        &bookmark.to_string(),
+        describe,
+    )
+}
+
 /// Asking to see the files of one version of `change`. The newest
 /// version is the change as it stands, so the files tab may as well keep
 /// up with it.

@@ -9,6 +9,7 @@ use ratatui::text::Line;
 
 use crate::app::command;
 use crate::app::command::Command;
+use crate::commander::bookmarks::Bookmark;
 use crate::commander::files::File;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
@@ -16,6 +17,7 @@ use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::ui::AppAction;
+use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::ChoicePopup;
 
 /// The context menu for `selected`, put where it was opened. Squashing
@@ -130,4 +132,66 @@ pub fn evolog_context_menu(
     ];
 
     ChoicePopup::new(config, anchor, "Version actions", items)
+}
+
+/// The context menu for `selected`, the bookmark and the change its line
+/// points at, which is None when the selection is not on a bookmark there
+/// is anything to do to: then there is nothing but creating one. Tracking
+/// only applies to the bookmarks on a remote.
+pub fn bookmarks_context_menu(
+    config: JjConfig,
+    anchor: Option<Position>,
+    selected: Option<(&Bookmark, &Head)>,
+) -> ChoicePopup {
+    let mut items = vec![(
+        Line::raw("Create bookmark"),
+        AppAction::SetPopup(Box::new(BookmarkNamePopup::new_create())),
+    )];
+    if let Some((bookmark, head)) = selected {
+        items.extend([
+            (
+                Line::raw("Rename"),
+                AppAction::SetPopup(Box::new(BookmarkNamePopup::new_rename(
+                    bookmark.name.clone(),
+                ))),
+            ),
+            (
+                Line::raw("Delete"),
+                command::ask_delete_bookmark(config.clone(), &bookmark.name),
+            ),
+            (
+                Line::raw("Forget"),
+                command::ask_forget_bookmark(config.clone(), &bookmark.name),
+            ),
+        ]);
+        if bookmark.remote.is_some() {
+            items.extend([
+                (
+                    Line::raw("Track"),
+                    AppAction::Run(Command::TrackBookmark(bookmark.clone())),
+                ),
+                (
+                    Line::raw("Untrack"),
+                    AppAction::Run(Command::UntrackBookmark(bookmark.clone())),
+                ),
+            ]);
+        }
+        items.extend([
+            (
+                Line::raw("Edit the change"),
+                command::ask_edit(config.clone(), head, format!("Bookmark: {bookmark}"), false),
+            ),
+            (
+                Line::raw("New change"),
+                command::ask_new_change_from_bookmark(config.clone(), bookmark, head, false),
+            ),
+            (
+                Line::raw("New change & describe"),
+                command::ask_new_change_from_bookmark(config.clone(), bookmark, head, true),
+            ),
+            (Line::raw("View in log"), AppAction::ViewLog(head.clone())),
+        ]);
+    }
+
+    ChoicePopup::new(config, anchor, "Bookmark actions", items)
 }

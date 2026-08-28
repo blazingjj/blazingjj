@@ -32,6 +32,8 @@ pub enum BookmarksTabEvent {
     },
     ViewInLog,
 
+    OpenContextMenu,
+
     Unbound,
 }
 
@@ -53,6 +55,7 @@ impl Default for BookmarksTabKeybinds {
             BookmarksTabEvent::EditChange { ignore_immutable: false } => "e",
             BookmarksTabEvent::EditChange { ignore_immutable: true } => "shift+e",
             BookmarksTabEvent::ViewInLog => "enter",
+            BookmarksTabEvent::OpenContextMenu => "menu",
         );
         Self { keys }
     }
