@@ -17,6 +17,7 @@ use crate::background_tasks::TaskSlot;
 use crate::commander::CommandError;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::bookmarks::BookmarkLine;
+use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
@@ -57,34 +58,56 @@ pub struct BookmarksTab {
     stale: bool,
 }
 
+/// Whether both lines are the same bookmark, wherever each points. A
+/// bookmark that has moved is still the same one, which is how the
+/// selection follows it.
+fn is_same_bookmark(current: &BookmarkLine, listed: &BookmarkLine) -> bool {
+    match (current, listed) {
+        (
+            BookmarkLine::Parsed {
+                bookmark: current, ..
+            },
+            BookmarkLine::Parsed { bookmark, .. },
+        ) => current.name == bookmark.name && current.remote == bookmark.remote,
+        (BookmarkLine::Unparsable(current), BookmarkLine::Unparsable(listed)) => current == listed,
+        _ => false,
+    }
+}
+
+/// Whether both lines are the same bookmark on the same change. A
+/// bookmark with more than one target is listed once per target, and
+/// only this tells those lines apart.
+fn is_same_target(current: &BookmarkLine, listed: &BookmarkLine) -> bool {
+    let (
+        BookmarkLine::Parsed {
+            head: current_head, ..
+        },
+        BookmarkLine::Parsed { head, .. },
+    ) = (current, listed)
+    else {
+        return is_same_bookmark(current, listed);
+    };
+
+    is_same_bookmark(current, listed) && current_head == head
+}
+
 fn get_current_bookmark_index(
     current_bookmark: Option<&BookmarkLine>,
     bookmarks_output: &Result<Vec<BookmarkLine>, CommandError>,
 ) -> Option<usize> {
-    match bookmarks_output {
-        Ok(bookmarks_output) => current_bookmark.as_ref().and_then(|current_bookmark| {
+    let Ok(bookmarks_output) = bookmarks_output else {
+        return None;
+    };
+    let current_bookmark = current_bookmark?;
+
+    bookmarks_output
+        .iter()
+        .position(|listed| is_same_target(current_bookmark, listed))
+        .or_else(|| {
             bookmarks_output
                 .iter()
-                .position(|bookmark| match (current_bookmark, bookmark) {
-                    (
-                        BookmarkLine::Parsed {
-                            bookmark: current_bookmark,
-                            ..
-                        },
-                        BookmarkLine::Parsed { bookmark, .. },
-                    ) => {
-                        current_bookmark.name == bookmark.name
-                            && current_bookmark.remote == bookmark.remote
-                    }
-                    (
-                        BookmarkLine::Unparsable(current_bookmark),
-                        BookmarkLine::Unparsable(bookmark),
-                    ) => current_bookmark == bookmark,
-                    _ => false,
-                })
-        }),
-        Err(_) => None,
-    }
+                .position(|listed| is_same_bookmark(current_bookmark, listed))
+        })
 }
 
 impl BookmarksTab {
@@ -211,10 +234,23 @@ impl BookmarksTab {
         }
     }
 
+    /// The bookmark the operations would name and the change the line it
+    /// is on points at, if the selection is on one there to be operated
+    /// on. A bookmark with more than one target is listed once per
+    /// target, so the line says which of them an operation acts on.
+    fn selected_target(&self) -> Option<(&Bookmark, &Head)> {
+        match self.bookmark.as_ref() {
+            Some(BookmarkLine::Parsed { bookmark, head, .. }) if bookmark.present => {
+                Some((bookmark, head))
+            }
+            _ => None,
+        }
+    }
+
     /// The bookmark the operations would name, if the selection is on one
     /// that is there to be operated on.
     fn selected_bookmark(&self) -> Option<&Bookmark> {
-        self.listed_bookmark().filter(|bookmark| bookmark.present)
+        self.selected_target().map(|(bookmark, _)| bookmark)
     }
 
     /// The selected bookmark when it is one on a remote, which is the
@@ -274,11 +310,20 @@ impl BookmarksTab {
                     ))));
                 }
             }
+            BookmarksTabEvent::SetBookmark => {
+                if let Some((bookmark, head)) = self.selected_target() {
+                    return Ok(Some(command::ask_set_bookmark(
+                        self.config.clone(),
+                        bookmark,
+                        head,
+                    )));
+                }
+            }
             BookmarksTabEvent::NewChange { describe } => {
-                if let Some(bookmark) = self.selected_bookmark() {
+                if let Some((bookmark, head)) = self.selected_target() {
                     return Ok(Some(command::ask_new_change(
                         self.config.clone(),
-                        Revset::expression(bookmark.to_string()),
+                        Revset::from(&head.commit_id),
                         NewSource::Change,
                         &bookmark.to_string(),
                         describe,
@@ -286,19 +331,18 @@ impl BookmarksTab {
                 }
             }
             BookmarksTabEvent::EditChange { ignore_immutable } => {
-                if let Some(bookmark) = self.selected_bookmark() {
-                    return Ok(Some(command::ask_edit_bookmark(
+                if let Some((bookmark, head)) = self.selected_target() {
+                    return Ok(Some(command::ask_edit(
                         self.config.clone(),
-                        bookmark,
+                        head,
+                        format!("Bookmark: {bookmark}"),
                         ignore_immutable,
-                    )?));
+                    )));
                 }
             }
             BookmarksTabEvent::ViewInLog => {
-                if let Some(bookmark) = self.selected_bookmark() {
-                    return Ok(Some(AppAction::Run(Command::ShowBookmarkInLog(
-                        bookmark.clone(),
-                    ))));
+                if let Some((_, head)) = self.selected_target() {
+                    return Ok(Some(AppAction::ViewLog(head.clone())));
                 }
             }
             // Not an operation of its own; the key handler deals with it.
@@ -506,5 +550,61 @@ impl Component for BookmarksTab {
         }
 
         Ok(ComponentInputResult::Handled)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commander::ids::ChangeId;
+    use crate::commander::ids::CommitId;
+    use crate::commander::log::Head;
+
+    /// A listed bookmark of this name pointing at this change.
+    fn line(name: &str, commit_id: &str) -> BookmarkLine {
+        BookmarkLine::Parsed {
+            text: format!("{name}: {commit_id}"),
+            bookmark: Bookmark {
+                name: name.to_owned(),
+                remote: None,
+                present: true,
+            },
+            head: Head {
+                change_id: ChangeId(commit_id.to_owned()),
+                commit_id: CommitId(commit_id.to_owned()),
+                divergent: false,
+                immutable: false,
+            },
+        }
+    }
+
+    #[test]
+    fn the_selection_stays_on_the_target_it_was_reading() {
+        let listed = Ok(vec![line("bm", "one"), line("bm", "two")]);
+
+        assert_eq!(
+            get_current_bookmark_index(Some(&line("bm", "two")), &listed),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn the_selection_follows_a_bookmark_that_has_moved() {
+        let listed = Ok(vec![line("other", "elsewhere"), line("bm", "moved")]);
+
+        assert_eq!(
+            get_current_bookmark_index(Some(&line("bm", "was")), &listed),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn a_bookmark_that_is_gone_leaves_the_selection_to_start_over() {
+        let listed = Ok(vec![line("other", "elsewhere")]);
+
+        assert_eq!(
+            get_current_bookmark_index(Some(&line("bm", "was")), &listed),
+            None
+        );
     }
 }

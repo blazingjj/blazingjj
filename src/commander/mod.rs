@@ -463,6 +463,7 @@ pub mod tests {
     use tempfile::TempDir;
 
     use super::*;
+    use crate::commander::bookmarks::Bookmark;
     use crate::env::Env;
     use crate::env::JjConfig;
 
@@ -509,6 +510,14 @@ pub mod tests {
                 directory,
                 commander,
             })
+        }
+
+        /// The bookmarks as the set-bookmark dialog would list them for
+        /// the change the working copy is on.
+        pub fn bookmarks(&self) -> Result<Vec<Bookmark>> {
+            let on = self.commander.get_current_head()?.commit_id;
+
+            Ok(self.commander.get_bookmarks_list(false, &on)?)
         }
     }
 

@@ -53,13 +53,15 @@ pub struct BookmarkSetPopup<'a> {
     creating: Option<TextArea<'a>>,
 }
 
-fn generate_options(change_id: Option<&ChangeId>) -> Vec<BookmarkSetOption> {
-    let bookmarks = new_commander().get_bookmarks_list(false).map(|bookmarks| {
-        bookmarks
-            .into_iter()
-            .filter(|bookmark| bookmark.remote.is_none())
-            .collect::<Vec<Bookmark>>()
-    });
+fn generate_options(change_id: Option<&ChangeId>, commit_id: &CommitId) -> Vec<BookmarkSetOption> {
+    let bookmarks = new_commander()
+        .get_bookmarks_list(false, commit_id)
+        .map(|bookmarks| {
+            bookmarks
+                .into_iter()
+                .filter(|bookmark| bookmark.remote.is_none())
+                .collect::<Vec<Bookmark>>()
+        });
     let mut options = vec![BookmarkSetOption::CreateBookmark];
 
     if let Some(change_id) = change_id {
@@ -96,7 +98,7 @@ fn generate_name(change_id: &ChangeId) -> String {
 impl BookmarkSetPopup<'_> {
     pub fn new(config: JjConfig, change_id: Option<ChangeId>, commit_id: CommitId) -> Self {
         Self {
-            options: generate_options(change_id.as_ref()),
+            options: generate_options(change_id.as_ref(), &commit_id),
             change_id,
             list_state: ListState::default().with_selected(Some(0)),
             list_height: 0,
@@ -292,7 +294,8 @@ impl Component for BookmarkSetPopup<'_> {
                                 return Ok(self.set_bookmark(bookmark.name.clone()));
                             }
                             BookmarkSetOption::Error(_) => {
-                                self.options = generate_options(self.change_id.as_ref());
+                                self.options =
+                                    generate_options(self.change_id.as_ref(), &self.commit_id);
                             }
                         }
                     }

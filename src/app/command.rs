@@ -110,8 +110,6 @@ pub enum Command {
     ForgetBookmark(String),
     TrackBookmark(Bookmark),
     UntrackBookmark(Bookmark),
-    /// Move the log onto the change a bookmark points at.
-    ShowBookmarkInLog(Bookmark),
 }
 
 impl Command {
@@ -302,12 +300,6 @@ impl Command {
                     Err(err) => Ok(Some(refused("Untrack", err))),
                 }
             }
-            Command::ShowBookmarkInLog(bookmark) => {
-                match new_commander().get_bookmark_head(&bookmark) {
-                    Ok(head) => Ok(Some(AppAction::ViewLog(head))),
-                    Err(err) => Ok(Some(refused("View in log", err))),
-                }
-            }
         }
     }
 }
@@ -374,9 +366,14 @@ pub fn ask_squash(config: JjConfig, selected: &Head, ignore_immutable: bool) -> 
     ))
 }
 
-/// Asking to edit `target`: the refusal when it is immutable, or the
-/// question that runs it.
-pub fn ask_edit(config: JjConfig, target: &Head, ignore_immutable: bool) -> AppAction {
+/// Asking to edit `target`, which the question names as `subject`: the
+/// refusal when it is immutable, or the question that runs it.
+pub fn ask_edit(
+    config: JjConfig,
+    target: &Head,
+    subject: String,
+    ignore_immutable: bool,
+) -> AppAction {
     if target.immutable && !ignore_immutable {
         return message(
             "Edit",
@@ -386,7 +383,7 @@ pub fn ask_edit(config: JjConfig, target: &Head, ignore_immutable: bool) -> AppA
 
     let mut lines = vec![
         Line::from("Are you sure you want to edit an existing change?"),
-        Line::from(format!("Change: {}", target.change_id.as_str())),
+        Line::from(subject),
     ];
     if ignore_immutable {
         lines.push(Line::from("This change is immutable."));
@@ -401,35 +398,6 @@ pub fn ask_edit(config: JjConfig, target: &Head, ignore_immutable: bool) -> AppA
             ignore_immutable,
         },
     )
-}
-
-/// Asking to edit the change a bookmark points at, which unlike a change
-/// picked out of the log has to be looked up to know whether it can be.
-pub fn ask_edit_bookmark(
-    config: JjConfig,
-    bookmark: &Bookmark,
-    ignore_immutable: bool,
-) -> Result<AppAction> {
-    let revset = Revset::expression(bookmark.to_string());
-    if new_commander().check_revision_immutable(revset.as_str())? && !ignore_immutable {
-        return Ok(message(
-            "Edit",
-            "The change cannot be edited because it is immutable.",
-        ));
-    }
-
-    Ok(confirm(
-        config,
-        "Edit",
-        Text::from(vec![
-            Line::from("Are you sure you want to edit an existing change?"),
-            Line::from(format!("Bookmark: {bookmark}")),
-        ]),
-        Command::Edit {
-            revset,
-            ignore_immutable,
-        },
-    ))
 }
 
 /// Asking to abandon the `marked` changes, or `selected` when none are
@@ -487,6 +455,26 @@ pub fn ask_forget_bookmark(config: JjConfig, name: &str) -> AppAction {
             "Are you sure you want to forget the {name} bookmark?"
         )),
         Command::ForgetBookmark(name.to_owned()),
+    )
+}
+
+/// Asking to put `bookmark` on `head`, which for one of several targets
+/// is what settles it on that one.
+pub fn ask_set_bookmark(config: JjConfig, bookmark: &Bookmark, head: &Head) -> AppAction {
+    confirm(
+        config,
+        "Set",
+        Text::from(vec![
+            Line::from(format!(
+                "Are you sure you want to move the {} bookmark?",
+                bookmark.name
+            )),
+            Line::from(format!("Onto: {}", head.change_id.as_str())),
+        ]),
+        Command::SetBookmark {
+            name: bookmark.name.clone(),
+            commit_id: head.commit_id.clone(),
+        },
     )
 }
 
@@ -598,7 +586,12 @@ mod tests {
     #[test]
     fn an_immutable_change_is_refused_rather_than_asked_about() {
         assert!(says(
-            ask_edit(JjConfig::default(), &head("a", true), false),
+            ask_edit(
+                JjConfig::default(),
+                &head("a", true),
+                "Change: a".to_owned(),
+                false,
+            ),
             "because it is immutable"
         ));
     }
@@ -606,7 +599,12 @@ mod tests {
     #[test]
     fn an_immutable_change_is_asked_about_when_immutability_is_ignored() {
         assert!(says(
-            ask_edit(JjConfig::default(), &head("a", true), true),
+            ask_edit(
+                JjConfig::default(),
+                &head("a", true),
+                "Change: a".to_owned(),
+                true,
+            ),
             "This change is immutable"
         ));
     }

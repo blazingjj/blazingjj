@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Keybinding in the bookmarks tab to point a bookmark at the change the
+  selected line stands for (`b`, as in the log tab), which settles a bookmark
+  torn between several targets on the one selected, and moves a bookmark to
+  what one of its remotes has
 - Evolog tab, listing the versions a change has had and showing what the rewrite
   that produced the selected one changed; opened for the change selected in the
   log tab with `v` (`open-evolog`), or from the tab bar with `4`. A version's
@@ -62,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The set-bookmark dialog now offers the bookmarks the change is standing on
+  first, nearest first, rather than ordering them by how recently the change
+  each points at was committed
 - The files tab now reads a change's files when it comes on screen, so an
   operation no longer runs `jj` for it while another tab is up
 - The help popup is now sized to fit what it lists
@@ -87,6 +94,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A duplicate jj turns down now says so, rather than looking like it worked
 - A file that cannot be untracked now reports what jj said about it, rather
   than guessing that it needs to be ignored
+- The bookmarks tab now lists a conflicted bookmark's targets under it, the
+  way `jj bookmark list` does, rather than only saying that it is conflicted;
+  selecting one shows that change in the details panel
+- A conflicted bookmark is now offered by the set-bookmark dialog, which is
+  where it would be pointed at a single change to resolve it
 - Switching tabs right after an operation no longer briefly shows what they
   held before it
 - Going to the current change (`@`) now shows it right away, rather than
