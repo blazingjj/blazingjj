@@ -90,6 +90,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A duplicate jj turns down now says so, rather than looking like it worked
 - A file that cannot be untracked now reports what jj said about it, rather
   than guessing that it needs to be ignored
+- The bookmarks tab now lists a conflicted bookmark's targets under it, the
+  way `jj bookmark list` does, rather than only saying that it is conflicted;
+  selecting one shows that change in the details panel
 - A conflicted bookmark is now offered by the set-bookmark dialog, which is
   where it would be pointed at a single change to resolve it
 - Switching tabs right after an operation no longer briefly shows what they

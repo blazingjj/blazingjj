@@ -76,13 +76,25 @@ fn bookmark_only_template() -> String {
 
 /// Template writing a [BookmarkRecord] as a JSON object, one per line.
 ///
-/// A bookmark that has no single target has no head, and jj writes its
-/// error where one belongs. That leaves the line unparsable, which is how
-/// such a bookmark is meant to come out of a listing that shows what each
-/// one points at.
+/// A bookmark with more than one target is written the way jj lists it:
+/// a line naming the bookmark, which points at no change of its own and
+/// so holds no head, and one line per target under it.
 fn bookmark_template() -> String {
-    let head = head_template("self.normal_target()");
-    format!(r#"'{{' ++ {BOOKMARK_FIELDS} ++ ',"head":' ++ {head} ++ '}}' ++ "\n""#)
+    let record =
+        |head: &str| format!(r#"'{{' ++ {BOOKMARK_FIELDS} ++ ',"head":' ++ {head} ++ '}}'"#);
+    let single = record(&head_template("self.normal_target()"));
+    let target = record(&head_template("target"));
+
+    format!(
+        r#"
+if(self.conflict(),
+  '{{' ++ {BOOKMARK_FIELDS} ++ '}}' ++ "\n"
+  ++ self.removed_targets().map(|target| {target} ++ "\n").join("")
+  ++ self.added_targets().map(|target| {target} ++ "\n").join(""),
+  {single} ++ "\n",
+)
+"#
+    )
 }
 
 /// Parse the [BookmarkRecord] one line of [bookmark_template] output
@@ -130,22 +142,7 @@ impl Commander {
         args.push("--sort");
         args.push("committer-date-");
         let bookmarks_colored = self
-            .jj([
-                vec![
-                    "bookmark",
-                    "list",
-                    "--config",
-                    // Override format_ref_targets to not list conflicts
-                    r#"template-aliases.'format_ref_targets(ref)'='''
-                        if(ref.conflict(),
-                          " " ++ label("conflict", "(conflicted)"),
-                          ": " ++ format_commit_summary_with_refs(ref.normal_target(), ""),
-                        )
-                    '''"#,
-                ],
-                args.clone(),
-            ]
-            .concat())
+            .jj([vec!["bookmark", "list"], args.clone()].concat())
             .color()
             .ignore_working_copy()
             .run()?;
@@ -491,21 +488,36 @@ mod tests {
         Ok(())
     }
 
-    /// A bookmark with more than one target has no single commit to
-    /// point at. Leaving it out would hide it from the one listing that
-    /// offers to set it, which is how such a bookmark is resolved.
-    #[test]
-    fn get_bookmarks_list_offers_a_conflicted_bookmark() -> Result<()> {
+    /// A repo whose only bookmark is torn between three targets: two
+    /// operations from the same point, each moving it somewhere else,
+    /// leave the change it was on as the one given up and both of the
+    /// changes it was moved to as ones taken, which is jj's `-` and `+`.
+    fn conflicted_bookmark() -> Result<TestRepo> {
         let test_repo = TestRepo::new()?;
         let commander = &test_repo.commander;
 
-        commander.jj(["new", "root()", "-m", "one"]).run_void()?;
-        let one = commander.get_current_head()?.commit_id;
-        commander.jj(["new", "root()", "-m", "two"]).run_void()?;
-        let two = commander.get_current_head()?.commit_id;
+        let change = |message: &str| -> Result<CommitId> {
+            commander.jj(["new", "root()", "-m", message]).run_void()?;
 
-        // Two operations from the same point, each putting the bookmark
-        // somewhere else, is what leaves it with both targets.
+            Ok(commander.get_current_head()?.commit_id)
+        };
+        let base = change("base")?;
+        let one = change("one")?;
+        let two = change("two")?;
+
+        let set_to = |commit_id: &CommitId| {
+            vec![
+                "bookmark".to_owned(),
+                "set".to_owned(),
+                "bm".to_owned(),
+                "-r".to_owned(),
+                commit_id.as_str().to_owned(),
+                "--allow-backwards".to_owned(),
+            ]
+        };
+        commander
+            .jj(["bookmark", "create", "bm", "-r", base.as_str()])
+            .run_void()?;
         let at_op = commander
             .jj([
                 "op",
@@ -517,29 +529,89 @@ mod tests {
                 "id.short()",
             ])
             .run()?;
-        commander
-            .jj(["bookmark", "create", "bm", "-r", one.as_str()])
-            .run_void()?;
+        commander.jj(set_to(&one)).run_void()?;
         commander
             .jj([
-                "--at-op",
-                at_op.trim(),
-                "bookmark",
-                "create",
-                "bm",
-                "-r",
-                two.as_str(),
-            ])
+                vec!["--at-op".to_owned(), at_op.trim().to_owned()],
+                set_to(&two),
+            ]
+            .concat())
             .run_void()?;
 
+        Ok(test_repo)
+    }
+
+    /// A bookmark with more than one target has no single commit to
+    /// point at. Leaving it out would hide it from the one listing that
+    /// offers to set it, which is how such a bookmark is resolved.
+    #[test]
+    fn get_bookmarks_list_offers_a_conflicted_bookmark() -> Result<()> {
+        let test_repo = conflicted_bookmark()?;
+        let commander = &test_repo.commander;
+        let on = commander.get_current_head()?.commit_id;
+
         let names: Vec<String> = commander
-            .get_bookmarks_list(false, &two)?
+            .get_bookmarks_list(false, &on)?
             .into_iter()
             .filter(|bookmark| bookmark.remote.is_none())
             .map(|bookmark| bookmark.name)
             .collect();
 
         assert_eq!(names, ["bm"]);
+
+        Ok(())
+    }
+
+    /// jj lists such a bookmark as a line naming it and one per target,
+    /// and the tab shows what jj prints, so the two have to agree on how
+    /// many lines that is.
+    #[test]
+    fn get_bookmarks_lists_a_conflicted_bookmark_once_per_target() -> Result<()> {
+        let test_repo = conflicted_bookmark()?;
+        let commander = &test_repo.commander;
+
+        let listed = commander.get_bookmarks(false)?;
+        let targets: Vec<CommitId> = listed
+            .iter()
+            .filter_map(|line| match line {
+                BookmarkLine::Parsed { bookmark, head, .. } if bookmark.remote.is_none() => {
+                    Some(head.commit_id.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        let naming = listed
+            .iter()
+            .filter(|line| matches!(line, BookmarkLine::Unparsable(_)))
+            .count();
+
+        // The line naming the bookmark points at nothing, and each of the
+        // three below it holds the target it stands for.
+        assert_eq!(naming, 1, "{listed:?}");
+        assert_eq!(targets.iter().unique().count(), 3, "{listed:?}");
+
+        Ok(())
+    }
+
+    /// The two listings are paired line by line, so a target has to end
+    /// up beside the line jj wrote about that same target.
+    #[test]
+    fn get_bookmarks_pairs_each_target_with_what_jj_says_about_it() -> Result<()> {
+        let test_repo = conflicted_bookmark()?;
+
+        let mismatched: Vec<BookmarkLine> = test_repo
+            .commander
+            .get_bookmarks(false)?
+            .into_iter()
+            .filter(|line| match line {
+                BookmarkLine::Parsed { text, head, .. } => {
+                    !text.contains(&head.commit_id.as_str()[..8])
+                }
+                BookmarkLine::Unparsable(_) => false,
+            })
+            .collect();
+
+        assert!(mismatched.is_empty(), "{mismatched:?}");
 
         Ok(())
     }
