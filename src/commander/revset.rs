@@ -11,7 +11,9 @@ use crate::commander::ids::CommitId;
 pub struct Revset(String);
 
 impl Revset {
-    /// An arbitrary revset expression, such as one entered by the user.
+    /// An arbitrary revset expression. Only the tests build one, every
+    /// caller having something more specific to hand.
+    #[cfg(test)]
     pub fn expression(expression: impl Into<String>) -> Self {
         Self(expression.into())
     }

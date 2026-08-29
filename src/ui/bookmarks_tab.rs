@@ -17,6 +17,7 @@ use crate::background_tasks::TaskSlot;
 use crate::commander::CommandError;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::bookmarks::BookmarkLine;
+use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
@@ -233,10 +234,23 @@ impl BookmarksTab {
         }
     }
 
+    /// The bookmark the operations would name and the change the line it
+    /// is on points at, if the selection is on one there to be operated
+    /// on. A bookmark with more than one target is listed once per
+    /// target, so the line says which of them an operation acts on.
+    fn selected_target(&self) -> Option<(&Bookmark, &Head)> {
+        match self.bookmark.as_ref() {
+            Some(BookmarkLine::Parsed { bookmark, head, .. }) if bookmark.present => {
+                Some((bookmark, head))
+            }
+            _ => None,
+        }
+    }
+
     /// The bookmark the operations would name, if the selection is on one
     /// that is there to be operated on.
     fn selected_bookmark(&self) -> Option<&Bookmark> {
-        self.listed_bookmark().filter(|bookmark| bookmark.present)
+        self.selected_target().map(|(bookmark, _)| bookmark)
     }
 
     /// The selected bookmark when it is one on a remote, which is the
@@ -297,10 +311,10 @@ impl BookmarksTab {
                 }
             }
             BookmarksTabEvent::NewChange { describe } => {
-                if let Some(bookmark) = self.selected_bookmark() {
+                if let Some((bookmark, head)) = self.selected_target() {
                     return Ok(Some(command::ask_new_change(
                         self.config.clone(),
-                        Revset::expression(bookmark.to_string()),
+                        Revset::from(&head.commit_id),
                         NewSource::Change,
                         &bookmark.to_string(),
                         describe,
@@ -308,19 +322,18 @@ impl BookmarksTab {
                 }
             }
             BookmarksTabEvent::EditChange { ignore_immutable } => {
-                if let Some(bookmark) = self.selected_bookmark() {
-                    return Ok(Some(command::ask_edit_bookmark(
+                if let Some((bookmark, head)) = self.selected_target() {
+                    return Ok(Some(command::ask_edit(
                         self.config.clone(),
-                        bookmark,
+                        head,
+                        format!("Bookmark: {bookmark}"),
                         ignore_immutable,
-                    )?));
+                    )));
                 }
             }
             BookmarksTabEvent::ViewInLog => {
-                if let Some(bookmark) = self.selected_bookmark() {
-                    return Ok(Some(AppAction::Run(Command::ShowBookmarkInLog(
-                        bookmark.clone(),
-                    ))));
+                if let Some((_, head)) = self.selected_target() {
+                    return Ok(Some(AppAction::ViewLog(head.clone())));
                 }
             }
             // Not an operation of its own; the key handler deals with it.

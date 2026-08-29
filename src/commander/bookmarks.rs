@@ -376,7 +376,8 @@ mod tests {
     fn get_bookmarks_reads_the_change_each_bookmark_points_at() -> Result<()> {
         let test_repo = TestRepo::new()?;
 
-        let bookmark = test_repo.commander.create_bookmark("test")?;
+        // The bookmark is created on the change the working copy is on.
+        test_repo.commander.create_bookmark("test")?;
         let bookmarks = test_repo.commander.get_bookmarks(false)?;
 
         assert_eq!(
@@ -384,7 +385,7 @@ mod tests {
                 BookmarkLine::Parsed { head, .. } => Some(head.clone()),
                 BookmarkLine::Unparsable(_) => None,
             }),
-            Some(test_repo.commander.get_bookmark_head(&bookmark)?)
+            Some(test_repo.commander.get_current_head()?)
         );
 
         Ok(())

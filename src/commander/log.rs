@@ -20,7 +20,6 @@ use crate::commander::CommandError;
 use crate::commander::Commander;
 use crate::commander::JjCommand;
 use crate::commander::RemoveEndLine;
-use crate::commander::bookmarks::Bookmark;
 use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
 use crate::env::DiffFormat;
@@ -392,29 +391,6 @@ impl Commander {
             .with_context(|| format!("Failed getting commit description: {commit_id}"))?
             .remove_end_line())
     }
-
-    /// Check if a revision is immutable
-    /// Maps to `jj log -r <revision> -T immutable`
-    #[instrument(level = "trace", skip(self))]
-    pub fn check_revision_immutable(&self, revision: &str) -> Result<bool> {
-        Ok(self
-            .execute_jj_log_one(revision, "immutable")
-            .with_context(|| format!("Failed checking if revision is immutable: {revision}"))?
-            .remove_end_line()
-            == "true")
-    }
-
-    /// Get bookmark head
-    /// Maps to `jj log -r <bookmark>[@<remote>]`
-    #[instrument(level = "trace", skip(self))]
-    pub fn get_bookmark_head(&self, bookmark: &Bookmark) -> Result<Head> {
-        parse_record(
-            &self
-                .execute_jj_log_one(&bookmark.to_string(), &head_template_nl())
-                .context("Failed getting bookmark head")?
-                .remove_end_line(),
-        )
-    }
 }
 
 #[cfg(test)]
@@ -693,28 +669,6 @@ mod tests {
         assert_ne!(old_head, new_head);
 
         assert_eq!(new_head, test_repo.commander.get_head_latest(&old_head)?);
-
-        Ok(())
-    }
-
-    #[test]
-    fn check_revision_immutable() -> Result<()> {
-        let test_repo = TestRepo::new()?;
-
-        assert!(!(test_repo.commander.check_revision_immutable("@")?));
-
-        Ok(())
-    }
-
-    #[test]
-    fn get_bookmark_head() -> Result<()> {
-        let test_repo = TestRepo::new()?;
-
-        let head = test_repo.commander.get_current_head()?;
-        // Git doesn't support bookmark pointing to root commit, so it will advance
-        let bookmark = test_repo.commander.create_bookmark("main")?;
-
-        assert_eq!(test_repo.commander.get_bookmark_head(&bookmark)?, head);
 
         Ok(())
     }

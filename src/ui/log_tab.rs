@@ -270,6 +270,7 @@ impl<'a> LogTab<'a> {
                 return Ok(Some(command::ask_edit(
                     self.config.clone(),
                     &self.head,
+                    format!("Change: {}", self.head.change_id.as_str()),
                     ignore_immutable,
                 )));
             }
