@@ -1,5 +1,3 @@
-use std::sync::mpsc::Sender;
-
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::Frame;
@@ -24,7 +22,7 @@ use ratatui::widgets::Paragraph;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 
-use crate::commander::new_commander;
+use crate::app::command::Command;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -39,28 +37,42 @@ pub struct BookmarkNamePopup<'a> {
     mode: BookmarkNameMode,
     textarea: TextArea<'a>,
     error: Option<anyhow::Error>,
-    /// Receives the saved bookmark name on success; nothing is sent on cancel.
-    tx: Sender<String>,
 }
 
 impl BookmarkNamePopup<'_> {
-    pub fn new_create(tx: Sender<String>) -> BookmarkNamePopup<'static> {
+    pub fn new_create() -> BookmarkNamePopup<'static> {
+        Self::named(BookmarkNameMode::Create, String::new())
+    }
+
+    pub fn new_rename(old_name: String) -> BookmarkNamePopup<'static> {
+        Self::named(
+            BookmarkNameMode::Rename {
+                old_name: old_name.clone(),
+            },
+            old_name,
+        )
+    }
+
+    /// The same question again, with the name that was refused and what
+    /// was said about it.
+    pub fn refused(
+        mode: BookmarkNameMode,
+        name: String,
+        err: impl Into<anyhow::Error>,
+    ) -> BookmarkNamePopup<'static> {
         BookmarkNamePopup {
-            mode: BookmarkNameMode::Create,
-            textarea: TextArea::default(),
-            error: None,
-            tx,
+            error: Some(err.into()),
+            ..Self::named(mode, name)
         }
     }
 
-    pub fn new_rename(old_name: String, tx: Sender<String>) -> BookmarkNamePopup<'static> {
-        let mut textarea = TextArea::new(vec![old_name.clone()]);
+    fn named(mode: BookmarkNameMode, name: String) -> BookmarkNamePopup<'static> {
+        let mut textarea = TextArea::new(vec![name]);
         textarea.move_cursor(CursorMove::End);
         BookmarkNamePopup {
-            mode: BookmarkNameMode::Rename { old_name },
+            mode,
             textarea,
             error: None,
-            tx,
         }
     }
 
@@ -71,15 +83,14 @@ impl BookmarkNamePopup<'_> {
         }
     }
 
-    fn run_command(&self, name: &str) -> Result<(), anyhow::Error> {
+    /// The operation the name that has been typed asks for.
+    fn command(&self, name: String) -> Command {
         match &self.mode {
-            BookmarkNameMode::Create => new_commander()
-                .create_bookmark(name)
-                .map(|_| ())
-                .map_err(anyhow::Error::new),
-            BookmarkNameMode::Rename { old_name } => new_commander()
-                .rename_bookmark(old_name, name)
-                .map_err(anyhow::Error::new),
+            BookmarkNameMode::Create => Command::CreateBookmark(name),
+            BookmarkNameMode::Rename { old_name } => Command::RenameBookmark {
+                old_name: old_name.clone(),
+                new_name: name,
+            },
         }
     }
 }
@@ -155,22 +166,13 @@ impl Component for BookmarkNamePopup<'_> {
                     self.error = Some(anyhow::anyhow!("Bookmark name cannot be empty"));
                     return Ok(ComponentInputResult::Handled);
                 }
-                match self.run_command(&name) {
-                    Ok(()) => {
-                        let _ = self.tx.send(name);
-                        return Ok(ComponentInputResult::HandledAction(AppAction::PopupDone));
-                    }
-                    Err(err) => {
-                        self.error = Some(err);
-                        return Ok(ComponentInputResult::Handled);
-                    }
-                }
+                return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
+                    vec![AppAction::ClosePopup, AppAction::Run(self.command(name))],
+                )));
             }
 
             if key.code == KeyCode::Esc {
-                return Ok(ComponentInputResult::HandledAction(
-                    AppAction::PopupCanceled,
-                ));
+                return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
             }
         }
         self.textarea.input(event);

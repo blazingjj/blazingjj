@@ -4,14 +4,14 @@ previously known as popups.
 A Component can launch a dialog by sending
 [`AppAction::SetPopup(<popup instance>)`](crate::ui::AppAction).
 Once launched, a dialog will receive all input events from the App,
-until it sends [`AppAction::PopupDone`](crate::ui::AppAction) or
-[`AppAction::PopupCanceled`](crate::ui::AppAction).
+until it sends [`AppAction::ClosePopup`](crate::ui::AppAction).
 */
 
 mod bookmark_name;
 mod bookmark_set;
 mod choice;
 mod command;
+mod confirm;
 mod describe;
 mod help;
 mod loader;
@@ -20,10 +20,12 @@ mod new_insert;
 mod parent_select;
 mod rebase;
 
+pub use bookmark_name::BookmarkNameMode;
 pub use bookmark_name::BookmarkNamePopup;
 pub use bookmark_set::BookmarkSetPopup;
 pub use choice::ChoicePopup;
 pub use command::CommandPopup;
+pub use confirm::ConfirmPopup;
 pub use describe::DescribePopup;
 pub use help::HelpPopup;
 pub use loader::LoaderPopup;

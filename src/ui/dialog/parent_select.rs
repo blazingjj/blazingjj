@@ -2,16 +2,14 @@
 selection onto one of them.
 */
 
-use std::sync::mpsc::Sender;
-
 use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Span;
 
-use crate::commander::log::Head;
 use crate::commander::log::Parent;
 use crate::env::JjConfig;
+use crate::ui::AppAction;
 use crate::ui::dialog::ChoicePopup;
 
 /// The row a parent gets in the list, dimmed when it cannot be selected.
@@ -36,17 +34,17 @@ fn parent_line(parent: &Parent, dimmed: bool) -> Line<'static> {
 /// A popup offering the `parents` to pick from. Those `out_of_view` are
 /// listed underneath so that the merge is shown in full, but cannot be
 /// picked.
-pub fn parent_select(
-    config: JjConfig,
-    tx: Sender<Head>,
-    parents: &[Parent],
-    out_of_view: &[Parent],
-) -> ChoicePopup<Head> {
+pub fn parent_select(config: JjConfig, parents: &[Parent], out_of_view: &[Parent]) -> ChoicePopup {
     let items = parents
         .iter()
-        .map(|parent| (parent_line(parent, false), parent.head.clone()))
+        .map(|parent| {
+            (
+                parent_line(parent, false),
+                AppAction::ViewLog(parent.head.clone()),
+            )
+        })
         .collect();
-    let popup = ChoicePopup::new(config, tx, None, "Select parent", items);
+    let popup = ChoicePopup::new(config, None, "Select parent", items);
 
     if out_of_view.is_empty() {
         return popup;
@@ -66,9 +64,6 @@ pub fn parent_select(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::mpsc::Receiver;
-    use std::sync::mpsc::channel;
-
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
@@ -78,7 +73,10 @@ mod tests {
     use super::*;
     use crate::commander::ids::ChangeId;
     use crate::commander::ids::CommitId;
+    use crate::commander::log::Head;
     use crate::ui::Component;
+    use crate::ui::ComponentInputResult;
+    use crate::ui::dialog::choice::tests::picked;
 
     fn parents(range: std::ops::Range<usize>) -> Vec<Parent> {
         range
@@ -94,18 +92,19 @@ mod tests {
             .collect()
     }
 
-    fn popup(in_view: usize, out_of_view: usize) -> (ChoicePopup<Head>, Receiver<Head>) {
-        let (tx, rx) = channel();
+    fn popup(in_view: usize, out_of_view: usize) -> ChoicePopup {
         let all = parents(0..in_view + out_of_view);
 
-        (
-            parent_select(JjConfig::default(), tx, &all[..in_view], &all[in_view..]),
-            rx,
-        )
+        parent_select(JjConfig::default(), &all[..in_view], &all[in_view..])
+    }
+
+    /// The change the popup asked the log to move to, if it asked at all.
+    fn viewed(result: ComponentInputResult) -> Option<String> {
+        picked(result).map(|change_id| change_id.0)
     }
 
     /// What the popup puts on a 100x40 screen
-    fn render(popup: &mut ChoicePopup<Head>) -> Buffer {
+    fn render(popup: &mut ChoicePopup) -> Buffer {
         let mut terminal = Terminal::new(TestBackend::new(100, 40)).expect("the test backend");
         terminal
             .draw(|f| popup.draw(f, f.area()).expect("the popup draws"))
@@ -124,28 +123,27 @@ mod tests {
             .collect()
     }
 
-    fn press(popup: &mut ChoicePopup<Head>, key: KeyCode) {
+    fn press(popup: &mut ChoicePopup, key: KeyCode) -> ComponentInputResult {
         popup
             .input(Event::Key(key.into()))
-            .expect("the popup handles key presses");
+            .expect("the popup handles key presses")
     }
 
     #[test]
-    fn picking_a_parent_sends_its_head() {
-        let (mut popup, rx) = popup(3, 0);
+    fn picking_a_parent_moves_the_log_to_it() {
+        let mut popup = popup(3, 0);
 
         press(&mut popup, KeyCode::Char('j'));
-        press(&mut popup, KeyCode::Enter);
 
         assert_eq!(
-            rx.try_recv().map(|head| head.change_id.0),
-            Ok("change1".into())
+            viewed(press(&mut popup, KeyCode::Enter)),
+            Some("change1".into())
         );
     }
 
     #[test]
     fn parents_out_of_view_are_listed_below_a_separator() {
-        let (mut popup, _rx) = popup(2, 1);
+        let mut popup = popup(2, 1);
 
         let buffer = render(&mut popup);
         let listed: Vec<String> = rows(&buffer)
@@ -164,22 +162,21 @@ mod tests {
 
     #[test]
     fn parents_out_of_view_cannot_be_picked() {
-        let (mut popup, rx) = popup(2, 2);
+        let mut popup = popup(2, 2);
 
         for _ in 0..5 {
             press(&mut popup, KeyCode::Char('j'));
         }
-        press(&mut popup, KeyCode::Enter);
 
         assert_eq!(
-            rx.try_recv().map(|head| head.change_id.0),
-            Ok("change1".into())
+            viewed(press(&mut popup, KeyCode::Enter)),
+            Some("change1".into())
         );
     }
 
     #[test]
     fn nothing_is_listed_below_the_parents_when_they_are_all_in_view() {
-        let (mut popup, _rx) = popup(2, 0);
+        let mut popup = popup(2, 0);
 
         let buffer = render(&mut popup);
 
@@ -192,10 +189,9 @@ mod tests {
 
     #[test]
     fn a_parent_without_a_description_says_so() {
-        let (tx, _rx) = channel();
         let mut parent = parents(0..1);
         parent[0].description = String::new();
-        let mut popup = parent_select(JjConfig::default(), tx, &parent, &[]);
+        let mut popup = parent_select(JjConfig::default(), &parent, &[]);
 
         let buffer = render(&mut popup);
 

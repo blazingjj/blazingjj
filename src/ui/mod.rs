@@ -13,6 +13,7 @@ use ratatui::Frame;
 use ratatui::crossterm::event::Event;
 use ratatui::layout::Rect;
 
+use crate::app::command::Command;
 use crate::background_tasks::TaskResult;
 use crate::commander::log::Head;
 
@@ -24,15 +25,26 @@ pub enum AppAction {
     ViewVersionFiles(Head),
     ViewEvolog(Head),
     ViewLog(Head),
+    /// Show the bookmark of this name, which may have just come into
+    /// being.
+    ViewBookmark(String),
     ChangeHead(Head),
     /// Put this popup up, in place of whatever is up now.
     SetPopup(Box<dyn Component>),
-    /// Take the popup down, what it was there to do having been done.
-    PopupDone,
-    /// Take the popup down, nothing having been done.
-    PopupCanceled,
+    /// Take the popup down. Whatever it was there to collect is asked
+    /// for alongside this, so there is nothing left for the app to do.
+    ClosePopup,
+    /// The marked changes have been acted on, so the log stops marking
+    /// them.
+    ClearLogMarks,
     Multiple(Vec<AppAction>),
-    RefreshTab,
+    /// Have every tab read itself again before it is next drawn, the
+    /// operation that has just run having moved the repo.
+    MarkTabsStale,
+    /// Run this operation and do whatever it asks for in turn. Whoever
+    /// raises one has named it in full, so the app can run it without
+    /// asking anything of the component the request came from.
+    Run(Command),
 }
 
 /// When a Component process an input event, it returns an ComponentInputResult
@@ -47,6 +59,15 @@ pub enum ComponentInputResult {
     /// The app should close this popup and then ask the next component
     /// in z-order to handle the event.
     Dismissed,
+}
+
+impl From<Option<AppAction>> for ComponentInputResult {
+    fn from(app_action: Option<AppAction>) -> Self {
+        match app_action {
+            Some(app_action) => ComponentInputResult::HandledAction(app_action),
+            None => ComponentInputResult::Handled,
+        }
+    }
 }
 
 /// How far to move the selection in a tab's main panel.

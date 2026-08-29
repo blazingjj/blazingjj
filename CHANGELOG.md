@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `focus-current`, `refresh` and `open-help` move there from
   `[blazingjj.keybinds.log-tab]`, which also loses its `scroll-*` overrides
 - jj 0.37.0 or newer is now required
+- The confirmation dialogs are now popups of the app and go away on `q` or
+  Escape, like the other popups, rather than on the log tab's `close-popup`
+  and `cancel` bindings. `[blazingjj.keybinds.log-tab] close-popup` bound
+  nothing else and is gone; `cancel` stays, for the revset editor
 
 ### Added
 
@@ -58,6 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The files tab now reads a change's files when it comes on screen, so an
+  operation no longer runs `jj` for it while another tab is up
 - The help popup is now sized to fit what it lists
 - The message popup is now sized to fit its message, rather than always
   taking up most of the screen
@@ -75,6 +81,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Switching tabs right after an operation no longer briefly shows what they
+  held before it
+- Going to the current change (`@`) now shows it right away, rather than
+  leaving the tab on the change it was on until the view is refreshed by hand
+- Creating a change from the bookmarks tab now brings the view up to date,
+  rather than leaving it to the next poll
+- Editing the change a bookmark points at now brings the other tabs up to date,
+  as editing one from the log does
+- `d` in the bookmarks tab no longer offers to delete a bookmark that is not
+  there to be deleted
 - The help popup no longer drops the global keybindings when the terminal is too
   short to hold them next to the details panel ones
 - The help popup now scrolls its three keybinding lists as a whole rather than

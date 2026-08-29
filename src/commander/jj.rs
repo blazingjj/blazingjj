@@ -25,6 +25,28 @@ pub enum NewInsertMode {
     Before,
 }
 
+/// What a rebase takes along with the change it is given.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RebaseSource {
+    /// `jj rebase -s <rev>` — the change and its descendants.
+    Descendants,
+    /// `jj rebase -b <rev>` — the whole branch the change is on.
+    Branch,
+    /// `jj rebase -r <rev>` — the change alone.
+    SingleRevision,
+}
+
+/// Where a rebase puts what it has taken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RebaseTarget {
+    /// `jj rebase -d <rev>` — onto the change, as a branch of its own.
+    Onto,
+    /// `jj rebase -A <rev>` — between the change and its children.
+    After,
+    /// `jj rebase -B <rev>` — between the change and its parents.
+    Before,
+}
+
 impl Commander {
     /// Create a new change. Maps to `jj new <revset>`. Only the tests
     /// create one without saying where it goes.
@@ -108,15 +130,15 @@ impl Commander {
     /// Rebase changes. Maps to `jj rebase -s <rev> -d <rev>` or similar
     pub fn run_rebase(
         &self,
-        src_mode: &str,
+        source: RebaseSource,
         src_rev: impl Into<Revset>,
-        tgt_mode: &str,
+        target: RebaseTarget,
         tgt_rev: impl Into<Revset>,
     ) -> Result<()> {
         self.run_rebase_inner(
-            src_mode,
+            source,
             src_rev.into().as_str(),
-            tgt_mode,
+            target,
             tgt_rev.into().as_str(),
         )
     }
@@ -124,13 +146,24 @@ impl Commander {
     #[instrument(level = "trace", name = "run_rebase", skip(self))]
     fn run_rebase_inner(
         &self,
-        src_mode: &str,
+        source: RebaseSource,
         src_rev: &str,
-        tgt_mode: &str,
+        target: RebaseTarget,
         tgt_rev: &str,
     ) -> Result<()> {
+        let source = match source {
+            RebaseSource::Descendants => "-s",
+            RebaseSource::Branch => "-b",
+            RebaseSource::SingleRevision => "-r",
+        };
+        let target = match target {
+            RebaseTarget::Onto => "-d",
+            RebaseTarget::After => "-A",
+            RebaseTarget::Before => "-B",
+        };
+
         Ok(self
-            .jj(["rebase", src_mode, src_rev, tgt_mode, tgt_rev])
+            .jj(["rebase", source, src_rev, target, tgt_rev])
             .run_void()?)
     }
 
@@ -163,24 +196,6 @@ impl Commander {
     #[instrument(level = "trace", skip(self))]
     pub fn create_bookmark(&self, name: &str) -> Result<Bookmark, CommandError> {
         self.jj(["bookmark", "create", name]).run_void()?;
-        // jj only creates local bookmarks
-        Ok(Bookmark {
-            name: name.to_owned(),
-            remote: None,
-            present: true,
-            timestamp: chrono::Utc::now().timestamp(),
-        })
-    }
-
-    /// Create bookmark pointing to commit. Maps to `jj bookmark create <name> -r <revision>`
-    #[instrument(level = "trace", skip(self))]
-    pub fn create_bookmark_commit(
-        &self,
-        name: &str,
-        commit_id: &CommitId,
-    ) -> Result<Bookmark, CommandError> {
-        self.jj(["bookmark", "create", name, "-r", commit_id.as_str()])
-            .run_void()?;
         // jj only creates local bookmarks
         Ok(Bookmark {
             name: name.to_owned(),
@@ -433,38 +448,6 @@ mod tests {
     }
 
     #[test]
-    fn create_bookmark_commit() -> Result<()> {
-        let test_repo = TestRepo::new()?;
-
-        // Create new change, since by default `jj bookmark create` uses current change
-        let head = test_repo.commander.get_current_head()?;
-        test_repo.commander.run_new(&head.commit_id)?;
-        assert_ne!(head, test_repo.commander.get_current_head()?);
-
-        let bookmark = test_repo
-            .commander
-            .create_bookmark_commit("test", &head.commit_id)?;
-
-        let log = test_repo
-            .commander
-            .jj([
-                "log",
-                "--limit",
-                "1",
-                "--no-graph",
-                "-T",
-                "commit_id",
-                "-r",
-                &bookmark.name,
-            ])
-            .run()?;
-
-        assert_eq!(head.commit_id.to_string(), log);
-
-        Ok(())
-    }
-
-    #[test]
     fn set_bookmark_commit() -> Result<()> {
         let test_repo = TestRepo::new()?;
 
@@ -511,6 +494,34 @@ mod tests {
             .run()?;
 
         assert_eq!(old_head.commit_id.to_string(), log);
+
+        Ok(())
+    }
+
+    #[test]
+    fn set_bookmark_commit_creates_a_bookmark_that_is_not_there_yet() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        let head = test_repo.commander.get_current_head()?;
+        test_repo
+            .commander
+            .set_bookmark_commit("test", &head.commit_id)?;
+
+        let log = test_repo
+            .commander
+            .jj([
+                "log",
+                "--limit",
+                "1",
+                "--no-graph",
+                "-T",
+                "commit_id",
+                "-r",
+                "test",
+            ])
+            .run()?;
+
+        assert_eq!(head.commit_id.to_string(), log);
 
         Ok(())
     }

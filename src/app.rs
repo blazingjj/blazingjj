@@ -1,3 +1,4 @@
+pub mod command;
 mod repo_watch;
 
 use core::fmt;
@@ -243,9 +244,14 @@ impl<'a> App<'a> {
 
         if self.repo_watch.checked(Instant::now(), op_id) {
             trace!("The repo has moved, so every tab is stale");
-            for tab in TabId::VALUES {
-                self.get_tab(tab).mark_stale();
-            }
+            self.mark_all_stale();
+        }
+    }
+
+    /// Every tab is behind on what it shows, whoever moved the repo.
+    fn mark_all_stale(&mut self) {
+        for tab in TabId::VALUES {
+            self.get_tab(tab).mark_stale();
         }
     }
 
@@ -264,11 +270,11 @@ impl<'a> App<'a> {
         match app_action {
             AppAction::ViewFiles(head) => {
                 self.set_tab(TabId::Files);
-                self.files.set_head(&head)?;
+                self.files.set_head(&head);
             }
             AppAction::ViewVersionFiles(version) => {
                 self.set_tab(TabId::Files);
-                self.files.set_version(&version)?;
+                self.files.set_version(&version);
             }
             AppAction::ViewEvolog(head) => {
                 self.set_tab(TabId::Evolog);
@@ -278,18 +284,18 @@ impl<'a> App<'a> {
                 self.log.set_head(head);
                 self.set_tab(TabId::Log);
             }
+            AppAction::ViewBookmark(name) => {
+                self.set_tab(TabId::Bookmarks);
+                self.bookmarks.select_bookmark(&name);
+            }
             AppAction::ChangeHead(head) => {
-                self.files.set_head(&head)?;
+                self.files.set_head(&head);
                 self.evolog.set_head(&head);
             }
             AppAction::SetPopup(popup) => {
                 self.popup = Some(popup);
             }
-            AppAction::PopupDone => {
-                self.popup = None;
-                self.handle_action(AppAction::RefreshTab)?;
-            }
-            AppAction::PopupCanceled => {
+            AppAction::ClosePopup => {
                 self.popup = None;
             }
             AppAction::Multiple(app_actions) => {
@@ -297,11 +303,19 @@ impl<'a> App<'a> {
                     self.handle_action(app_action)?;
                 }
             }
-            AppAction::RefreshTab => {
-                self.get_current_tab().mark_stale();
-                // Whatever asks for this has likely moved the repo, and
-                // snapshotted while at it, so the other tabs want
-                // checking without delay but not another snapshot.
+            AppAction::ClearLogMarks => {
+                self.log.clear_marks();
+            }
+            AppAction::Run(command) => {
+                if let Some(app_action) = command.run(&self.background_tasks)? {
+                    self.handle_action(app_action)?;
+                }
+            }
+            AppAction::MarkTabsStale => {
+                self.mark_all_stale();
+                // We moved the repo ourselves and snapshotted while at
+                // it, so the check is only there to keep the operation
+                // id we compare against up to date.
                 self.repo_watch.ask_check(Check {
                     snapshot: false,
                     ours: true,
@@ -552,6 +566,10 @@ impl<'a> App<'a> {
                             }
                             GlobalEvent::FocusCurrent => {
                                 self.get_current_tab().focus_current()?;
+                                // The tabs that read what they show when
+                                // they show it are now out of date at our
+                                // asking, not at the repo's.
+                                self.repo_watch.catching_up();
                             }
                             GlobalEvent::Refresh => {
                                 self.repo_watch.ask_check(Check {
@@ -559,7 +577,10 @@ impl<'a> App<'a> {
                                     ours: true,
                                 });
                                 self.get_current_tab().drop_caches();
-                                self.handle_action(AppAction::RefreshTab)?;
+                                // The check above is the one we want, so
+                                // there is nothing left but to have every
+                                // tab read itself again.
+                                self.mark_all_stale();
                             }
                             GlobalEvent::NextTab => self.set_next_tab_with_offset(1),
                             GlobalEvent::PrevTab => self.set_next_tab_with_offset(-1),

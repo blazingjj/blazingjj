@@ -9,6 +9,7 @@ use ratatui::widgets::*;
 use tracing::instrument;
 
 use crate::app::TabId;
+use crate::app::command::Command;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskOutput;
 use crate::background_tasks::TaskResult;
@@ -32,7 +33,6 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
-use crate::ui::dialog::MessagePopup;
 use crate::ui::panel::ListPane;
 use crate::ui::panel::MouseInput;
 use crate::ui::panel::OutputKey;
@@ -167,31 +167,25 @@ impl FilesTab {
 
     /// Show the files of `head`, following the change it belongs to as it
     /// is rewritten.
-    pub fn set_head(&mut self, head: &Head) -> Result<()> {
-        self.show_head(head, false)
+    pub fn set_head(&mut self, head: &Head) {
+        self.show_head(head, false);
     }
 
     /// Show the files of one version of a change, which stays where it is
     /// however the change moves on.
-    pub fn set_version(&mut self, version: &Head) -> Result<()> {
-        self.show_head(version, true)
+    pub fn set_version(&mut self, version: &Head) {
+        self.show_head(version, true);
     }
 
-    fn show_head(&mut self, head: &Head, pinned: bool) -> Result<()> {
+    /// Records what to show, leaving the tab stale so that the files are
+    /// read the next time it is drawn.
+    fn show_head(&mut self, head: &Head, pinned: bool) {
         self.head = head.clone();
         self.pinned = pinned;
-        self.is_current_head = self.head == new_commander().get_current_head()?;
-
-        self.refresh_files()?;
-        self.file = self
-            .files_output
-            .as_ref()
-            .ok()
-            .and_then(|files_output| files_output.first())
-            .map(|file| file.to_owned());
-        self.show_diff();
-
-        Ok(())
+        // The selection belongs to the change we were on, so the next
+        // read starts at the top of the new one.
+        self.file = None;
+        self.stale = true;
     }
 
     pub fn get_current_file_index(&self) -> Option<usize> {
@@ -232,56 +226,18 @@ impl FilesTab {
         self.diff_panel.set_active(subjects);
     }
 
-    /// Move to the working copy commit, dropping the selection, without
-    /// reading the files there.
-    fn follow_current_head(&mut self) -> Result<()> {
-        self.head = new_commander().get_current_head()?;
-        self.pinned = false;
-        self.file = None;
-        Ok(())
-    }
-
-    pub fn untrack_file(&mut self) -> Result<()> {
-        self.file
-            .as_ref()
-            .map(|current_file| new_commander().untrack_file(current_file))
-            .transpose()?;
-        Ok(())
-    }
-
-    pub fn restore_file(&mut self) -> Result<()> {
-        self.file
-            .as_ref()
-            .map(|current_file| new_commander().restore_file(current_file))
-            .transpose()?;
-        Ok(())
-    }
-
-    fn handle_event(&mut self, event: FilesTabEvent) -> Result<ComponentInputResult> {
+    fn handle_event(&mut self, event: FilesTabEvent) -> Result<Option<AppAction>> {
         match event {
-            FilesTabEvent::Untrack => {
-                // this works even for deleted files because jj doesn't return error in that case
-                if self.untrack_file().is_err() {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(MessagePopup::new(
-                            "Can't untrack file",
-                            "Make sure that file is ignored",
-                        )),
-                    )));
-                }
-                self.follow_current_head()?;
-                Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab))
-            }
-            FilesTabEvent::Restore => {
-                if let Err(err) = self.restore_file() {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::SetPopup(
-                        Box::new(MessagePopup::new("Can't restore file", err.to_string())),
-                    )));
-                }
-                self.follow_current_head()?;
-                Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab))
-            }
-            FilesTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
+            FilesTabEvent::Untrack => Ok(self
+                .file
+                .clone()
+                .map(|file| AppAction::Run(Command::UntrackFile(file)))),
+            FilesTabEvent::Restore => Ok(self
+                .file
+                .clone()
+                .map(|file| AppAction::Run(Command::RestoreFile(file)))),
+            // Not an operation of its own; the key handler deals with it.
+            FilesTabEvent::Unbound => Ok(None),
         }
     }
 
@@ -345,7 +301,8 @@ impl Tab for FilesTab {
     }
 
     fn focus_current(&mut self) -> Result<()> {
-        self.set_head(&new_commander().get_current_head()?)
+        self.set_head(&new_commander().get_current_head()?);
+        Ok(())
     }
 
     fn make_main_panel_help(&self) -> Vec<(String, String)> {
@@ -485,7 +442,12 @@ impl Component for FilesTab {
                 }
             }
 
-            return self.handle_event(self.keybinds.match_event(key));
+            return match self.keybinds.match_event(key) {
+                // Not the tab's to act on, so whoever else wants the key
+                // is welcome to it.
+                FilesTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
+                event => Ok(self.handle_event(event)?.into()),
+            };
         }
 
         if let Event::Mouse(mouse) = event {
@@ -517,6 +479,7 @@ mod tests {
     use super::*;
     use crate::commander::files::DiffType;
     use crate::commander::ids::CommitId;
+    use crate::env::set_test_env;
 
     fn head(change_id: &str, commit_id: &str) -> Head {
         Head {
@@ -585,5 +548,44 @@ mod tests {
 
         assert_eq!(git.render_width(PANEL_WIDTH), 0);
         assert_eq!(tool.render_width(PANEL_WIDTH), PANEL_WIDTH);
+    }
+
+    fn tab() -> FilesTab {
+        set_test_env();
+        let (sender, _receiver) = std::sync::mpsc::channel();
+
+        FilesTab::new(&head("change", "commit"), BackgroundTasks::new(sender))
+    }
+
+    #[test]
+    fn being_told_what_to_show_leaves_the_reading_for_when_it_is_shown() {
+        let mut tab = tab();
+        tab.stale = false;
+
+        tab.set_head(&head("other", "other"));
+
+        assert_eq!(tab.head, head("other", "other"));
+        assert!(tab.is_stale());
+    }
+
+    #[test]
+    fn the_selection_starts_over_in_the_change_that_is_now_shown() {
+        let mut tab = tab();
+        tab.file = Some(file("a.txt"));
+
+        tab.set_head(&head("other", "other"));
+
+        assert_eq!(tab.file, None);
+    }
+
+    #[test]
+    fn a_version_is_shown_as_it_stands_however_the_change_moves_on() {
+        let mut tab = tab();
+
+        tab.set_version(&head("change", "old"));
+        assert!(tab.pinned);
+
+        tab.set_head(&head("change", "commit"));
+        assert!(!tab.pinned);
     }
 }

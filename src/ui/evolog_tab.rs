@@ -4,20 +4,20 @@ changed in the details panel.
 */
 
 use anyhow::Result;
-use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyEventKind;
-use ratatui::crossterm::execute;
 use ratatui::prelude::*;
 use tracing::instrument;
 
 use crate::app::TabId;
+use crate::app::command::Command;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
 use crate::commander::log::EVOLOG_LINES_PER_HEAD;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
+use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::DetailsPanelEvent;
@@ -114,7 +114,7 @@ impl<'a> EvologTab<'a> {
         self.sync_entry_output();
     }
 
-    fn handle_event(&mut self, event: EvologTabEvent) -> Result<ComponentInputResult> {
+    fn handle_event(&mut self, event: EvologTabEvent) -> Result<Option<AppAction>> {
         let entry = &self.entry_panel.head;
 
         match event {
@@ -126,24 +126,25 @@ impl<'a> EvologTab<'a> {
                 } else {
                     AppAction::ViewVersionFiles(entry.clone())
                 };
-                return Ok(ComponentInputResult::HandledAction(action));
+                return Ok(Some(action));
             }
             EvologTabEvent::Duplicate => {
                 // The duplicate is a change of its own, so it shows up in
                 // the log rather than in the evolog we are on
-                new_commander().run_duplicate(entry.commit_id.as_str())?;
-                return Ok(ComponentInputResult::HandledAction(AppAction::RefreshTab));
+                return Ok(Some(AppAction::Run(Command::Duplicate(Revset::from(
+                    &entry.commit_id,
+                )))));
             }
             EvologTabEvent::CopyRev => {
-                let _ = execute!(
-                    std::io::stdout(),
-                    CopyToClipboard::to_clipboard_from(entry.commit_id.as_str())
-                );
+                return Ok(Some(AppAction::Run(Command::Copy(
+                    entry.commit_id.as_str().to_owned(),
+                ))));
             }
-            EvologTabEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
+            // Not an operation of its own; the key handler deals with it.
+            EvologTabEvent::Unbound => {}
         }
 
-        Ok(ComponentInputResult::Handled)
+        Ok(None)
     }
 }
 
@@ -238,7 +239,12 @@ impl Component for EvologTab<'_> {
                 }
             }
 
-            return self.handle_event(self.keybinds.match_event(key));
+            return match self.keybinds.match_event(key) {
+                // Not the tab's to act on, so whoever else wants the key
+                // is welcome to it.
+                EvologTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
+                event => Ok(self.handle_event(event)?.into()),
+            };
         }
 
         if let Event::Mouse(mouse) = event {

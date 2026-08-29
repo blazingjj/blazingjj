@@ -1,6 +1,5 @@
 use ansi_to_tui::IntoText;
 use anyhow::Result;
-use anyhow::bail;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyModifiers;
@@ -23,6 +22,7 @@ use ratatui::widgets::ListState;
 use ratatui::widgets::Paragraph;
 use ratatui_textarea::TextArea;
 
+use crate::app::command::Command;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
@@ -120,34 +120,25 @@ impl BookmarkSetPopup<'_> {
         self.creating = Some(TextArea::default());
     }
 
-    fn create_bookmark(&self, name: &str) -> Result<()> {
-        if new_commander()
-            .get_bookmarks_list(false)?
-            .iter()
-            .any(|bookmark| bookmark.name == name)
-        {
-            new_commander().set_bookmark_commit(name, &self.commit_id)?;
-        } else {
-            new_commander().create_bookmark_commit(name, &self.commit_id)?;
-        }
-        Ok(())
+    /// Taking the popup down and putting the bookmark of this name on
+    /// the commit it was opened for.
+    fn set_bookmark(&self, name: String) -> ComponentInputResult {
+        ComponentInputResult::HandledAction(AppAction::Multiple(vec![
+            AppAction::ClosePopup,
+            AppAction::Run(Command::SetBookmark {
+                name,
+                commit_id: self.commit_id.clone(),
+            }),
+        ]))
     }
-    fn generate_bookmark(&self) -> Result<()> {
-        if let Some(change_id) = self.change_id.as_ref() {
-            let generated_name = generate_name(change_id);
-            if new_commander()
-                .get_bookmarks_list(false)?
-                .iter()
-                .any(|bookmark| bookmark.name == generated_name)
-            {
-                new_commander().set_bookmark_commit(&generated_name, &self.commit_id)?;
-            } else {
-                new_commander().create_bookmark_commit(&generated_name, &self.commit_id)?;
-            }
-            Ok(())
-        } else {
-            bail!("No change ID");
-        }
+
+    /// The name generated for the change the popup was opened for, if
+    /// it was opened for one at all.
+    fn generated_name(&self) -> Option<String> {
+        self.options.iter().find_map(|option| match option {
+            BookmarkSetOption::GeneratedName(name, _) => Some(name.clone()),
+            _ => None,
+        })
     }
 }
 
@@ -249,13 +240,10 @@ impl Component for BookmarkSetPopup<'_> {
                             return Ok(ComponentInputResult::Handled);
                         }
 
-                        self.create_bookmark(name)?;
-                        return Ok(ComponentInputResult::HandledAction(AppAction::PopupDone));
+                        return Ok(self.set_bookmark(name.clone()));
                     }
                     KeyCode::Esc => {
-                        return Ok(ComponentInputResult::HandledAction(
-                            AppAction::PopupCanceled,
-                        ));
+                        return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
                     }
                     _ => {}
                 }
@@ -280,8 +268,9 @@ impl Component for BookmarkSetPopup<'_> {
                     self.scroll((self.list_height as isize / 2).saturating_neg());
                 }
                 KeyCode::Char('g') => {
-                    self.generate_bookmark()?;
-                    return Ok(ComponentInputResult::HandledAction(AppAction::PopupDone));
+                    if let Some(name) = self.generated_name() {
+                        return Ok(self.set_bookmark(name));
+                    }
                 }
                 KeyCode::Char('c') => {
                     self.on_creating();
@@ -296,18 +285,11 @@ impl Component for BookmarkSetPopup<'_> {
                             BookmarkSetOption::CreateBookmark => {
                                 self.on_creating();
                             }
-                            BookmarkSetOption::GeneratedName(_, _) => {
-                                self.generate_bookmark()?;
-                                return Ok(ComponentInputResult::HandledAction(
-                                    AppAction::PopupDone,
-                                ));
+                            BookmarkSetOption::GeneratedName(name, _) => {
+                                return Ok(self.set_bookmark(name.clone()));
                             }
                             BookmarkSetOption::Bookmark(bookmark) => {
-                                new_commander()
-                                    .set_bookmark_commit(&bookmark.name, &self.commit_id)?;
-                                return Ok(ComponentInputResult::HandledAction(
-                                    AppAction::PopupDone,
-                                ));
+                                return Ok(self.set_bookmark(bookmark.name.clone()));
                             }
                             BookmarkSetOption::Error(_) => {
                                 self.options = generate_options(self.change_id.as_ref());
@@ -316,9 +298,7 @@ impl Component for BookmarkSetPopup<'_> {
                     }
                 }
                 KeyCode::Char('q') | KeyCode::Esc => {
-                    return Ok(ComponentInputResult::HandledAction(
-                        AppAction::PopupCanceled,
-                    ));
+                    return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
                 }
                 _ => return Ok(ComponentInputResult::NotHandled),
             }

@@ -23,8 +23,8 @@ use ratatui::widgets::Paragraph;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 
+use crate::app::command::Command;
 use crate::commander::log::Head;
-use crate::commander::new_commander;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -88,17 +88,18 @@ impl Component for DescribePopup<'_> {
         {
             match (key.code, key.modifiers) {
                 (KeyCode::Char('s'), m) if m.contains(KeyModifiers::CONTROL) => {
-                    new_commander()
-                        .run_describe(&self.head.commit_id, &self.textarea.lines().join("\n"))?;
-                    let latest = new_commander().get_head_latest(&self.head)?;
                     return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                        vec![AppAction::PopupDone, AppAction::ViewLog(latest)],
+                        vec![
+                            AppAction::ClosePopup,
+                            AppAction::Run(Command::Describe {
+                                head: self.head.clone(),
+                                description: self.textarea.lines().join("\n"),
+                            }),
+                        ],
                     )));
                 }
                 (KeyCode::Esc, _) => {
-                    return Ok(ComponentInputResult::HandledAction(
-                        AppAction::PopupCanceled,
-                    ));
+                    return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
                 }
                 _ => {}
             }
