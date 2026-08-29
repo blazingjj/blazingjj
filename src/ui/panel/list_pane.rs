@@ -76,6 +76,24 @@ impl ListPane {
         }
     }
 
+    /// Where to put something that wants to show up next to the item at
+    /// `index`, which takes `height` rows: just below it and indented, so
+    /// that the item itself stays readable. None unless the item is on
+    /// screen.
+    pub fn item_anchor(&self, index: usize, height: u16) -> Option<Position> {
+        /// Columns to indent by, enough to tell the item from what shows
+        /// up next to it.
+        const INDENT: u16 = 6;
+
+        let row = index.checked_sub(self.offset)?;
+        (row < self.content_rect.height as usize).then(|| {
+            Position::new(
+                self.content_rect.x + INDENT,
+                self.content_rect.y + row as u16 + height,
+            )
+        })
+    }
+
     /// Index of the item drawn at `pos`, if any.
     fn item_at(&self, pos: Position) -> Option<usize> {
         if !self.content_rect.contains(pos) {
@@ -98,6 +116,10 @@ impl PanelMouseInput for ListPane {
             MouseEventKind::Down(MouseButton::Left) => match self.item_at(pos) {
                 Some(index) => MouseInput::Select(index),
                 // A click in the pane is ours even when it hits no item.
+                None => MouseInput::Handled,
+            },
+            MouseEventKind::Down(MouseButton::Right) => match self.item_at(pos) {
+                Some(index) => MouseInput::Context(index),
                 None => MouseInput::Handled,
             },
             _ => MouseInput::NotHandled,

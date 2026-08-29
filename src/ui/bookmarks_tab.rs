@@ -32,6 +32,7 @@ use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::dialog::BookmarkNamePopup;
+use crate::ui::dialog::bookmarks_context_menu;
 use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::ListPane;
 use crate::ui::panel::MouseInput;
@@ -260,6 +261,16 @@ impl BookmarksTab {
             .filter(|bookmark| bookmark.remote.is_some())
     }
 
+    /// The menu of what can be done to the selected bookmark, put at
+    /// `anchor` or centered when there is nowhere to point at.
+    fn open_context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
+        Some(AppAction::SetPopup(Box::new(bookmarks_context_menu(
+            self.config.clone(),
+            anchor,
+            self.selected_target(),
+        ))))
+    }
+
     fn handle_event(&mut self, event: BookmarksTabEvent) -> Result<Option<AppAction>> {
         match event {
             BookmarksTabEvent::ToggleShowAll => {
@@ -344,6 +355,12 @@ impl BookmarksTab {
                 if let Some((_, head)) = self.selected_target() {
                     return Ok(Some(AppAction::ViewLog(head.clone())));
                 }
+            }
+            BookmarksTabEvent::OpenContextMenu => {
+                return Ok(self.open_context_menu(
+                    self.get_current_bookmark_index()
+                        .and_then(|index| self.bookmarks_pane.item_anchor(index, 1)),
+                ));
             }
             // Not an operation of its own; the key handler deals with it.
             BookmarksTabEvent::Unbound => {}
@@ -541,6 +558,17 @@ impl Component for BookmarksTab {
                     if let Some(bookmark) = bookmarks.get(index).cloned() {
                         self.bookmark = Some(bookmark);
                         self.show_bookmark();
+                    }
+                }
+                // The bookmarks that cannot be parsed are listed as they
+                // are, and name none for a menu to act on.
+                MouseInput::Context(index) => {
+                    let bookmarks = self.bookmarks_output.as_deref().unwrap_or_default();
+                    if let Some(bookmark) = bookmarks.get(index).cloned() {
+                        self.bookmark = Some(bookmark);
+                        self.show_bookmark();
+                        let anchor = Position::new(mouse.column, mouse.row);
+                        return Ok(self.open_context_menu(Some(anchor)).into());
                     }
                 }
                 MouseInput::Handled => {}

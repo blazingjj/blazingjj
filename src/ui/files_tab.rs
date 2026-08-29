@@ -33,6 +33,7 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
+use crate::ui::dialog::files_context_menu;
 use crate::ui::panel::ListPane;
 use crate::ui::panel::MouseInput;
 use crate::ui::panel::OutputKey;
@@ -226,6 +227,18 @@ impl FilesTab {
         self.diff_panel.set_active(subjects);
     }
 
+    /// The menu of what can be done to the selected file, put at
+    /// `anchor` or centered when there is nowhere to point at.
+    fn open_context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
+        let file = self.file.as_ref()?;
+
+        Some(AppAction::SetPopup(Box::new(files_context_menu(
+            self.config.clone(),
+            anchor,
+            file,
+        ))))
+    }
+
     fn handle_event(&mut self, event: FilesTabEvent) -> Result<Option<AppAction>> {
         match event {
             FilesTabEvent::Untrack => Ok(self
@@ -236,6 +249,10 @@ impl FilesTab {
                 .file
                 .clone()
                 .map(|file| AppAction::Run(Command::RestoreFile(file)))),
+            FilesTabEvent::OpenContextMenu => Ok(self.open_context_menu(
+                self.get_current_file_index()
+                    .and_then(|index| self.files_pane.item_anchor(index, 1)),
+            )),
             // Not an operation of its own; the key handler deals with it.
             FilesTabEvent::Unbound => Ok(None),
         }
@@ -317,6 +334,7 @@ impl Tab for FilesTab {
 impl Component for FilesTab {
     fn update(&mut self) -> Result<Option<AppAction>> {
         self.diff_panel.update();
+
         Ok(None)
     }
 
@@ -462,6 +480,18 @@ impl Component for FilesTab {
                     {
                         self.file = Some(file);
                         self.show_diff();
+                    }
+                }
+                // The conflicts are listed below the files, and name no
+                // file for a menu to act on.
+                MouseInput::Context(index) => {
+                    if let Ok(files) = self.files_output.as_ref()
+                        && let Some(file) = files.get(index).cloned()
+                    {
+                        self.file = Some(file);
+                        self.show_diff();
+                        let anchor = Position::new(mouse.column, mouse.row);
+                        return Ok(self.open_context_menu(Some(anchor)).into());
                     }
                 }
                 MouseInput::Handled => {}

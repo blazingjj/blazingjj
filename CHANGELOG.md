@@ -63,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stale and the app is not going to catch it up on its own
 - A right click now takes a choice popup away: one inside it cancels, one
   outside also goes on to the tab underneath, which may act on what was hit
+- Context menu popup (right-click or `Menu` key) with the common operations for
+  whatever the tab has selected: a change, a file, a version or a bookmark
 
 ### Changed
 

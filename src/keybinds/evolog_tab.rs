@@ -18,6 +18,8 @@ pub enum EvologTabEvent {
     Duplicate,
     CopyRev,
 
+    OpenContextMenu,
+
     Unbound,
 }
 
@@ -29,6 +31,7 @@ impl Default for EvologTabKeybinds {
             EvologTabEvent::OpenFiles => "enter",
             EvologTabEvent::Duplicate => "shift+d",
             EvologTabEvent::CopyRev => "shift+y",
+            EvologTabEvent::OpenContextMenu => "menu",
         );
         Self { keys }
     }
@@ -47,6 +50,7 @@ impl EvologTabKeybinds {
             EvologTabEvent::OpenFiles => "see files of this version",
             EvologTabEvent::Duplicate => "duplicate this version as a new change",
             EvologTabEvent::CopyRev => "yank revision to clipboard",
+            EvologTabEvent::OpenContextMenu => "open the context menu",
         )
     }
 }

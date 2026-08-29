@@ -31,10 +31,12 @@ use crate::env::JjConfig;
 use crate::ui::AppAction;
 use crate::ui::dialog::BookmarkNameMode;
 use crate::ui::dialog::BookmarkNamePopup;
+use crate::ui::dialog::BookmarkSetPopup;
 use crate::ui::dialog::ConfirmPopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
+use crate::ui::dialog::RebasePopup;
 use crate::ui::dialog::new_insert;
 
 /// What a new change is created from, which decides whether the log is
@@ -302,6 +304,95 @@ impl Command {
             }
         }
     }
+}
+
+/// Asking for a new change from the marked changes, or from `selected`
+/// when none are marked.
+pub fn ask_new_change_from_selection(
+    config: JjConfig,
+    selected: &Head,
+    marked: &[CommitId],
+    describe: bool,
+) -> AppAction {
+    let target = if marked.is_empty() {
+        selected.change_id.as_str().chars().take(8).collect()
+    } else {
+        format!("the {} marked changes", marked.len())
+    };
+    let revset = Revset::union(marked).unwrap_or_else(|| Revset::from(&selected.commit_id));
+    let source = if marked.is_empty() {
+        NewSource::Change
+    } else {
+        NewSource::Marks
+    };
+
+    ask_new_change(config, revset, source, &target, describe)
+}
+
+/// Asking for a new change from the one a bookmark points at.
+pub fn ask_new_change_from_bookmark(
+    config: JjConfig,
+    bookmark: &Bookmark,
+    head: &Head,
+    describe: bool,
+) -> AppAction {
+    ask_new_change(
+        config,
+        Revset::from(&head.commit_id),
+        NewSource::Change,
+        &bookmark.to_string(),
+        describe,
+    )
+}
+
+/// Asking to see the files of one version of `change`. The newest
+/// version is the change as it stands, so the files tab may as well keep
+/// up with it.
+pub fn show_version_files(version: &Head, change: &Head) -> AppAction {
+    if version.commit_id == change.commit_id {
+        AppAction::ViewFiles(version.clone())
+    } else {
+        AppAction::ViewVersionFiles(version.clone())
+    }
+}
+
+/// Asking to describe `head`: the refusal when it is immutable, or the
+/// editor with what it says now.
+pub fn describe(head: &Head) -> Result<AppAction> {
+    if head.immutable {
+        return Ok(message(
+            "Describe",
+            "The change cannot be described because it is immutable.",
+        ));
+    }
+
+    let lines = new_commander()
+        .get_commit_description(&head.commit_id)?
+        .split('\n')
+        .map(str::to_owned)
+        .collect();
+
+    Ok(AppAction::SetPopup(Box::new(DescribePopup::new(
+        head.clone(),
+        lines,
+    ))))
+}
+
+/// Asking to rebase the working copy commit onto `destination`.
+pub fn rebase(destination: &Head) -> Result<AppAction> {
+    Ok(AppAction::SetPopup(Box::new(RebasePopup::new(
+        new_commander().get_current_head()?,
+        destination.clone(),
+    ))))
+}
+
+/// Asking to put a bookmark on `head`.
+pub fn set_bookmark(config: JjConfig, head: &Head) -> AppAction {
+    AppAction::SetPopup(Box::new(BookmarkSetPopup::new(
+        config,
+        Some(head.change_id.clone()),
+        head.commit_id.clone(),
+    )))
 }
 
 /// Asking for a new change from `revset`, which `target` names as the
