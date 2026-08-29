@@ -179,8 +179,9 @@ impl Command {
                     ),
                 };
 
-                // The selection has to come out of what is being
-                // abandoned, or it names a change that is no longer there.
+                // A tab following a change that is gone falls back to the
+                // working copy, which may be nowhere near what was being
+                // read, so take the selection to the parent instead.
                 let mut moved_to = selected.clone();
                 while abandoned.contains(&moved_to.commit_id) {
                     moved_to = new_commander().get_commit_parent(&moved_to.commit_id)?;
@@ -188,9 +189,6 @@ impl Command {
 
                 new_commander().run_abandon(revset)?;
 
-                // Abandoning may have rebased what the selection landed
-                // on.
-                let moved_to = new_commander().get_head_latest(&moved_to)?;
                 let mut actions = vec![
                     AppAction::ClearLogMarks,
                     AppAction::ViewLog(moved_to.clone()),
