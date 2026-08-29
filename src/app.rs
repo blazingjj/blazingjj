@@ -295,10 +295,6 @@ impl<'a> App<'a> {
             AppAction::SetPopup(popup) => {
                 self.popup = Some(popup);
             }
-            AppAction::PopupDone => {
-                self.popup = None;
-                self.handle_action(AppAction::MarkTabsStale)?;
-            }
             AppAction::ClosePopup => {
                 self.popup = None;
             }

@@ -76,7 +76,7 @@ impl Component for LoaderPopup {
                 ))),
                 AppAction::MarkTabsStale,
             ]),
-            Ok(_) => AppAction::PopupDone,
+            Ok(_) => AppAction::Multiple(vec![AppAction::ClosePopup, AppAction::MarkTabsStale]),
             Err(err) => AppAction::SetPopup(Box::new(MessagePopup::new(
                 format!("{} error", self.operation_name),
                 err.to_string(),

@@ -31,8 +31,6 @@ pub enum AppAction {
     ChangeHead(Head),
     /// Put this popup up, in place of whatever is up now.
     SetPopup(Box<dyn Component>),
-    /// Take the popup down, what it was there to do having been done.
-    PopupDone,
     /// Take the popup down. Whatever it was there to collect is asked
     /// for alongside this, so there is nothing left for the app to do.
     ClosePopup,
