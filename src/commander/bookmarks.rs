@@ -55,31 +55,45 @@ struct BookmarkRecord {
     head: Head,
 }
 
-/// Template writing a [BookmarkRecord] as a JSON object, one per line.
+/// The [Bookmark] fields, as the members of a JSON object without the
+/// braces around them.
 ///
 /// `name` and `remote` are revset symbols, which jj only quotes when it
 /// renders them as a template -- `stringify()` alone would hand back the
 /// bare name. Concatenating is what puts them through that rendering.
+const BOOKMARK_FIELDS: &str = r#"
+    '"name":' ++ stringify(concat(name)).escape_json()
+    ++ ',"remote":' ++ if(remote, stringify(concat(remote)).escape_json(), 'null')
+    ++ ',"present":' ++ present
+"#;
+
+/// Template writing a [Bookmark] as a JSON object, one per line. Says
+/// nothing about what the bookmark points at, so a bookmark with no
+/// single target is written like any other.
+fn bookmark_only_template() -> String {
+    format!(r#"'{{' ++ {BOOKMARK_FIELDS} ++ '}}' ++ "\n""#)
+}
+
+/// Template writing a [BookmarkRecord] as a JSON object, one per line.
 ///
 /// A bookmark that has no single target has no head, and jj writes its
 /// error where one belongs. That leaves the line unparsable, which is how
-/// such a bookmark is meant to come out.
+/// such a bookmark is meant to come out of a listing that shows what each
+/// one points at.
 fn bookmark_template() -> String {
     let head = head_template("self.normal_target()");
-    format!(
-        r#"
-    '{{"name":' ++ stringify(concat(name)).escape_json()
-    ++ ',"remote":' ++ if(remote, stringify(concat(remote)).escape_json(), 'null')
-    ++ ',"present":' ++ present
-    ++ ',"head":' ++ {head}
-    ++ '}}' ++ "\n"
-"#
-    )
+    format!(r#"'{{' ++ {BOOKMARK_FIELDS} ++ ',"head":' ++ {head} ++ '}}' ++ "\n""#)
 }
 
 /// Parse the [BookmarkRecord] one line of [bookmark_template] output
 /// describes.
 fn parse_bookmark(text: &str) -> Option<BookmarkRecord> {
+    serde_json::from_str(text).ok()
+}
+
+/// Parse the [Bookmark] one line of [bookmark_only_template] output
+/// describes.
+fn parse_bookmark_only(text: &str) -> Option<Bookmark> {
     serde_json::from_str(text).ok()
 }
 
@@ -168,7 +182,7 @@ impl Commander {
             "bookmark".to_owned(),
             "list".to_owned(),
             "-T".to_owned(),
-            format!(r#"if(present, {}, "")"#, bookmark_template()),
+            format!(r#"if(present, {}, "")"#, bookmark_only_template()),
         ];
         if show_all {
             args.push("--all-remotes".to_owned());
@@ -180,8 +194,7 @@ impl Commander {
             .ignore_working_copy()
             .run()?
             .lines()
-            .filter_map(parse_bookmark)
-            .map(|record| record.bookmark)
+            .filter_map(parse_bookmark_only)
             .sorted_by_key(|bookmark| match bookmark.remote {
                 // Only local bookmarks are ranked, so one on a remote
                 // would otherwise take the rank of the local bookmark it
@@ -474,6 +487,59 @@ mod tests {
         assert_eq!(names.last(), Some(&"aside".to_owned()), "{names:?}");
         assert!(names.contains(&"both".to_owned()), "{names:?}");
         assert!(names.contains(&"here".to_owned()), "{names:?}");
+
+        Ok(())
+    }
+
+    /// A bookmark with more than one target has no single commit to
+    /// point at. Leaving it out would hide it from the one listing that
+    /// offers to set it, which is how such a bookmark is resolved.
+    #[test]
+    fn get_bookmarks_list_offers_a_conflicted_bookmark() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let commander = &test_repo.commander;
+
+        commander.jj(["new", "root()", "-m", "one"]).run_void()?;
+        let one = commander.get_current_head()?.commit_id;
+        commander.jj(["new", "root()", "-m", "two"]).run_void()?;
+        let two = commander.get_current_head()?.commit_id;
+
+        // Two operations from the same point, each putting the bookmark
+        // somewhere else, is what leaves it with both targets.
+        let at_op = commander
+            .jj([
+                "op",
+                "log",
+                "--no-graph",
+                "--limit",
+                "1",
+                "-T",
+                "id.short()",
+            ])
+            .run()?;
+        commander
+            .jj(["bookmark", "create", "bm", "-r", one.as_str()])
+            .run_void()?;
+        commander
+            .jj([
+                "--at-op",
+                at_op.trim(),
+                "bookmark",
+                "create",
+                "bm",
+                "-r",
+                two.as_str(),
+            ])
+            .run_void()?;
+
+        let names: Vec<String> = commander
+            .get_bookmarks_list(false, &two)?
+            .into_iter()
+            .filter(|bookmark| bookmark.remote.is_none())
+            .map(|bookmark| bookmark.name)
+            .collect();
+
+        assert_eq!(names, ["bm"]);
 
         Ok(())
     }
