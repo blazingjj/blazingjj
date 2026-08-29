@@ -116,8 +116,6 @@ impl GlobalKeybinds {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
     use ratatui::crossterm::event::KeyCode;
     use ratatui::crossterm::event::KeyModifiers;
 
@@ -272,10 +270,6 @@ mod tests {
             .iter()
             .find(|(_, desc)| desc == "refresh")
             .expect("refresh should be listed");
-        // `get_shortcuts()` returns them in hash order.
-        assert_eq!(
-            keys.split('/').collect::<HashSet<_>>(),
-            HashSet::from(["Shift+r", "F5"])
-        );
+        assert_eq!(keys, "Shift+r/F5");
     }
 }
