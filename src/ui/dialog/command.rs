@@ -62,7 +62,7 @@ impl Component for CommandPopup<'_> {
 
         f.render_widget(&self.command_textarea, popup_chunks[0]);
 
-        let help = Paragraph::new(vec!["Enter: run | Escape: cancel".into()])
+        let help = Paragraph::new(vec![self.keybinds.hint("run").into()])
             .fg(Color::DarkGray)
             .alignment(Alignment::Center)
             .block(

@@ -86,6 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The popups now all scroll alike, so the lists and the help scroll by half a
   page on `Ctrl+d` and `Ctrl+u` and by a page on `Ctrl+f` and `Ctrl+b` as well,
   as the message popup already did
+- The line under a popup naming the keys it answers to now names the keys
+  they are bound to, rather than the ones they were bound to when it was
+  written
 - The help popup is now sized to fit what it lists
 - The message popup is now sized to fit its message, rather than always
   taking up most of the screen

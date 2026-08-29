@@ -96,6 +96,32 @@ impl PopupKeybinds {
         self.keys.match_event(event).unwrap_or(PopupEvent::Unbound)
     }
 
+    /// The line under a popup saying what it answers to, with `accept`
+    /// naming what accepting it does.
+    pub fn hint(&self, accept: &str) -> String {
+        [(PopupEvent::Accept, accept), (PopupEvent::Cancel, "cancel")]
+            .into_iter()
+            .filter_map(|(event, what)| Some(format!("{}: {what}", self.shortcut(event)?)))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    }
+
+    /// The same for a popup that is scrolled as well.
+    pub fn scroll_hint(&self, accept: &str) -> String {
+        let scroll = self
+            .shortcut(PopupEvent::ScrollDown)
+            .zip(self.shortcut(PopupEvent::ScrollUp))
+            .map(|(down, up)| format!("{down}/{up}: scroll | "))
+            .unwrap_or_default();
+
+        format!("{scroll}{}", self.hint(accept))
+    }
+
+    /// The shortcut to name `event` by, of those bound to it.
+    fn shortcut(&self, event: PopupEvent) -> Option<Shortcut> {
+        self.keys.get_shortcuts(event).into_iter().next()
+    }
+
     fn extend_dialog_from_config(&mut self, config: &KeybindsConfig) {
         // A line at a time is a line at a time wherever one is scrolled.
         update_keybinds!(
@@ -162,6 +188,18 @@ mod tests {
         assert_eq!(
             keybinds.match_event(ctrl(KeyCode::Char('d'))),
             PopupEvent::ScrollDownHalf
+        );
+    }
+
+    #[test]
+    fn test_the_hint_names_one_shortcut_per_action() {
+        assert_eq!(
+            PopupKeybinds::dialog().scroll_hint("select"),
+            "j/k: scroll | Enter: select | Esc: cancel"
+        );
+        assert_eq!(
+            PopupKeybinds::text().hint("accept"),
+            "Control+s: accept | Esc: cancel"
         );
     }
 

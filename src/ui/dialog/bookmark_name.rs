@@ -139,7 +139,7 @@ impl Component for BookmarkNamePopup<'_> {
         }
 
         f.render_widget(
-            Paragraph::new(vec!["Ctrl+s: save | Escape: cancel".into()])
+            Paragraph::new(vec![self.keybinds.hint("accept").into()])
                 .fg(Color::DarkGray)
                 .alignment(Alignment::Center)
                 .block(

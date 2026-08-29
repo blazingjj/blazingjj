@@ -172,7 +172,7 @@ impl Component for BookmarkSetPopup<'_> {
 
             f.render_widget(creating, popup_chunks[0]);
 
-            let help = Paragraph::new(vec!["Ctrl+s: save | Escape: cancel".into()])
+            let help = Paragraph::new(vec![self.name_keybinds.hint("accept").into()])
                 .fg(Color::DarkGray)
                 .alignment(Alignment::Center)
                 .block(
@@ -225,7 +225,7 @@ impl Component for BookmarkSetPopup<'_> {
             f.render_stateful_widget(list, popup_chunks[0], &mut self.list_state);
             self.list_height = popup_chunks[0].height;
 
-            let help = Paragraph::new(vec!["j/k: scroll down/up | Escape: cancel".into()])
+            let help = Paragraph::new(vec![self.keybinds.scroll_hint("select").into()])
                 .fg(Color::DarkGray)
                 .alignment(Alignment::Center)
                 .block(

@@ -73,7 +73,7 @@ impl Component for DescribePopup<'_> {
 
         f.render_widget(&self.textarea, popup_chunks[0]);
 
-        let help = Paragraph::new(vec!["Ctrl+s: save | Escape: cancel".into()])
+        let help = Paragraph::new(vec![self.keybinds.hint("accept").into()])
             .fg(Color::DarkGray)
             .alignment(Alignment::Center)
             .block(

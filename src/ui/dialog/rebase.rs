@@ -174,7 +174,7 @@ impl Component for RebasePopup {
         frame.render_widget(
             Paragraph::new(Text::from(vec![
                 Line::raw(""),
-                Line::raw("Esc: Cancel    Enter: Rebase"),
+                Line::raw(self.popup_keybinds.hint("rebase")),
             ])),
             chunks[4],
         );
