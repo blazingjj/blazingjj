@@ -310,6 +310,15 @@ impl BookmarksTab {
                     ))));
                 }
             }
+            BookmarksTabEvent::SetBookmark => {
+                if let Some((bookmark, head)) = self.selected_target() {
+                    return Ok(Some(command::ask_set_bookmark(
+                        self.config.clone(),
+                        bookmark,
+                        head,
+                    )));
+                }
+            }
             BookmarksTabEvent::NewChange { describe } => {
                 if let Some((bookmark, head)) = self.selected_target() {
                     return Ok(Some(command::ask_new_change(

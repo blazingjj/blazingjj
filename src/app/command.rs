@@ -458,6 +458,26 @@ pub fn ask_forget_bookmark(config: JjConfig, name: &str) -> AppAction {
     )
 }
 
+/// Asking to put `bookmark` on `head`, which for one of several targets
+/// is what settles it on that one.
+pub fn ask_set_bookmark(config: JjConfig, bookmark: &Bookmark, head: &Head) -> AppAction {
+    confirm(
+        config,
+        "Set",
+        Text::from(vec![
+            Line::from(format!(
+                "Are you sure you want to move the {} bookmark?",
+                bookmark.name
+            )),
+            Line::from(format!("Onto: {}", head.change_id.as_str())),
+        ]),
+        Command::SetBookmark {
+            name: bookmark.name.clone(),
+            commit_id: head.commit_id.clone(),
+        },
+    )
+}
+
 /// Put `question` to the user, running `command` if they say yes.
 fn confirm(
     config: JjConfig,

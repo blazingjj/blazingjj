@@ -21,8 +21,15 @@ pub enum BookmarksTabEvent {
     ForgetBookmark,
     TrackBookmark,
     UntrackBookmark,
-    NewChange { describe: bool },
-    EditChange { ignore_immutable: bool },
+    /// Point the bookmark at the change the selected line stands for,
+    /// which for one of several targets is what settles it on that one.
+    SetBookmark,
+    NewChange {
+        describe: bool,
+    },
+    EditChange {
+        ignore_immutable: bool,
+    },
     ViewInLog,
 
     Unbound,
@@ -40,6 +47,7 @@ impl Default for BookmarksTabKeybinds {
             BookmarksTabEvent::ForgetBookmark => "f",
             BookmarksTabEvent::TrackBookmark => "t",
             BookmarksTabEvent::UntrackBookmark => "shift+t",
+            BookmarksTabEvent::SetBookmark => "b",
             BookmarksTabEvent::NewChange { describe: false } => "n",
             BookmarksTabEvent::NewChange { describe: true } => "shift+n",
             BookmarksTabEvent::EditChange { ignore_immutable: false } => "e",
@@ -67,6 +75,7 @@ impl BookmarksTabKeybinds {
             BookmarksTabEvent::ForgetBookmark => "forget bookmark",
             BookmarksTabEvent::TrackBookmark => "track bookmark",
             BookmarksTabEvent::UntrackBookmark => "untrack bookmark",
+            BookmarksTabEvent::SetBookmark => "set bookmark here",
             BookmarksTabEvent::ViewInLog => "view in log",
             BookmarksTabEvent::NewChange { describe: false } => "new from bookmark",
             BookmarksTabEvent::NewChange { describe: true } => "new and describe",

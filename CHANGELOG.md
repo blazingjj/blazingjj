@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Keybinding in the bookmarks tab to point a bookmark at the change the
+  selected line stands for (`b`, as in the log tab), which settles a bookmark
+  torn between several targets on the one selected, and moves a bookmark to
+  what one of its remotes has
 - Evolog tab, listing the versions a change has had and showing what the rewrite
   that produced the selected one changed; opened for the change selected in the
   log tab with `v` (`open-evolog`), or from the tab bar with `4`. A version's
