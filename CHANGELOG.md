@@ -62,6 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The set-bookmark dialog now offers the bookmarks the change is standing on
+  first, nearest first, rather than ordering them by how recently the change
+  each points at was committed
 - The files tab now reads a change's files when it comes on screen, so an
   operation no longer runs `jj` for it while another tab is up
 - The help popup is now sized to fit what it lists

@@ -6,6 +6,7 @@ other jj bookmark commands are defined in module [jj][super::jj].
 
 It is mostly used in the [bookmarks_tab][crate::ui::bookmarks_tab] module.
 */
+use std::collections::HashMap;
 use std::fmt::Display;
 
 use ansi_to_tui::IntoText;
@@ -18,6 +19,7 @@ use tracing::instrument;
 use crate::commander::CommandError;
 use crate::commander::Commander;
 use crate::commander::ids::ChangeId;
+use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::log::head_template;
 
@@ -31,7 +33,6 @@ pub struct Bookmark {
     pub name: String,
     pub remote: Option<String>,
     pub present: bool,
-    pub timestamp: i64,
 }
 
 impl Display for Bookmark {
@@ -60,9 +61,9 @@ struct BookmarkRecord {
 /// renders them as a template -- `stringify()` alone would hand back the
 /// bare name. Concatenating is what puts them through that rendering.
 ///
-/// A bookmark that has no single target has neither timestamp nor head,
-/// and jj writes its error where each of them belongs. That leaves the
-/// line unparsable, which is how such a bookmark is meant to come out.
+/// A bookmark that has no single target has no head, and jj writes its
+/// error where one belongs. That leaves the line unparsable, which is how
+/// such a bookmark is meant to come out.
 fn bookmark_template() -> String {
     let head = head_template("self.normal_target()");
     format!(
@@ -70,7 +71,6 @@ fn bookmark_template() -> String {
     '{{"name":' ++ stringify(concat(name)).escape_json()
     ++ ',"remote":' ++ if(remote, stringify(concat(remote)).escape_json(), 'null')
     ++ ',"present":' ++ present
-    ++ ',"timestamp":' ++ self.normal_target().committer().timestamp().format("%s")
     ++ ',"head":' ++ {head}
     ++ '}}' ++ "\n"
 "#
@@ -155,10 +155,15 @@ impl Commander {
         Ok(bookmarks)
     }
 
-    /// Get the bookmarks that exist, newest first, leaving the working
-    /// copy alone.
+    /// The bookmarks that exist, the ones `near` already stands on first
+    /// and the nearest of those before the rest: a bookmark is usually
+    /// set on a change it is behind. Leaves the working copy alone.
     #[instrument(level = "trace", skip(self))]
-    pub fn get_bookmarks_list(&self, show_all: bool) -> Result<Vec<Bookmark>, CommandError> {
+    pub fn get_bookmarks_list(
+        &self,
+        show_all: bool,
+        near: &CommitId,
+    ) -> Result<Vec<Bookmark>, CommandError> {
         let mut args = vec![
             "bookmark".to_owned(),
             "list".to_owned(),
@@ -169,6 +174,7 @@ impl Commander {
             args.push("--all-remotes".to_owned());
         }
 
+        let ranks = self.get_bookmark_ranks(near)?;
         let bookmarks: Vec<Bookmark> = self
             .jj(args)
             .ignore_working_copy()
@@ -176,10 +182,47 @@ impl Commander {
             .lines()
             .filter_map(parse_bookmark)
             .map(|record| record.bookmark)
-            .sorted_by(|a, b| b.timestamp.cmp(&a.timestamp))
+            .sorted_by_key(|bookmark| match bookmark.remote {
+                // Only local bookmarks are ranked, so one on a remote
+                // would otherwise take the rank of the local bookmark it
+                // shares a name with.
+                Some(_) => usize::MAX,
+                None => ranks.get(&bookmark.name).copied().unwrap_or(usize::MAX),
+            })
             .collect();
 
         Ok(bookmarks)
+    }
+
+    /// Where each local bookmark on an ancestor of `commit_id` comes in
+    /// walking back from it, nearest first, by name. One with more than
+    /// one target is ranked by whichever of them is reached first.
+    ///
+    /// Ranking a bookmark on a remote by the same name would say where
+    /// the remote has it rather than where it is, so both the revset and
+    /// the template leave those out.
+    fn get_bookmark_ranks(
+        &self,
+        commit_id: &CommitId,
+    ) -> Result<HashMap<String, usize>, CommandError> {
+        let listed = self
+            .jj([
+                "log",
+                "-r",
+                &format!("bookmarks() & ::{}", commit_id.as_str()),
+                "--no-graph",
+                "-T",
+                r#"local_bookmarks.map(|bookmark| bookmark.name()).join("\n") ++ "\n""#,
+            ])
+            .ignore_working_copy()
+            .run()?;
+
+        let mut ranks = HashMap::new();
+        for (rank, name) in listed.lines().enumerate() {
+            ranks.entry(name.to_owned()).or_insert(rank);
+        }
+
+        Ok(ranks)
     }
 
     #[instrument(level = "trace", skip(self))]
@@ -229,13 +272,12 @@ mod tests {
     fn parse_bookmark_reads_a_local_bookmark() {
         assert_eq!(
             parse_bookmark_of(&bookmark_line(
-                r#""name":"main","remote":null,"present":true,"timestamp":1786973730"#
+                r#""name":"main","remote":null,"present":true"#
             )),
             Some(Bookmark {
                 name: "main".to_owned(),
                 remote: None,
                 present: true,
-                timestamp: 1786973730,
             })
         );
     }
@@ -244,13 +286,12 @@ mod tests {
     fn parse_bookmark_reads_a_remote_bookmark() {
         assert_eq!(
             parse_bookmark_of(&bookmark_line(
-                r#""name":"main","remote":"origin","present":false,"timestamp":1786973730"#
+                r#""name":"main","remote":"origin","present":false"#
             )),
             Some(Bookmark {
                 name: "main".to_owned(),
                 remote: Some("origin".to_owned()),
                 present: false,
-                timestamp: 1786973730,
             })
         );
     }
@@ -261,13 +302,12 @@ mod tests {
     fn parse_bookmark_reads_a_name_that_needed_quoting() {
         assert_eq!(
             parse_bookmark_of(&bookmark_line(
-                r#""name":"\"feature@v2\"","remote":"origin","present":true,"timestamp":1"#
+                r#""name":"\"feature@v2\"","remote":"origin","present":true"#
             )),
             Some(Bookmark {
                 name: "\"feature@v2\"".to_owned(),
                 remote: Some("origin".to_owned()),
                 present: true,
-                timestamp: 1,
             })
         );
     }
@@ -276,7 +316,7 @@ mod tests {
     fn parse_bookmark_reads_the_change_the_bookmark_points_at() {
         assert_eq!(
             parse_bookmark(&bookmark_line(
-                r#""name":"main","remote":null,"present":true,"timestamp":1"#
+                r#""name":"main","remote":null,"present":true"#
             ))
             .map(|record| record.head),
             Some(head())
@@ -284,12 +324,12 @@ mod tests {
     }
 
     /// Which is what jj leaves behind for a bookmark without a single
-    /// target, in place of the timestamp and of the head.
+    /// target, in place of the head.
     #[test]
     fn parse_bookmark_rejects_a_record_holding_an_error() {
         assert!(
             parse_bookmark(
-                r#"{"name":"main","remote":null,"present":true,"timestamp":<Error: No commit available>,"head":<Error: No commit available>}"#
+                r#"{"name":"main","remote":null,"present":true,"head":<Error: No commit available>}"#
             )
             .is_none()
         );
@@ -309,7 +349,6 @@ mod tests {
                     name: bookmark.name.clone(),
                     remote: bookmark.remote.clone(),
                     present: bookmark.present,
-                    timestamp: 0,
                 }),
                 _ => None,
             }),
@@ -317,7 +356,6 @@ mod tests {
                 name: bookmark.name.clone(),
                 remote: bookmark.remote.clone(),
                 present: bookmark.present,
-                timestamp: 0,
             })
         );
 
@@ -347,7 +385,7 @@ mod tests {
         let test_repo = TestRepo::new()?;
 
         let bookmark = test_repo.commander.create_bookmark("test")?;
-        let bookmarks = test_repo.commander.get_bookmarks_list(false)?;
+        let bookmarks = test_repo.bookmarks()?;
 
         assert_eq!(
             bookmarks
@@ -356,16 +394,86 @@ mod tests {
                     name: b.name.clone(),
                     remote: b.remote.clone(),
                     present: b.present,
-                    timestamp: 0,
                 })
                 .collect::<Vec<_>>(),
             [Bookmark {
                 name: bookmark.name,
                 remote: bookmark.remote,
                 present: bookmark.present,
-                timestamp: 0,
             }]
         );
+
+        Ok(())
+    }
+
+    /// The names the set-bookmark dialog would list, in the order it
+    /// would offer them.
+    fn listed_names(test_repo: &TestRepo) -> Result<Vec<String>> {
+        Ok(test_repo
+            .bookmarks()?
+            .into_iter()
+            .map(|bookmark| bookmark.name)
+            .collect())
+    }
+
+    /// The one the change is standing on is the one it is most likely to
+    /// be moved to.
+    #[test]
+    fn get_bookmarks_list_offers_the_nearest_bookmark_first() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let commander = &test_repo.commander;
+
+        // near <- far, with the working copy on top of both.
+        commander.create_bookmark("far")?;
+        commander.run_new(&commander.get_current_head()?.commit_id)?;
+        commander.create_bookmark("near")?;
+        commander.run_new(&commander.get_current_head()?.commit_id)?;
+
+        assert_eq!(listed_names(&test_repo)?, ["near", "far"]);
+
+        Ok(())
+    }
+
+    /// One the change is not standing on is still worth offering, just
+    /// not before the ones it is.
+    #[test]
+    fn get_bookmarks_list_offers_a_bookmark_off_to_the_side_last() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let commander = &test_repo.commander;
+
+        commander.create_bookmark("behind")?;
+        let behind = commander.get_current_head()?.commit_id;
+        commander.jj(["new", "root()"]).run_void()?;
+        commander.create_bookmark("aside")?;
+        commander.run_new(&behind)?;
+
+        assert_eq!(listed_names(&test_repo)?, ["behind", "aside"]);
+
+        Ok(())
+    }
+
+    /// Two bookmarks on one change are one line of the ranking each, so
+    /// neither swallows the other.
+    #[test]
+    fn get_bookmarks_list_offers_every_bookmark_on_the_same_change() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let commander = &test_repo.commander;
+
+        // Both are ranked only if the change they share is read as two
+        // names rather than as one run-together name, which would leave
+        // them behind the bookmark off to the side.
+        commander.jj(["new", "root()"]).run_void()?;
+        commander.create_bookmark("aside")?;
+        commander.jj(["new", "root()"]).run_void()?;
+        commander.create_bookmark("both")?;
+        commander.create_bookmark("here")?;
+        commander.run_new(&commander.get_current_head()?.commit_id)?;
+
+        let names = listed_names(&test_repo)?;
+
+        assert_eq!(names.last(), Some(&"aside".to_owned()), "{names:?}");
+        assert!(names.contains(&"both".to_owned()), "{names:?}");
+        assert!(names.contains(&"here".to_owned()), "{names:?}");
 
         Ok(())
     }
