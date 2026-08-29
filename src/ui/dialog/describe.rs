@@ -3,9 +3,7 @@ use std::cmp::max;
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
-use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
-use ratatui::crossterm::event::KeyModifiers;
 use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -25,6 +23,8 @@ use ratatui_textarea::TextArea;
 
 use crate::app::command::Command;
 use crate::commander::log::Head;
+use crate::keybinds::PopupEvent;
+use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -33,13 +33,18 @@ use crate::ui::utils::centered_rect_fixed;
 pub struct DescribePopup<'a> {
     head: Head,
     textarea: TextArea<'a>,
+    keybinds: PopupKeybinds,
 }
 
 impl DescribePopup<'_> {
     pub fn new(head: Head, lines: Vec<String>) -> DescribePopup<'static> {
         let mut textarea = TextArea::new(lines);
         textarea.move_cursor(CursorMove::End);
-        DescribePopup { head, textarea }
+        DescribePopup {
+            head,
+            textarea,
+            keybinds: PopupKeybinds::text(),
+        }
     }
 }
 
@@ -86,8 +91,8 @@ impl Component for DescribePopup<'_> {
         if let Event::Key(key) = event
             && key.kind == KeyEventKind::Press
         {
-            match (key.code, key.modifiers) {
-                (KeyCode::Char('s'), m) if m.contains(KeyModifiers::CONTROL) => {
+            match self.keybinds.match_event(key) {
+                PopupEvent::Accept => {
                     return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
                         vec![
                             AppAction::ClosePopup,
@@ -98,7 +103,7 @@ impl Component for DescribePopup<'_> {
                         ],
                     )));
                 }
-                (KeyCode::Esc, _) => {
+                PopupEvent::Cancel => {
                     return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
                 }
                 _ => {}

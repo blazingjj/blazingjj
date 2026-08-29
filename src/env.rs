@@ -36,6 +36,12 @@ pub fn get_env() -> &'static Env {
     ENV.get().unwrap()
 }
 
+/// The configured keybindings, if any. Unlike [`get_env()`], this works
+/// before the environment is set, as in tests building components.
+pub fn keybinds_config() -> Option<&'static KeybindsConfig> {
+    ENV.get().and_then(|env| env.jj_config.keybinds())
+}
+
 /// A default environment for tests that build components reading it. The
 /// tests share one process, so whichever gets there first sets it.
 #[cfg(test)]

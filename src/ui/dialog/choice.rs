@@ -5,7 +5,6 @@ app is to take, and raises the one picked.
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
-use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::MouseButton;
 use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Alignment;
@@ -27,6 +26,8 @@ use ratatui::widgets::ListState;
 use ratatui::widgets::Paragraph;
 
 use crate::env::JjConfig;
+use crate::keybinds::PopupEvent;
+use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -54,6 +55,7 @@ pub struct ChoicePopup {
     /// List area inside the popup, updated on every draw
     list_area: Rect,
     config: JjConfig,
+    keybinds: PopupKeybinds,
 }
 
 impl ChoicePopup {
@@ -72,6 +74,7 @@ impl ChoicePopup {
             popup_area: Rect::ZERO,
             list_area: Rect::ZERO,
             config,
+            keybinds: PopupKeybinds::dialog(),
         }
     }
 
@@ -194,16 +197,20 @@ impl Component for ChoicePopup {
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
         match event {
-            Event::Key(key) => match key.code {
-                KeyCode::Char('j') | KeyCode::Down => self.scroll(1),
-                KeyCode::Char('k') | KeyCode::Up => self.scroll(-1),
-                KeyCode::Char('J') => self.scroll(self.list_area.height as isize / 2),
-                KeyCode::Char('K') => {
+            Event::Key(key) => match self.keybinds.match_event(key) {
+                PopupEvent::ScrollDown => self.scroll(1),
+                PopupEvent::ScrollUp => self.scroll(-1),
+                PopupEvent::ScrollDownHalf => self.scroll(self.list_area.height as isize / 2),
+                PopupEvent::ScrollUpHalf => {
                     self.scroll((self.list_area.height as isize / 2).saturating_neg())
                 }
-                KeyCode::Enter => return self.confirm(),
-                KeyCode::Char('q') | KeyCode::Esc => return Self::close(),
-                _ => {}
+                PopupEvent::ScrollDownPage => self.scroll(self.list_area.height as isize),
+                PopupEvent::ScrollUpPage => {
+                    self.scroll((self.list_area.height as isize).saturating_neg())
+                }
+                PopupEvent::Accept => return self.confirm(),
+                PopupEvent::Cancel => return Self::close(),
+                PopupEvent::Unbound => {}
             },
             // Where the popup sits is only known once it has been drawn,
             // and events are handled in batches without a draw between
@@ -244,6 +251,7 @@ impl Component for ChoicePopup {
 pub(super) mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::crossterm::event::KeyCode;
     use ratatui::crossterm::event::KeyModifiers;
     use ratatui::crossterm::event::MouseEvent;
 

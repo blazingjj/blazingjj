@@ -10,7 +10,6 @@ use std::time::Instant;
 
 use anyhow::Result;
 use ratatui::crossterm::event::Event as TermEvent;
-use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::{self};
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -39,6 +38,8 @@ use crate::event::AppEvent;
 use crate::event::EventSource;
 use crate::keybinds::GlobalEvent;
 use crate::keybinds::GlobalKeybinds;
+use crate::keybinds::PopupEvent;
+use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -98,6 +99,9 @@ pub struct App<'a> {
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     global_keybinds: GlobalKeybinds,
+    /// The keys a popup that does not answer to them itself is taken
+    /// down by
+    popup_keybinds: PopupKeybinds,
 
     repo_watch: RepoWatch,
 
@@ -129,6 +133,7 @@ impl<'a> App<'a> {
                 start_time: Instant::now(),
             },
             global_keybinds,
+            popup_keybinds: PopupKeybinds::dialog(),
 
             repo_watch: RepoWatch::new(get_env().jj_config.poll_interval(), Instant::now()),
 
@@ -519,19 +524,12 @@ impl<'a> App<'a> {
                 ComponentInputResult::NotHandled => {
                     if let TermEvent::Key(key) = event
                         && key.kind == event::KeyEventKind::Press
+                        && matches!(
+                            self.popup_keybinds.match_event(key),
+                            PopupEvent::Accept | PopupEvent::Cancel
+                        )
                     {
-                        // Close
-                        if matches!(
-                            key.code,
-                            KeyCode::Char('y')
-                                | KeyCode::Char('n')
-                                | KeyCode::Char('o')
-                                | KeyCode::Enter
-                                | KeyCode::Char('q')
-                                | KeyCode::Esc
-                        ) {
-                            self.popup = None
-                        }
+                        self.popup = None
                     }
                 }
             };

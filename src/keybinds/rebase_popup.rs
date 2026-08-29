@@ -28,8 +28,6 @@ pub enum PasteOption {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PopupAction {
     None,
-    Ok,
-    Cancel,
     SetSourceMode(CutOption),
     SetTargetMode(PasteOption),
 }
@@ -38,9 +36,6 @@ fn default_keybinds() -> KeybindsStore<PopupAction> {
     let mut keys = KeybindsStore::<PopupAction>::default();
     set_keybinds!(
         keys,
-        PopupAction::Ok => "enter",
-        PopupAction::Cancel => "esc",
-        PopupAction::Cancel => "q",
         PopupAction::SetSourceMode(CutOption::IncludeDescendants) => "s",
         PopupAction::SetSourceMode(CutOption::IncludeBranch) => "b",
         PopupAction::SetSourceMode(CutOption::SingleRevision) => "r",

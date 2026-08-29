@@ -24,6 +24,8 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 
 use crate::env::JjConfig;
+use crate::keybinds::PopupEvent;
+use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -51,6 +53,7 @@ pub struct ConfirmPopup {
     /// Whether Enter presses yes rather than no
     yes_selected: bool,
     config: JjConfig,
+    keybinds: PopupKeybinds,
 }
 
 impl ConfirmPopup {
@@ -67,6 +70,7 @@ impl ConfirmPopup {
             confirmed: Some(confirmed),
             yes_selected: true,
             config,
+            keybinds: PopupKeybinds::dialog(),
         }
     }
 
@@ -174,13 +178,19 @@ impl Component for ConfirmPopup {
             return Ok(ComponentInputResult::Handled);
         }
 
+        match self.keybinds.match_event(key) {
+            PopupEvent::Accept => return self.answer(self.yes_selected),
+            PopupEvent::Cancel => return Self::close(),
+            _ => {}
+        }
+
+        // The answers are the buttons the question puts up, so they are
+        // its own keys rather than any popup's.
         match key.code {
             KeyCode::Left => self.yes_selected = true,
             KeyCode::Right => self.yes_selected = false,
             KeyCode::Char(YES_KEY) => return self.answer(true),
             KeyCode::Char(NO_KEY) => return self.answer(false),
-            KeyCode::Enter => return self.answer(self.yes_selected),
-            KeyCode::Esc | KeyCode::Char('q') => return Self::close(),
             _ => {}
         }
 

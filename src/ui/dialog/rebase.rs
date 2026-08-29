@@ -44,6 +44,8 @@ use crate::app::command::Command;
 use crate::commander::jj::RebaseSource;
 use crate::commander::jj::RebaseTarget;
 use crate::commander::log::Head;
+use crate::keybinds::PopupEvent;
+use crate::keybinds::PopupKeybinds;
 use crate::keybinds::rebase_popup::CutOption;
 use crate::keybinds::rebase_popup::PasteOption;
 use crate::keybinds::rebase_popup::PopupAction;
@@ -57,6 +59,7 @@ type Keybinds = crate::keybinds::rebase_popup::Keybinds;
 /// A transient popup for configuring a rebase command
 pub struct RebasePopup {
     pub keybinds: Keybinds,
+    popup_keybinds: PopupKeybinds,
 
     pub source_rev: Head,
     pub target_rev: Head,
@@ -69,20 +72,12 @@ impl RebasePopup {
     pub fn new(source_rev: Head, target_rev: Head) -> Self {
         Self {
             keybinds: Keybinds::default(),
+            popup_keybinds: PopupKeybinds::dialog(),
             source_rev,
             target_rev,
             source_mode: CutOption::SingleRevision,
             target_mode: PasteOption::NewBranch,
         }
-    }
-
-    /// Map an event to a popup action
-    // TODO: This should be done by a custom keybinds object
-    fn match_event(&self, event: Event) -> PopupAction {
-        if let Event::Key(key) = event {
-            return self.keybinds.match_event(key);
-        }
-        PopupAction::None
     }
 
     /// The rebase the popup is currently configured to ask for.
@@ -188,20 +183,30 @@ impl Component for RebasePopup {
     }
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
-        match self.match_event(event) {
-            PopupAction::Ok => Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                vec![AppAction::ClosePopup, AppAction::Run(self.command())],
-            ))),
-            PopupAction::Cancel => Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup)),
+        let Event::Key(key) = event else {
+            return Ok(ComponentInputResult::Handled);
+        };
+
+        // What the popup itself binds comes first, so that a key it
+        // needs is not taken by the keys every popup answers to.
+        match self.keybinds.match_event(key) {
             PopupAction::SetSourceMode(m) => {
                 self.source_mode = m;
-                Ok(ComponentInputResult::Handled)
+                return Ok(ComponentInputResult::Handled);
             }
             PopupAction::SetTargetMode(m) => {
                 self.target_mode = m;
-                Ok(ComponentInputResult::Handled)
+                return Ok(ComponentInputResult::Handled);
             }
-            PopupAction::None => Ok(ComponentInputResult::Handled),
+            PopupAction::None => {}
+        }
+
+        match self.popup_keybinds.match_event(key) {
+            PopupEvent::Accept => Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
+                vec![AppAction::ClosePopup, AppAction::Run(self.command())],
+            ))),
+            PopupEvent::Cancel => Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup)),
+            _ => Ok(ComponentInputResult::Handled),
         }
     }
 }

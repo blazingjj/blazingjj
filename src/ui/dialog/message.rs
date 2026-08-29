@@ -20,9 +20,8 @@ use ratatui::widgets::Scrollbar;
 use ratatui::widgets::ScrollbarOrientation;
 use ratatui::widgets::ScrollbarState;
 
-use crate::env::get_env;
-use crate::keybinds::MessagePopupEvent;
-use crate::keybinds::MessagePopupKeybinds;
+use crate::keybinds::PopupEvent;
+use crate::keybinds::PopupKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::utils::LargeString;
@@ -37,7 +36,7 @@ pub struct MessagePopup<'a> {
     scroll: usize,
     lines: usize,
     content_height: u16,
-    keybinds: Option<MessagePopupKeybinds>,
+    keybinds: PopupKeybinds,
 }
 
 impl<'a> MessagePopup<'a> {
@@ -51,23 +50,13 @@ impl<'a> MessagePopup<'a> {
             scroll: 0,
             lines,
             content_height: 0,
-            keybinds: None,
+            keybinds: PopupKeybinds::dialog(),
         }
     }
 
     pub fn text_align(mut self, align: Alignment) -> Self {
         self.text_align = Some(align);
         self
-    }
-
-    fn keybinds(&mut self) -> &MessagePopupKeybinds {
-        self.keybinds.get_or_insert_with(|| {
-            get_env()
-                .jj_config
-                .keybinds()
-                .map(MessagePopupKeybinds::from_config)
-                .unwrap_or_default()
-        })
     }
 
     /// Where to put the popup in `area`: centered, and no larger than the
@@ -175,14 +164,18 @@ impl Component for MessagePopup<'_> {
         let full_page = self.content_height as isize;
         match &event {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
-                let delta = match self.keybinds().match_event(*key) {
-                    MessagePopupEvent::ScrollDown => 1,
-                    MessagePopupEvent::ScrollUp => -1,
-                    MessagePopupEvent::ScrollDownHalf => half_page,
-                    MessagePopupEvent::ScrollUpHalf => -half_page,
-                    MessagePopupEvent::ScrollDownPage => full_page,
-                    MessagePopupEvent::ScrollUpPage => -full_page,
-                    MessagePopupEvent::Unbound => return Ok(ComponentInputResult::NotHandled),
+                let delta = match self.keybinds.match_event(*key) {
+                    PopupEvent::ScrollDown => 1,
+                    PopupEvent::ScrollUp => -1,
+                    PopupEvent::ScrollDownHalf => half_page,
+                    PopupEvent::ScrollUpHalf => -half_page,
+                    PopupEvent::ScrollDownPage => full_page,
+                    PopupEvent::ScrollUpPage => -full_page,
+                    // A message has nothing to accept, so what would
+                    // accept it takes it down like a cancel does.
+                    PopupEvent::Accept | PopupEvent::Cancel | PopupEvent::Unbound => {
+                        return Ok(ComponentInputResult::NotHandled);
+                    }
                 };
                 self.do_scroll(delta);
                 Ok(ComponentInputResult::Handled)

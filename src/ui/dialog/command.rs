@@ -1,7 +1,6 @@
 use anyhow::Context;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
-use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -19,6 +18,8 @@ use ratatui_textarea::TextArea;
 use shell_words::split;
 
 use crate::commander::new_commander;
+use crate::keybinds::PopupEvent;
+use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -27,12 +28,14 @@ use crate::ui::utils::centered_rect_line_height;
 
 pub struct CommandPopup<'a> {
     command_textarea: TextArea<'a>,
+    keybinds: PopupKeybinds,
 }
 
 impl CommandPopup<'_> {
     pub fn new() -> Self {
         Self {
             command_textarea: TextArea::new(vec![]),
+            keybinds: PopupKeybinds::text_line(),
         }
     }
 }
@@ -75,8 +78,8 @@ impl Component for CommandPopup<'_> {
 
     fn input(&mut self, event: Event) -> anyhow::Result<ComponentInputResult> {
         if let Event::Key(key) = event {
-            match key.code {
-                KeyCode::Enter => {
+            match self.keybinds.match_event(key) {
+                PopupEvent::Accept => {
                     let command_input = self.command_textarea.lines().join(" ");
                     let mut command_input = command_input.as_str();
 
@@ -120,7 +123,7 @@ impl Component for CommandPopup<'_> {
                         ],
                     )));
                 }
-                KeyCode::Esc => {
+                PopupEvent::Cancel => {
                     return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
                 }
                 _ => {}
