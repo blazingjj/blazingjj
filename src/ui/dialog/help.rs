@@ -18,6 +18,7 @@ use ratatui::widgets::ScrollbarOrientation;
 use ratatui::widgets::ScrollbarState;
 use ratatui::widgets::Table;
 
+use crate::keybinds::HelpSection;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::ui::Component;
@@ -88,17 +89,53 @@ fn contents_width(columns: &[Vec<Section>]) -> u16 {
     columns_width + SEPARATOR_WIDTH * columns.len().saturating_sub(1) as u16
 }
 
+/// The `sections` split into two stacks of as near the same height as they
+/// go, keeping the order they came in.
+fn halve<'a>(sections: &[Section<'a>]) -> Vec<Vec<Section<'a>>> {
+    if sections.len() < 2 {
+        return vec![sections.to_vec()];
+    }
+
+    let total = stack_height(sections);
+    let cut = (1..sections.len())
+        .min_by_key(|cut| {
+            let above = stack_height(&sections[..*cut]);
+            above.abs_diff(total - above)
+        })
+        .unwrap_or(1);
+
+    vec![sections[..cut].to_vec(), sections[cut..].to_vec()]
+}
+
 /// How to arrange the popup's sections in the `width` available for them: the
-/// main panel bindings beside the details panel and global ones, or, when that
-/// does not fit, all of them stacked in a single column, which only needs the
-/// width of the widest of them.
-fn columns<'a>([main, details, global]: [Section<'a>; 3], width: u16) -> Vec<Vec<Section<'a>>> {
-    let halves = vec![vec![main], vec![details, global]];
+/// main panel bindings across two columns beside the details panel and global
+/// ones, or in a single column beside them, or, when even that does not fit,
+/// all of them stacked in one column, which only needs the width of the widest
+/// of them.
+///
+/// A tab sorts its bindings into a section per kind of thing they do, and
+/// spreading those over the width there is keeps the popup short enough to
+/// take in without scrolling.
+fn columns<'a>(
+    main: Vec<Section<'a>>,
+    details: Section<'a>,
+    global: Section<'a>,
+    width: u16,
+) -> Vec<Vec<Section<'a>>> {
+    let side = vec![details, global];
+
+    let mut spread = halve(&main);
+    spread.push(side.clone());
+    if spread.len() > 2 && contents_width(&spread) <= width {
+        return spread;
+    }
+
+    let halves = vec![main, side];
     if contents_width(&halves) <= width {
         return halves;
     }
 
-    vec![vec![main, details, global]]
+    vec![halves.into_iter().flatten().collect()]
 }
 
 /// Renders the `sections` stacked in `area`, with a rule between them and
@@ -166,7 +203,9 @@ fn place(viewport: Rect, scroll: u16, top: u16, height: u16) -> Option<(Rect, u1
 }
 
 pub struct HelpPopup {
-    pub main_items: Vec<(String, String)>,
+    /// The main panel's bindings, in a section per kind of thing they
+    /// do where the tab has enough of them to sort
+    pub main_sections: Vec<HelpSection>,
     pub details_items: Vec<(String, String)>,
     pub global_items: Vec<(String, String)>,
     max_scroll: u16,
@@ -178,12 +217,12 @@ pub struct HelpPopup {
 
 impl HelpPopup {
     pub fn new(
-        main_items: Vec<(String, String)>,
+        main_sections: Vec<HelpSection>,
         details_items: Vec<(String, String)>,
         global_items: Vec<(String, String)>,
     ) -> Self {
         Self {
-            main_items,
+            main_sections,
             details_items,
             global_items,
             max_scroll: 0,
@@ -210,20 +249,21 @@ impl Component for HelpPopup {
         let [extra_width, extra_height] = chrome(&block, area);
 
         let columns = columns(
-            [
-                Section {
-                    title: "Main panel",
-                    items: &self.main_items,
-                },
-                Section {
-                    title: "Details panel",
-                    items: &self.details_items,
-                },
-                Section {
-                    title: "Global",
-                    items: &self.global_items,
-                },
-            ],
+            self.main_sections
+                .iter()
+                .map(|section| Section {
+                    title: section.title,
+                    items: &section.items,
+                })
+                .collect(),
+            Section {
+                title: "Details panel",
+                items: &self.details_items,
+            },
+            Section {
+                title: "Global",
+                items: &self.global_items,
+            },
             area.width.saturating_sub(extra_width),
         );
 
@@ -366,34 +406,64 @@ mod tests {
         let main = section(2, 1, 10);
         let details = section(2, 2, 8);
         let global = section(3, 2, 6);
-        let sections = [
-            Section {
-                title: "Main panel",
-                items: &main,
-            },
-            Section {
-                title: "Details panel",
-                items: &details,
-            },
-            Section {
-                title: "Global",
-                items: &global,
-            },
-        ];
+        let main = vec![Section {
+            title: "Main panel",
+            items: &main,
+        }];
+        let details = Section {
+            title: "Details panel",
+            items: &details,
+        };
+        let global = Section {
+            title: "Global",
+            items: &global,
+        };
 
         // The main panel bindings need 15 columns, the other two 14 together
-        let halves = columns(sections, 32);
+        let halves = columns(main.clone(), details, global, 32);
         assert_eq!(halves.len(), 2);
         assert_eq!(contents_width(&halves), 32);
 
         // A column short of that, everything stacks up in a single column,
         // which only has to hold the widest keys next to the widest
         // description.
-        let stacked = columns(sections, 31);
+        let stacked = columns(main, details, global, 31);
         assert_eq!(stacked.len(), 1);
         assert_eq!(contents_width(&stacked), 16);
         // Every section spends a row on its title, with a rule between them
         assert_eq!(stack_height(&stacked[0]), 12);
+    }
+
+    /// A tab with several sections has them spread over the width there
+    /// is rather than piled into one tall column.
+    #[test]
+    fn test_the_main_panel_sections_spread_across_two_columns() {
+        let items = section(4, 1, 10);
+        let side_items = section(2, 2, 6);
+        let main: Vec<Section> = ["Navigation", "Changes", "Bookmarks"]
+            .into_iter()
+            .map(|title| Section {
+                title,
+                items: &items,
+            })
+            .collect();
+        let side = |title| Section {
+            title,
+            items: &side_items,
+        };
+
+        // Three sections of 5 rows split 2 and 1, so the tallest column
+        // holds 11 rows rather than the 17 of all three in one.
+        let spread = columns(main.clone(), side("Details panel"), side("Global"), 48);
+        assert_eq!(spread.len(), 3);
+        assert_eq!(stack_height(&spread[0]), 11);
+        assert_eq!(stack_height(&spread[1]), 5);
+
+        // A column short of that, the main panel takes a single column
+        // again, tall as that leaves the popup.
+        let halves = columns(main, side("Details panel"), side("Global"), 47);
+        assert_eq!(halves.len(), 2);
+        assert_eq!(stack_height(&halves[0]), 17);
     }
 
     #[test]

@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
+use super::HelpSection;
 use super::Shortcut;
 use super::config::BookmarksTabKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
@@ -96,23 +97,40 @@ impl BookmarksTabKeybinds {
             .unwrap_or(BookmarksTabEvent::Unbound)
     }
 
-    pub fn make_help(&self) -> Vec<(String, String)> {
-        make_keybinds_help!(
-            self.keys,
-            BookmarksTabEvent::ToggleShowAll => "show all remotes",
-            BookmarksTabEvent::CreateBookmark => "create bookmark",
-            BookmarksTabEvent::RenameBookmark => "rename bookmark",
-            BookmarksTabEvent::DeleteBookmark => "delete bookmark",
-            BookmarksTabEvent::ForgetBookmark => "forget bookmark",
-            BookmarksTabEvent::TrackBookmark => "track bookmark",
-            BookmarksTabEvent::UntrackBookmark => "untrack bookmark",
-            BookmarksTabEvent::SetBookmark => "set bookmark here",
-            BookmarksTabEvent::ViewInLog => "view in log",
-            BookmarksTabEvent::NewChange { describe: false } => "new from bookmark",
-            BookmarksTabEvent::NewChange { describe: true } => "new and describe",
-            BookmarksTabEvent::EditChange { ignore_immutable: false } => "edit bookmark",
-            BookmarksTabEvent::EditChange { ignore_immutable: true } => "edit bookmark ignoring immutability",
-        )
+    pub fn make_help(&self) -> Vec<HelpSection> {
+        vec![
+            HelpSection::new(
+                "Navigation",
+                make_keybinds_help!(
+                    self.keys,
+                    BookmarksTabEvent::ViewInLog => "view in log",
+                    BookmarksTabEvent::ToggleShowAll => "show all remotes",
+                ),
+            ),
+            HelpSection::new(
+                "Bookmarks and remotes",
+                make_keybinds_help!(
+                    self.keys,
+                    BookmarksTabEvent::CreateBookmark => "create bookmark",
+                    BookmarksTabEvent::RenameBookmark => "rename bookmark",
+                    BookmarksTabEvent::DeleteBookmark => "delete bookmark",
+                    BookmarksTabEvent::ForgetBookmark => "forget bookmark",
+                    BookmarksTabEvent::TrackBookmark => "track bookmark",
+                    BookmarksTabEvent::UntrackBookmark => "untrack bookmark",
+                    BookmarksTabEvent::SetBookmark => "set bookmark here",
+                ),
+            ),
+            HelpSection::new(
+                "Changes",
+                make_keybinds_help!(
+                    self.keys,
+                    BookmarksTabEvent::NewChange { describe: false } => "new from bookmark",
+                    BookmarksTabEvent::NewChange { describe: true } => "new and describe",
+                    BookmarksTabEvent::EditChange { ignore_immutable: false } => "edit bookmark",
+                    BookmarksTabEvent::EditChange { ignore_immutable: true } => "edit bookmark ignoring immutability",
+                ),
+            ),
+        ]
     }
 }
 

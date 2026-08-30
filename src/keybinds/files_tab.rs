@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
+use super::HelpSection;
 use super::Shortcut;
 use super::config::FilesTabKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
@@ -59,12 +60,15 @@ impl FilesTabKeybinds {
             .unwrap_or(FilesTabEvent::Unbound)
     }
 
-    pub fn make_help(&self) -> Vec<(String, String)> {
-        make_keybinds_help!(
-            self.keys,
-            FilesTabEvent::Untrack => "untrack file",
-            FilesTabEvent::Restore => "restore file",
-        )
+    pub fn make_help(&self) -> Vec<HelpSection> {
+        vec![HelpSection::new(
+            "Main panel",
+            make_keybinds_help!(
+                self.keys,
+                FilesTabEvent::Untrack => "untrack file",
+                FilesTabEvent::Restore => "restore file",
+            ),
+        )]
     }
 }
 

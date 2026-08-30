@@ -130,6 +130,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The line under a popup naming the keys it answers to now names the keys
   they are bound to, rather than the ones they were bound to when it was
   written
+- The help popup now lists a tab's main panel keybindings under a heading per
+  kind of thing they do -- navigation, changes, bookmarks and remotes,
+  clipboard -- rather than as one run, and spreads those headings over a second
+  column where the terminal is wide enough to hold one
 - The help popup is now sized to fit what it lists
 - The message popup is now sized to fit its message, rather than always
   taking up most of the screen

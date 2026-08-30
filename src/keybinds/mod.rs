@@ -44,6 +44,23 @@ pub struct Keybinds {
     log_tab: LogTabKeybinds,
 }*/
 
+/// A titled run of keybindings, as the help lists them. A panel with
+/// enough of them to be worth sorting through hands the help one per
+/// kind of thing its keys do; one with a handful hands it a single
+/// section titled after the panel.
+#[derive(Clone, Debug)]
+pub struct HelpSection {
+    pub title: &'static str,
+    /// The keys and what each of them does
+    pub items: Vec<(String, String)>,
+}
+
+impl HelpSection {
+    pub fn new(title: &'static str, items: Vec<(String, String)>) -> Self {
+        Self { title, items }
+    }
+}
+
 /// Add keybindings to [`keybinds_store::KeybindsStore`]. Checks that shortcuts not duplicated
 #[macro_export]
 macro_rules! set_keybinds {

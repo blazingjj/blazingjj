@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
+use super::HelpSection;
 use super::Shortcut;
 use super::config::LogTabKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
@@ -140,35 +141,59 @@ impl LogTabKeybinds {
             LogTabEvent::Fetch { all_remotes: true } => config.fetch_all,
         );
     }
-    pub fn make_main_panel_help(&self) -> Vec<(String, String)> {
-        make_keybinds_help!(
-            self.keys,
-            LogTabEvent::GotoParent => "go to parent commit",
-            LogTabEvent::ToggleHeadMark => "mark change to act on",
-            LogTabEvent::OpenFiles => "see files",
-            LogTabEvent::OpenEvolog => "see how the change evolved",
-            LogTabEvent::EditRevset => "set revset",
-            LogTabEvent::Describe => "describe change",
-            LogTabEvent::Duplicate => "duplicate change",
-            LogTabEvent::EditChange { ignore_immutable: false } => "edit change",
-            LogTabEvent::EditChange { ignore_immutable: true } => "edit change ignoring immutability",
-            LogTabEvent::CreateNew { describe: false } => "new change",
-            LogTabEvent::CreateNew { describe: true } => "new with message",
-            LogTabEvent::Abandon => "abandon change",
-            LogTabEvent::Absorb => "absorb selected change into its mutable ancestors",
-            LogTabEvent::Rebase => "rebase @ to the selected change",
-            LogTabEvent::Squash { ignore_immutable: false } => "squash @ into the selected change",
-            LogTabEvent::Squash { ignore_immutable: true } => "squash @ into the selected change ignoring immutability",
-            LogTabEvent::SetBookmark => "set bookmark",
-            LogTabEvent::CopyChangeId => "yank change id to clipboard",
-            LogTabEvent::CopyRev => "yank revision to clipboard",
-            LogTabEvent::Fetch { all_remotes: false } => "git fetch",
-            LogTabEvent::Fetch { all_remotes: true } => "git fetch all remotes",
-            LogTabEvent::Push(PushScope::Selected) => "git push",
-            LogTabEvent::Push(PushScope::SelectedWithNew) => "git push, tracking new bookmarks",
-            LogTabEvent::Push(PushScope::Tracked) => "git push all tracked bookmarks",
-            LogTabEvent::Push(PushScope::All) => "git push all bookmarks, new ones included",
-        )
+
+    pub fn make_main_panel_help(&self) -> Vec<HelpSection> {
+        vec![
+            HelpSection::new(
+                "Navigation",
+                make_keybinds_help!(
+                    self.keys,
+                    LogTabEvent::GotoParent => "go to parent commit",
+                    LogTabEvent::OpenFiles => "see files",
+                    LogTabEvent::OpenEvolog => "see how the change evolved",
+                    LogTabEvent::EditRevset => "set revset",
+                ),
+            ),
+            HelpSection::new(
+                "Changes",
+                make_keybinds_help!(
+                    self.keys,
+                    LogTabEvent::ToggleHeadMark => "mark change to act on",
+                    LogTabEvent::CreateNew { describe: false } => "new change",
+                    LogTabEvent::CreateNew { describe: true } => "new with message",
+                    LogTabEvent::Describe => "describe change",
+                    LogTabEvent::EditChange { ignore_immutable: false } => "edit change",
+                    LogTabEvent::EditChange { ignore_immutable: true } => "edit change ignoring immutability",
+                    LogTabEvent::Duplicate => "duplicate change",
+                    LogTabEvent::Abandon => "abandon change",
+                    LogTabEvent::Rebase => "rebase @ onto it",
+                    LogTabEvent::Squash { ignore_immutable: false } => "squash @ into it",
+                    LogTabEvent::Squash { ignore_immutable: true } => "squash @ into it, ignoring immutability",
+                    LogTabEvent::Absorb => "absorb into its mutable ancestors",
+                ),
+            ),
+            HelpSection::new(
+                "Bookmarks and remotes",
+                make_keybinds_help!(
+                    self.keys,
+                    LogTabEvent::SetBookmark => "set bookmark",
+                    LogTabEvent::Fetch { all_remotes: false } => "git fetch",
+                    LogTabEvent::Fetch { all_remotes: true } => "git fetch all remotes",
+                    LogTabEvent::Push(PushScope::Selected) => "git push",
+                    LogTabEvent::Push(PushScope::SelectedWithNew) => "git push, tracking new bookmarks",
+                    LogTabEvent::Push(PushScope::Tracked) => "git push all tracked bookmarks",
+                    LogTabEvent::Push(PushScope::All) => "git push all bookmarks, new ones included",
+                ),
+            ),
+            HelpSection::new(
+                "Clipboard",
+                make_keybinds_help!(
+                    self.keys,
+                    LogTabEvent::CopyChangeId => "yank change id",
+                    LogTabEvent::CopyRev => "yank revision",
+                ),
+            ),
+        ]
     }
 }
 

@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
+use super::HelpSection;
 use super::Shortcut;
 use super::config::EvologTabKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
@@ -62,13 +63,16 @@ impl EvologTabKeybinds {
             .unwrap_or(EvologTabEvent::Unbound)
     }
 
-    pub fn make_help(&self) -> Vec<(String, String)> {
-        make_keybinds_help!(
-            self.keys,
-            EvologTabEvent::OpenFiles => "see files of this version",
-            EvologTabEvent::Duplicate => "duplicate this version as a new change",
-            EvologTabEvent::CopyRev => "yank revision to clipboard",
-        )
+    pub fn make_help(&self) -> Vec<HelpSection> {
+        vec![HelpSection::new(
+            "Main panel",
+            make_keybinds_help!(
+                self.keys,
+                EvologTabEvent::OpenFiles => "see files of this version",
+                EvologTabEvent::Duplicate => "duplicate this version as a new change",
+                EvologTabEvent::CopyRev => "yank revision to clipboard",
+            ),
+        )]
     }
 }
 
