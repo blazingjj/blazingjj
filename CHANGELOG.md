@@ -147,6 +147,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `@` in the bookmarks tab now goes to the bookmark on the working copy, or to
+  the one it is standing on, rather than doing nothing while the help offers it
 - A keybinding on Home, End or the space bar now shows the key's name rather
   than "Unknown" or a blank
 - The help popup now lists the key that opens the context menu in every tab,

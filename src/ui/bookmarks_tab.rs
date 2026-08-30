@@ -194,6 +194,18 @@ impl BookmarksTab {
         self.show_bookmark();
     }
 
+    /// The first listed bookmark `matches` takes.
+    fn find_bookmark(&self, matches: impl Fn(&Bookmark, &Head) -> bool) -> Option<BookmarkLine> {
+        self.bookmarks_output
+            .iter()
+            .flatten()
+            .find(|line| match line {
+                BookmarkLine::Parsed { bookmark, head, .. } => matches(bookmark, head),
+                BookmarkLine::Unparsable(_) => false,
+            })
+            .cloned()
+    }
+
     /// Have the details panel show the change the selected bookmark
     /// points at.
     fn show_bookmark(&mut self) {
@@ -386,6 +398,33 @@ impl Tab for BookmarksTab {
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
         self.scroll_bookmarks(scroll.distance(self.bookmarks_pane.visible_items()));
+        Ok(())
+    }
+
+    /// Go to the bookmark on the working copy, or failing that the one
+    /// the working copy is standing on, which is the bookmark the change
+    /// it holds is going to end up under. Stays where it is when there
+    /// is no bookmark behind the working copy at all.
+    fn focus_current(&mut self) -> Result<()> {
+        let current = new_commander().get_current_head()?;
+
+        // A bookmark on the working copy is in the list we already hold,
+        // so finding one there saves asking jj what lies behind it.
+        let mut found = self.find_bookmark(|_, head| *head == current);
+        if found.is_none()
+            && let Some(name) = new_commander().get_nearest_bookmark(&current.commit_id)?
+        {
+            found = self
+                .find_bookmark(|bookmark, _| bookmark.remote.is_none() && bookmark.name == name);
+        }
+
+        let Some(found) = found else {
+            return Ok(());
+        };
+
+        self.bookmark = Some(found);
+        self.show_bookmark();
+
         Ok(())
     }
 
