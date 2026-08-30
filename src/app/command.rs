@@ -122,7 +122,7 @@ impl Command {
                 let _ = execute!(std::io::stdout(), CopyToClipboard::to_clipboard_from(text));
                 Ok(None)
             }
-            Command::Duplicate(revset) => match new_commander().run_duplicate(revset.as_str()) {
+            Command::Duplicate(revset) => match new_commander().run_duplicate(revset) {
                 Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
                 Err(err) => Ok(Some(refused("Duplicate", err))),
             },
@@ -159,7 +159,7 @@ impl Command {
             Command::Squash {
                 target,
                 ignore_immutable,
-            } => match new_commander().run_squash(target.commit_id.as_str(), ignore_immutable) {
+            } => match new_commander().run_squash(&target.commit_id, ignore_immutable) {
                 Ok(()) => Ok(Some(show_change(new_commander().get_current_head()?))),
                 Err(err) => Ok(Some(refused("Squash", err))),
             },

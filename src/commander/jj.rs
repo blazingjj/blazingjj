@@ -77,9 +77,9 @@ impl Commander {
         self.jj(args).run_void().context("Failed executing jj new")
     }
 
-    /// Duplicate a change. Maps to `jj duplicate`
-    pub fn run_duplicate(&self, revision: &str) -> Result<()> {
-        self.jj(["duplicate", revision])
+    /// Duplicate a change. Maps to `jj duplicate <revset>`.
+    pub fn run_duplicate(&self, revset: impl Into<Revset>) -> Result<()> {
+        self.jj(["duplicate", revset.into().as_str()])
             .run_void()
             .context("Failed executing jj duplicate")
     }
@@ -167,10 +167,14 @@ impl Commander {
             .run_void()?)
     }
 
-    /// Squash changes. Maps to `jj squash -u --into <revision>`
-    #[instrument(level = "trace", skip(self))]
-    pub fn run_squash(&self, revision: &str, ignore_immutable: bool) -> Result<()> {
-        let mut args = vec!["squash", "-u", "--into", revision];
+    /// Squash changes. Maps to `jj squash -u --into <revset>`
+    pub fn run_squash(&self, revset: impl Into<Revset>, ignore_immutable: bool) -> Result<()> {
+        self.run_squash_inner(revset.into().as_str(), ignore_immutable)
+    }
+
+    #[instrument(level = "trace", name = "run_squash", skip(self))]
+    fn run_squash_inner(&self, revset: &str, ignore_immutable: bool) -> Result<()> {
+        let mut args = vec!["squash", "-u", "--into", revset];
         if ignore_immutable {
             args.push("--ignore-immutable");
         }

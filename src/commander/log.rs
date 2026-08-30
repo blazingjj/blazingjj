@@ -22,6 +22,7 @@ use crate::commander::JjCommand;
 use crate::commander::RemoveEndLine;
 use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
+use crate::commander::revset::Revset;
 use crate::env::DiffFormat;
 
 /// A change as [head_template] describes it. The field names are the ones
@@ -148,19 +149,34 @@ fn parse_record<T: DeserializeOwned>(text: &str) -> Result<T> {
 }
 
 impl Commander {
-    fn execute_jj_log(&self, revset: &str, template: &str) -> Result<String, CommandError> {
-        self.jj(["log", "--no-graph", "--template", template, "-r", revset])
-            .run()
-    }
-
-    fn execute_jj_log_one(&self, revset: &str, template: &str) -> Result<String, CommandError> {
+    fn execute_jj_log(
+        &self,
+        revset: impl Into<Revset>,
+        template: &str,
+    ) -> Result<String, CommandError> {
         self.jj([
             "log",
             "--no-graph",
             "--template",
             template,
             "-r",
-            revset,
+            revset.into().as_str(),
+        ])
+        .run()
+    }
+
+    fn execute_jj_log_one(
+        &self,
+        revset: impl Into<Revset>,
+        template: &str,
+    ) -> Result<String, CommandError> {
+        self.jj([
+            "log",
+            "--no-graph",
+            "--template",
+            template,
+            "-r",
+            revset.into().as_str(),
             "--limit",
             "1",
         ])
@@ -296,7 +312,7 @@ impl Commander {
     pub fn get_current_head(&self) -> Result<Head> {
         parse_record(
             &self
-                .execute_jj_log_one("@", &head_template_nl())
+                .execute_jj_log_one(Revset::working_copy(), &head_template_nl())
                 .context("Failed getting current head")?
                 .remove_end_line(),
         )
@@ -306,10 +322,8 @@ impl Commander {
     #[instrument(level = "trace", skip(self))]
     pub fn get_head_latest(&self, head: &Head) -> Result<Head> {
         // Get all heads which point to the same change ID
-        let latest_heads_res = self.execute_jj_log(
-            &format!(r#"change_id({})"#, head.change_id.as_str()),
-            &head_template_nl(),
-        );
+        let latest_heads_res =
+            self.execute_jj_log(Revset::change(&head.change_id), &head_template_nl());
         let Ok(latest_heads_res) = latest_heads_res else {
             return self.get_head_latest(&self.get_current_head()?);
         };
@@ -365,7 +379,7 @@ impl Commander {
     /// Maps to `jj log -r <revision> -T 'self.parents()...'`
     #[instrument(level = "trace", skip(self))]
     pub fn get_commit_parents(&self, commit_id: &CommitId) -> Result<Vec<Parent>> {
-        self.execute_jj_log_one(commit_id.as_str(), &parents_template())
+        self.execute_jj_log_one(commit_id, &parents_template())
             .with_context(|| format!("Failed getting commit parents: {commit_id}"))?
             .lines()
             .map(parse_record)
@@ -387,7 +401,7 @@ impl Commander {
     #[instrument(level = "trace", skip(self))]
     pub fn get_commit_description(&self, commit_id: &CommitId) -> Result<String> {
         Ok(self
-            .execute_jj_log_one(commit_id.as_str(), "description")
+            .execute_jj_log_one(commit_id, "description")
             .with_context(|| format!("Failed getting commit description: {commit_id}"))?
             .remove_end_line())
     }
