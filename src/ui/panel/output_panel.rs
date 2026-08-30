@@ -81,6 +81,10 @@ pub struct OutputPanel<K: OutputKey> {
     /// The format changes are rendered in
     diff_format: DiffFormat,
 
+    /// The format the configuration asks for, which the panel goes back
+    /// to when it changes rather than whenever anything else does.
+    configured_format: DiffFormat,
+
     /// Where the command is run, so it does not block the UI thread
     background_tasks: BackgroundTasks,
 }
@@ -99,6 +103,7 @@ impl<K: OutputKey> OutputPanel<K> {
             request: None,
             wait: PanelWait::default(),
             diff_format: get_env().jj_config.diff_format(),
+            configured_format: get_env().jj_config.diff_format(),
             background_tasks,
         }
     }
@@ -248,6 +253,17 @@ impl<K: OutputKey> OutputPanel<K> {
     /// moved on since it was last rendered.
     pub fn mark_dirty(&mut self) {
         self.cache.mark_dirty();
+    }
+
+    /// Render in the format the configuration now asks for, whatever the
+    /// panel was toggled to before it said so. A format it still asks
+    /// for leaves the panel toggled where it is.
+    pub fn config_changed(&mut self) {
+        let configured = get_env().jj_config.diff_format();
+        if configured != self.configured_format {
+            self.configured_format = configured.clone();
+            self.diff_format = configured;
+        }
     }
 
     pub fn handle_event(&mut self, event: DetailsPanelEvent) {

@@ -56,6 +56,11 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   to mark it, drag the divider to resize, right click for the context menu,
   drag over the details panel (or double click a word, triple click a line) to
   copy its text
+- Settings
+  - Change any of the options below from within blazingjj, without leaving for
+    an editor
+  - Change the selected setting with `Enter`, take it back out of your config
+    with `x`
 - Config: Configure blazingjj with your jj config
 - Command box: Run jj commands directly in blazingjj with `:`
 - Help: See all key mappings with `?`
@@ -93,6 +98,10 @@ You can optionally configure the following options through your jj config:
   - A terminal that does not report focus changes counts as always focused, so there the hint is all you get
 
 Example: `jj config set --user blazingjj.diff-format "color-words"` (for storing in [user config file](https://martinvonz.github.io/jj/latest/config/#user-config-file), repo config is also supported)
+
+The settings tab (`0`) does the same from within blazingjj. It shows what your
+configuration says now, whichever file it comes from, and writes to the user
+config file; a setting that comes from anywhere else has to be changed there.
 
 ## Usage
 

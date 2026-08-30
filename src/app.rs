@@ -34,6 +34,7 @@ use crate::background_tasks::TaskSlot;
 use crate::commander::ids::OperationId;
 use crate::commander::new_commander;
 use crate::env::get_env;
+use crate::env::reload_env;
 use crate::event::AppEvent;
 use crate::event::Clicks;
 use crate::event::EventSource;
@@ -56,6 +57,7 @@ use crate::ui::dialog::HelpPopup;
 use crate::ui::evolog_tab::EvologTab;
 use crate::ui::files_tab::FilesTab;
 use crate::ui::log_tab::LogTab;
+use crate::ui::settings_tab::SettingsTab;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum TabId {
@@ -63,6 +65,7 @@ pub enum TabId {
     Files,
     Bookmarks,
     Evolog,
+    Settings,
 }
 
 impl fmt::Display for TabId {
@@ -72,13 +75,51 @@ impl fmt::Display for TabId {
             TabId::Files => write!(f, "Files"),
             TabId::Bookmarks => write!(f, "Bookmarks"),
             TabId::Evolog => write!(f, "Evolog"),
+            TabId::Settings => write!(f, "Settings"),
         }
     }
 }
 
 impl TabId {
-    pub const VALUES: [Self; 4] = [TabId::Log, TabId::Files, TabId::Bookmarks, TabId::Evolog];
+    pub const VALUES: [Self; 5] = [
+        TabId::Log,
+        TabId::Files,
+        TabId::Bookmarks,
+        TabId::Evolog,
+        TabId::Settings,
+    ];
+
+    /// The number the tab is picked by, which is where it sits in the
+    /// tab bar except for the settings tab, which comes first by its
+    /// number and last in the bar.
+    pub fn number(self) -> usize {
+        match self {
+            TabId::Settings => 0,
+            TabId::Log => 1,
+            TabId::Files => 2,
+            TabId::Bookmarks => 3,
+            TabId::Evolog => 4,
+        }
+    }
 }
+
+/// The line of hints in the header, in the three pieces the refresh key
+/// is lit up on its own in.
+const HINTS_BEFORE_REFRESH: &str = "q: quit | ?: help | ";
+const HINTS_REFRESH: &str = "R: refresh";
+const HINTS_AFTER_REFRESH: &str = " | 0-4: tabs";
+
+/// How much of the right of the header the runtime is drawn over. It is
+/// a count of milliseconds, which takes a column more every tenfold, so
+/// this is room for a session of days rather than a fixed width.
+const RUNTIME_WIDTH: usize = 12;
+
+/// How wide the hints are with their border and the runtime beside them.
+const HINTS_WIDTH: u16 = (HINTS_BEFORE_REFRESH.len()
+    + HINTS_REFRESH.len()
+    + HINTS_AFTER_REFRESH.len()
+    + 2
+    + RUNTIME_WIDTH) as u16;
 
 pub struct Stats {
     pub start_time: Instant,
@@ -101,6 +142,7 @@ pub struct App<'a> {
     pub files: FilesTab,
     pub bookmarks: BookmarksTab,
     pub evolog: EvologTab<'a>,
+    pub settings: SettingsTab,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     /// Where the tabs overview was last drawn, for mouse input.
@@ -144,6 +186,7 @@ impl<'a> App<'a> {
             files: FilesTab::new(&current_head, background_tasks.clone()),
             bookmarks: BookmarksTab::new(background_tasks.clone()),
             evolog: EvologTab::new(&current_head, background_tasks.clone()),
+            settings: SettingsTab::new(),
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
@@ -292,6 +335,7 @@ impl<'a> App<'a> {
             TabId::Files => &mut self.files,
             TabId::Bookmarks => &mut self.bookmarks,
             TabId::Evolog => &mut self.evolog,
+            TabId::Settings => &mut self.settings,
         }
     }
 
@@ -365,6 +409,24 @@ impl<'a> App<'a> {
             AppAction::RunInteractive(interactive) => {
                 self.pending_interactive = Some(interactive);
             }
+            AppAction::ConfigChanged => {
+                // Whatever went wrong reading it, the app goes on with
+                // the configuration it has rather than coming down.
+                if let Err(err) = reload_env() {
+                    warn!("Could not read the configuration again: {err:#}");
+                }
+
+                self.repo_watch
+                    .set_interval(get_env().jj_config.poll_interval());
+                for tab in TabId::VALUES {
+                    self.get_tab(tab).config_changed();
+                }
+                // The change is ours, so the tabs are caught up with it
+                // rather than left stale for the user to ask: nothing
+                // moves under them that they did not just ask for.
+                self.repo_watch.catching_up();
+                self.mark_all_stale();
+            }
         }
 
         Ok(())
@@ -396,16 +458,17 @@ impl<'a> App<'a> {
             .constraints([Constraint::Length(3), Constraint::Min(1)])
             .split(area);
 
+        // The hints are the same however wide the window is, so the tab
+        // bar is given everything they do not need.
         let header_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([Constraint::Fill(1), Constraint::Max(HINTS_WIDTH)])
             .split(chunks[0]);
 
         {
             let titles: Vec<String> = TabId::VALUES
                 .iter()
-                .enumerate()
-                .map(|(i, tab)| format!("[{}] {}", i + 1, tab))
+                .map(|tab| format!("[{}] {}", tab.number(), tab))
                 .collect();
 
             let block = Block::bordered()
@@ -436,9 +499,9 @@ impl<'a> App<'a> {
             };
 
             let hints = Paragraph::new(Line::from(vec![
-                Span::raw("q: quit | ?: help | "),
-                Span::styled("R: refresh", refresh_style),
-                Span::raw(" | 1-4: change tab"),
+                Span::raw(HINTS_BEFORE_REFRESH),
+                Span::styled(HINTS_REFRESH, refresh_style),
+                Span::raw(HINTS_AFTER_REFRESH),
             ]))
             .fg(Color::DarkGray)
             .block(
@@ -739,6 +802,7 @@ impl<'a> App<'a> {
                             GlobalEvent::FilesTab => self.set_tab(TabId::Files),
                             GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks),
                             GlobalEvent::EvologTab => self.set_tab(TabId::Evolog),
+                            GlobalEvent::SettingsTab => self.set_tab(TabId::Settings),
                             GlobalEvent::OpenContextMenu => {
                                 if let Some(action) = self.get_current_tab().open_context_menu()? {
                                     self.handle_action(action)?;

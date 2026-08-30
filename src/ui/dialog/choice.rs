@@ -86,6 +86,16 @@ impl ChoicePopup {
         self
     }
 
+    /// Open with this choice under the cursor rather than the first,
+    /// for a list of what something can be where one of them is what it
+    /// already is.
+    pub fn selected(mut self, index: usize) -> Self {
+        if index < self.items.len() {
+            self.list_state.select(Some(index));
+        }
+        self
+    }
+
     fn scroll(&mut self, delta: isize) {
         self.list_state.select(Some(
             self.list_state

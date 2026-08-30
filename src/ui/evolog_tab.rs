@@ -170,6 +170,10 @@ impl Tab for EvologTab<'_> {
         self.stale = true;
     }
 
+    fn config_changed(&mut self) {
+        self.patch_panel.config_changed();
+    }
+
     fn is_stale(&self) -> bool {
         self.stale
     }

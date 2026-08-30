@@ -297,6 +297,10 @@ impl Tab for FilesTab {
         self.stale = true;
     }
 
+    fn config_changed(&mut self) {
+        self.diff_panel.config_changed();
+    }
+
     fn is_stale(&self) -> bool {
         self.stale
     }

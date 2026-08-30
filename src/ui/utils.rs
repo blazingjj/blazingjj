@@ -390,6 +390,26 @@ pub fn tabs_to_spaces(line: &str) -> String {
     out
 }
 
+/// What `component` draws on a terminal that many columns wide and rows
+/// tall, as one string per row of it.
+#[cfg(test)]
+pub fn drawn(component: &mut impl super::Component, width: u16, height: u16) -> Vec<String> {
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
+        .expect("the test backend");
+    terminal
+        .draw(|f| component.draw(f, f.area()).expect("the component draws"))
+        .expect("the frame is drawn");
+
+    let buffer = terminal.backend().buffer().clone();
+    (0..buffer.area.height)
+        .map(|y| {
+            (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;

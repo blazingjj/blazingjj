@@ -120,6 +120,17 @@ pub enum Command {
     ForgetBookmark(String),
     TrackBookmark(Bookmark),
     UntrackBookmark(Bookmark),
+    /// Set an option in the user's config, `value` being the TOML
+    /// expression to set it to.
+    SetSetting {
+        key: String,
+        value: String,
+    },
+    /// Take an option out of the user's config, leaving whatever the
+    /// rest of the configuration says.
+    UnsetSetting {
+        key: String,
+    },
 }
 
 impl Command {
@@ -325,6 +336,16 @@ impl Command {
                     Err(err) => Ok(Some(refused("Untrack", err))),
                 }
             }
+            Command::SetSetting { key, value } => {
+                match new_commander().set_user_config(&key, &value) {
+                    Ok(()) => Ok(Some(AppAction::ConfigChanged)),
+                    Err(err) => Ok(Some(refused("Set", err))),
+                }
+            }
+            Command::UnsetSetting { key } => match new_commander().unset_user_config(&key) {
+                Ok(()) => Ok(Some(AppAction::ConfigChanged)),
+                Err(err) => Ok(Some(refused("Unset", err))),
+            },
         }
     }
 }

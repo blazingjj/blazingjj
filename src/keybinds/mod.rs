@@ -25,6 +25,8 @@ pub use popup::PopupKeybinds;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyModifiers;
+pub use settings_tab::SettingsTabEvent;
+pub use settings_tab::SettingsTabKeybinds;
 
 mod bookmark_set_popup;
 mod bookmarks_tab;
@@ -38,6 +40,7 @@ mod keybinds_store;
 mod log_tab;
 mod popup;
 pub mod rebase_popup;
+mod settings_tab;
 
 /*#[derive(Debug)]
 pub struct Keybinds {
@@ -55,6 +58,7 @@ pub enum Section {
     Files,
     BookmarksAndRemotes,
     Clipboard,
+    Settings,
     DetailsPanel,
     /// What the app does, rather than what it does to the repo
     App,
@@ -62,12 +66,13 @@ pub enum Section {
 
 impl Section {
     /// Every section, in the order the help lists them
-    const ORDER: [Self; 7] = [
+    const ORDER: [Self; 8] = [
         Self::Navigation,
         Self::Changes,
         Self::Files,
         Self::BookmarksAndRemotes,
         Self::Clipboard,
+        Self::Settings,
         Self::DetailsPanel,
         Self::App,
     ];
@@ -79,6 +84,7 @@ impl Section {
             Self::Files => "Files",
             Self::BookmarksAndRemotes => "Bookmarks and remotes",
             Self::Clipboard => "Clipboard",
+            Self::Settings => "Settings",
             Self::DetailsPanel => "Details panel",
             Self::App => "Global",
         }

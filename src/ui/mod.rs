@@ -6,6 +6,7 @@ pub mod evolog_tab;
 pub mod files_tab;
 pub mod log_tab;
 pub mod panel;
+pub mod settings_tab;
 pub mod styles;
 pub mod utils;
 use anyhow::Result;
@@ -44,6 +45,9 @@ pub enum AppAction {
     /// Have every tab read itself again before it is next drawn, the
     /// operation that has just run having moved the repo.
     MarkTabsStale,
+    /// The configuration has changed, so the app reads it again and
+    /// everything that goes by it takes up what it now says.
+    ConfigChanged,
     /// Run this operation and do whatever it asks for in turn. Whoever
     /// raises one has named it in full, so the app can run it without
     /// asking anything of the component the request came from.
@@ -149,6 +153,10 @@ pub trait Tab: Component {
 
     /// Have the next [refresh](Tab::refresh) read the repo.
     fn mark_stale(&mut self);
+
+    /// Take up the configuration as it now reads, of which the tab and
+    /// its panels hold what they go by.
+    fn config_changed(&mut self);
 
     /// Whether the next [refresh](Tab::refresh) will read the repo.
     fn is_stale(&self) -> bool;

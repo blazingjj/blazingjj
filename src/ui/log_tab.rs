@@ -366,6 +366,10 @@ impl Tab for LogTab<'_> {
         self.stale = true;
     }
 
+    fn config_changed(&mut self) {
+        self.head_panel.config_changed();
+    }
+
     fn is_stale(&self) -> bool {
         self.stale
     }

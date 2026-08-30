@@ -39,6 +39,7 @@ mod env;
 mod event;
 mod interrupt;
 mod keybinds;
+mod settings;
 mod ui;
 use crate::app::App;
 use crate::app::Handled;

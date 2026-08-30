@@ -391,6 +391,10 @@ impl Tab for BookmarksTab {
         self.stale = true;
     }
 
+    fn config_changed(&mut self) {
+        self.bookmark_panel.config_changed();
+    }
+
     fn is_stale(&self) -> bool {
         self.stale
     }

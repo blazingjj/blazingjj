@@ -14,7 +14,7 @@ In below examples default values are used.
 ### Global
 
 These work in every tab, and `scroll-down` and `scroll-up` scroll the
-popups as well. Selecting a tab by its number in the tab bar (`1` to `4`)
+popups as well. Selecting a tab by its number in the tab bar (`0` to `4`)
 is not configurable.
 
 ```toml
@@ -177,4 +177,12 @@ edit-change-ignore-immutable = "shift+e"
 open-files = "enter"
 duplicate = "shift+d"
 copy-rev = "shift+y"
+```
+
+### Settings tab
+
+```toml
+[blazingjj.keybinds.settings-tab]
+change = "enter"
+unset = "x"
 ```

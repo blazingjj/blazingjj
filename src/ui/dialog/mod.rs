@@ -20,6 +20,7 @@ mod message;
 mod new_insert;
 mod parent_select;
 mod rebase;
+mod setting_value;
 
 pub use bookmark_name::BookmarkNameMode;
 pub use bookmark_name::BookmarkNamePopup;
@@ -40,3 +41,4 @@ pub use message::MessagePopup;
 pub use new_insert::new_insert;
 pub use parent_select::parent_select;
 pub use rebase::RebasePopup;
+pub use setting_value::SettingValuePopup;

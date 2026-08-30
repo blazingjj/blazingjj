@@ -87,6 +87,12 @@ impl RepoWatch {
         }
     }
 
+    /// Poll every `interval` from here on, or only check when asked if
+    /// that is None.
+    pub fn set_interval(&mut self, interval: Option<Duration>) {
+        self.interval = interval;
+    }
+
     /// Ask for a check that does not wait out the interval.
     pub fn ask_check(&mut self, check: Check) {
         self.asked = true;
@@ -479,6 +485,27 @@ mod tests {
         assert!(watch.checked(now, op_id("b")));
 
         assert!(watch.leave_stale(true));
+    }
+
+    /// A change the app makes itself, a setting written from the
+    /// settings tab among them, is one the view is caught up with even
+    /// where it was already waiting to be asked: nothing moves under
+    /// the user that they did not just ask for.
+    #[test]
+    fn catches_up_with_a_change_of_its_own_while_waiting_to_be_asked() {
+        let now = Instant::now();
+        let mut watch = watch(now);
+        watch.check_to_start(moment(now));
+        watch.checked(now, op_id("a"));
+        watch.check_to_start(moment(now + INTERVAL));
+        watch.checked(now, op_id("b"));
+        watch.leave_stale(true);
+        assert!(watch.waiting_for_refresh());
+
+        watch.catching_up();
+
+        watch.leave_stale(true);
+        assert!(!watch.waiting_for_refresh());
     }
 
     #[test]

@@ -8,11 +8,16 @@ It is a combination of
 use std::fmt;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::OnceLock;
+use std::ptr;
+#[cfg(test)]
+use std::sync::Once;
+use std::sync::atomic::AtomicPtr;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::anyhow;
 use anyhow::bail;
 use ratatui::style::Color;
 use serde::Deserialize;
@@ -24,35 +29,79 @@ use crate::commander::RemoveEndLine;
 use crate::commander::get_output_args;
 use crate::keybinds::KeybindsConfig;
 
-/// Singleton holding application environment
-static ENV: OnceLock<Env> = OnceLock::new();
+/// Singleton holding application environment.
+///
+/// The environment is read through a `&'static`, so putting another one
+/// in place leaks the one that was there: whoever is reading it may
+/// still be looking at it.
+static ENV: AtomicPtr<Env> = AtomicPtr::new(ptr::null_mut());
 
-/// Set application environment. Panics if called twice
+/// Set application environment, in place of whatever was set before.
 pub fn set_env(env: Env) {
-    ENV.set(env).expect("set_env must only be called once");
+    ENV.store(Box::into_raw(Box::new(env)), Ordering::Release);
 }
 
 /// Get application environment. Panics if not set first
 pub fn get_env() -> &'static Env {
-    ENV.get().unwrap()
+    env().expect("the environment is set before anything reads it")
 }
 
 /// The configured keybindings, if any. Unlike [`get_env()`], this works
 /// before the environment is set, as in tests building components.
 pub fn keybinds_config() -> Option<&'static KeybindsConfig> {
-    ENV.get().and_then(|env| env.jj_config.keybinds())
+    env().and_then(|env| env.jj_config.keybinds())
+}
+
+/// Read the configuration again and put the environment it makes up in
+/// place of the one the app has been running on.
+pub fn reload_env() -> Result<()> {
+    let env = get_env();
+    let (config, jj_config) = read_jj_config(&env.root, &env.jj_bin)?;
+
+    set_env(Env {
+        config,
+        jj_config,
+        ..env.clone()
+    });
+
+    Ok(())
+}
+
+/// The environment, if one has been set.
+fn env() -> Option<&'static Env> {
+    // SAFETY: the pointer is either null or one leaked in `set_env`, and
+    // nothing ever frees what it points at.
+    unsafe { ENV.load(Ordering::Acquire).as_ref() }
 }
 
 /// A default environment for tests that build components reading it. The
 /// tests share one process, so whichever gets there first sets it.
 #[cfg(test)]
 pub fn set_test_env() {
-    let _ = ENV.set(Env {
-        root: ".".to_owned(),
-        jj_config: JjConfig::default(),
-        default_revset: None,
-        jj_bin: "jj".to_owned(),
+    static ONCE: Once = Once::new();
+
+    ONCE.call_once(|| {
+        set_env(Env {
+            root: ".".to_owned(),
+            config: toml::Table::new(),
+            jj_config: JjConfig::default(),
+            default_revset: None,
+            jj_bin: "jj".to_owned(),
+        })
     });
+}
+
+/// Whether the configuration would still be read the same way with `key`
+/// set to `value`, which is a TOML expression as `jj config set` takes
+/// one.
+pub fn check_config_value(key: &str, value: &str) -> Result<()> {
+    // Only what the value was refused for is worth reading; the line
+    // and column of a document we wrote ourselves are not.
+    toml::from_str::<JjConfig>(&format!("{key} = {value}\n"))
+        .map_err(|err| anyhow!("{}", err.message()))
+        .context("The setting cannot take that value")?;
+
+    Ok(())
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -73,6 +122,9 @@ pub struct JjConfigBlazingjj {
     diff_pager: Option<DiffPager>,
     bookmark_template: Option<String>,
     layout: JJLayout,
+    /// The share of a tab the main panel takes, of the whole of it at
+    /// the most.
+    #[serde(deserialize_with = "deserialize_layout_percent")]
     layout_percent: u16,
     keybinds: Option<KeybindsConfig>,
     /// How long to wait between checks for work done outside the app, or
@@ -97,6 +149,18 @@ impl Default for JjConfigBlazingjj {
             keybinds: None,
         }
     }
+}
+
+/// Reads a share of a tab, which is refused above the whole of it: a
+/// share the panels cannot be divided in is one to say something about
+/// where it is set rather than one to make what we can of.
+fn deserialize_layout_percent<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u16, D::Error> {
+    let percent = u16::deserialize(deserializer)?;
+    if percent > 100 {
+        return Err(de::Error::custom("a share of a tab is 100 percent at most"));
+    }
+
+    Ok(percent)
 }
 
 /// Reads a number of seconds, of which zero means never checking.
@@ -182,7 +246,6 @@ impl JjConfig {
         self.blazingjj.layout
     }
 
-    /// The share of a tab the main panel takes, in percent.
     pub fn layout_percent(&self) -> u16 {
         self.blazingjj.layout_percent
     }
@@ -199,6 +262,10 @@ impl JjConfig {
 #[derive(Debug, Clone)]
 pub struct Env {
     pub jj_config: JjConfig,
+    /// The configuration as jj lists it, which is what an option is
+    /// read out of by the key it is named by rather than by what the
+    /// app makes of it.
+    pub config: toml::Table,
     pub root: String,
     pub default_revset: Option<String>,
     pub jj_bin: String,
@@ -216,25 +283,37 @@ impl Env {
             bail!("No jj repository found in {}", path.to_str().unwrap_or(""))
         }
         let root = String::from_utf8(root_output.stdout)?.remove_end_line();
-
-        // Read/parse jj config
-        let cfg = Command::new(&jj_bin)
-            .arg("config")
-            .arg("list")
-            .args(get_output_args(false, true))
-            .current_dir(&root)
-            .output()
-            .context("Failed to get jj config")?
-            .stdout;
-        let jj_config: JjConfig = toml::from_slice(&cfg).context("Failed to parse jj config")?;
+        let (config, jj_config) = read_jj_config(&root, &jj_bin)?;
 
         Ok(Env {
             root,
+            config,
             jj_config,
             default_revset,
             jj_bin,
         })
     }
+}
+
+/// What the configuration of the repo at `root` says, across all the
+/// layers jj reads it from, as it is listed and as the app reads it.
+fn read_jj_config(root: &str, jj_bin: &str) -> Result<(toml::Table, JjConfig)> {
+    let cfg = Command::new(jj_bin)
+        .arg("config")
+        .arg("list")
+        .args(get_output_args(false, true))
+        .current_dir(root)
+        .output()
+        .context("Failed to get jj config")?
+        .stdout;
+
+    let config: toml::Table = toml::from_slice(&cfg).context("Failed to parse jj config")?;
+    let jj_config = config
+        .clone()
+        .try_into()
+        .context("Failed to read the jj config")?;
+
+    Ok((config, jj_config))
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Default, PartialEq)]
@@ -540,6 +619,17 @@ mod tests {
 
         let with_tool = config(r#"blazingjj.diff-tool = "difft""#);
         assert_eq!(DiffFormat::Git.get_next(&with_tool), difft);
+    }
+
+    #[test]
+    fn a_value_is_checked_against_the_setting_it_is_for() {
+        assert!(check_config_value("blazingjj.layout", "\"vertical\"").is_ok());
+        assert!(check_config_value("blazingjj.layout-percent", "40").is_ok());
+
+        // A number written as text is not a number, and neither is text
+        // that names nothing the setting can be.
+        assert!(check_config_value("blazingjj.layout-percent", "\"40\"").is_err());
+        assert!(check_config_value("blazingjj.layout", "\"sideways\"").is_err());
     }
 
     #[test]
