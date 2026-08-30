@@ -25,17 +25,11 @@ pub enum LogTabEvent {
 
     GotoParent,
 
-    CreateNew {
-        describe: bool,
-    },
+    CreateNew { describe: bool },
     Duplicate,
     Rebase,
-    Squash {
-        ignore_immutable: bool,
-    },
-    EditChange {
-        ignore_immutable: bool,
-    },
+    Squash { ignore_immutable: bool },
+    EditChange { ignore_immutable: bool },
     Abandon,
     Absorb,
     Describe,
@@ -46,17 +40,25 @@ pub enum LogTabEvent {
     CopyChangeId,
     CopyRev,
 
-    Push {
-        all_bookmarks: bool,
-        allow_new: bool,
-    },
-    Fetch {
-        all_remotes: bool,
-    },
+    Push(PushScope),
+    Fetch { all_remotes: bool },
 
     OpenContextMenu,
 
     Unbound,
+}
+
+/// Which bookmarks a push is to send.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum PushScope {
+    /// Those on the selected change that are tracked.
+    Selected,
+    /// Those on the selected change, tracking the new ones.
+    SelectedWithNew,
+    /// Every tracked bookmark.
+    Tracked,
+    /// Every bookmark, new ones included.
+    All,
 }
 
 impl Default for LogTabKeybinds {
@@ -85,10 +87,10 @@ impl Default for LogTabKeybinds {
             LogTabEvent::OpenEvolog => "v",
             LogTabEvent::CopyChangeId => "y",
             LogTabEvent::CopyRev => "shift+y",
-            event_push(false, false) => "p",
-            event_push(false, true) => "ctrl+p",
-            event_push(true, false) => "shift+p",
-            event_push(true, true) => "ctrl+shift+p",
+            LogTabEvent::Push(PushScope::Selected) => "p",
+            LogTabEvent::Push(PushScope::SelectedWithNew) => "ctrl+p",
+            LogTabEvent::Push(PushScope::Tracked) => "shift+p",
+            LogTabEvent::Push(PushScope::All) => "ctrl+shift+p",
             LogTabEvent::Fetch { all_remotes: false } => "f",
             LogTabEvent::Fetch { all_remotes: true } => "shift+f",
             LogTabEvent::OpenContextMenu => "menu",
@@ -133,10 +135,10 @@ impl LogTabKeybinds {
             LogTabEvent::CopyChangeId => config.copy_change_id,
             LogTabEvent::CopyRev => config.copy_rev,
             LogTabEvent::Rebase => config.rebase,
-            event_push(false, false) => config.push,
-            event_push(false, true) => config.push_new,
-            event_push(true, false) => config.push_all,
-            event_push(true, true) => config.push_all_new,
+            LogTabEvent::Push(PushScope::Selected) => config.push,
+            LogTabEvent::Push(PushScope::SelectedWithNew) => config.push_new,
+            LogTabEvent::Push(PushScope::Tracked) => config.push_all,
+            LogTabEvent::Push(PushScope::All) => config.push_all_new,
             LogTabEvent::Fetch { all_remotes: false } => config.fetch,
             LogTabEvent::Fetch { all_remotes: true } => config.fetch_all,
             LogTabEvent::OpenContextMenu => config.open_context_menu,
@@ -165,19 +167,12 @@ impl LogTabKeybinds {
             LogTabEvent::CopyRev => "yank revision to clipboard",
             LogTabEvent::Fetch { all_remotes: false } => "git fetch",
             LogTabEvent::Fetch { all_remotes: true } => "git fetch all remotes",
-            event_push(false, false) => "git push",
-            event_push(false, true) => "git push with new bookmarks",
-            event_push(true, false) => "git push all bookmarks, except new",
-            event_push(true, true) => "git push all bookmarks",
+            LogTabEvent::Push(PushScope::Selected) => "git push",
+            LogTabEvent::Push(PushScope::SelectedWithNew) => "git push, tracking new bookmarks",
+            LogTabEvent::Push(PushScope::Tracked) => "git push all tracked bookmarks",
+            LogTabEvent::Push(PushScope::All) => "git push all bookmarks, new ones included",
             LogTabEvent::OpenContextMenu => "open the context menu",
         )
-    }
-}
-
-fn event_push(all_bookmarks: bool, allow_new: bool) -> LogTabEvent {
-    LogTabEvent::Push {
-        all_bookmarks,
-        allow_new,
     }
 }
 

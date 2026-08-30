@@ -22,6 +22,7 @@ use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::log::head_template;
+use crate::commander::revset::Revset;
 
 /// A bookmark as [bookmark_template] describes it. The field names are the
 /// ones the template writes.
@@ -199,6 +200,31 @@ impl Commander {
                 Some(_) => usize::MAX,
                 None => ranks.get(&bookmark.name).copied().unwrap_or(usize::MAX),
             })
+            .collect();
+
+        Ok(bookmarks)
+    }
+
+    /// The local bookmarks pointing at `revset`, in the order jj lists
+    /// them. Leaves the working copy alone.
+    #[instrument(level = "trace", skip(self))]
+    pub fn get_local_bookmarks(&self, revset: &Revset) -> Result<Vec<Bookmark>, CommandError> {
+        let bookmarks = self
+            .jj([
+                "bookmark",
+                "list",
+                "-r",
+                revset.as_str(),
+                "-T",
+                &format!(r#"if(present, {}, "")"#, bookmark_only_template()),
+            ])
+            .ignore_working_copy()
+            .run()?
+            .lines()
+            .filter_map(parse_bookmark_only)
+            // The listing names the remotes a bookmark is out of sync
+            // with as well, which say nothing about where it is.
+            .filter(|bookmark| bookmark.remote.is_none())
             .collect();
 
         Ok(bookmarks)
@@ -485,6 +511,30 @@ mod tests {
         assert_eq!(names.last(), Some(&"aside".to_owned()), "{names:?}");
         assert!(names.contains(&"both".to_owned()), "{names:?}");
         assert!(names.contains(&"here".to_owned()), "{names:?}");
+
+        Ok(())
+    }
+
+    /// Pushing the new bookmarks of a change names them, so a bookmark
+    /// standing anywhere else must not be among them.
+    #[test]
+    fn get_local_bookmarks_holds_the_bookmarks_on_the_change() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let commander = &test_repo.commander;
+
+        commander.create_bookmark("elsewhere")?;
+        commander.run_new(&commander.get_current_head()?.commit_id)?;
+        commander.create_bookmark("here")?;
+        commander.create_bookmark("also-here")?;
+
+        let on = commander.get_current_head()?.commit_id;
+        let names: Vec<String> = commander
+            .get_local_bookmarks(&Revset::from(&on))?
+            .into_iter()
+            .map(|bookmark| bookmark.name)
+            .collect();
+
+        assert_eq!(names, ["also-here", "here"]);
 
         Ok(())
     }

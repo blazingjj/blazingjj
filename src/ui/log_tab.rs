@@ -14,6 +14,7 @@ use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
 use crate::commander::ids::CommitId;
+use crate::commander::jj::PushTarget;
 use crate::commander::log::Head;
 use crate::commander::log::LOG_LINES_PER_HEAD;
 use crate::commander::new_commander;
@@ -26,6 +27,7 @@ use crate::keybinds::LogTabEvent;
 use crate::keybinds::LogTabKeybinds;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
+use crate::keybinds::PushScope;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -221,6 +223,38 @@ impl<'a> LogTab<'a> {
         }
     }
 
+    /// Push what `scope` says. Pushing the new bookmarks of a change
+    /// means naming them, as jj only tracks a bookmark the remote does
+    /// not have yet when it is asked for by name.
+    fn handle_push(&self, scope: PushScope) -> Result<Option<AppAction>> {
+        let target = match scope {
+            PushScope::Selected => PushTarget::Revision(Revset::from(&self.head.commit_id)),
+            PushScope::SelectedWithNew => {
+                let message = |text: String| {
+                    Ok(Some(AppAction::SetPopup(Box::new(
+                        MessagePopup::new("Push", text).text_align(Alignment::Left),
+                    ))))
+                };
+
+                let bookmarks = match new_commander()
+                    .get_local_bookmarks(&Revset::from(&self.head.commit_id))
+                {
+                    Ok(bookmarks) => bookmarks,
+                    Err(err) => return message(format!("{err:#}")),
+                };
+                if bookmarks.is_empty() {
+                    return message("This change has no bookmark to push".to_owned());
+                }
+
+                PushTarget::Bookmarks(bookmarks.into_iter().map(|it| it.name).collect())
+            }
+            PushScope::Tracked => PushTarget::Tracked,
+            PushScope::All => PushTarget::All,
+        };
+
+        Ok(Some(AppAction::Run(Command::Push(target))))
+    }
+
     fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<Option<AppAction>> {
         match log_tab_event {
             LogTabEvent::ScrollToBottom => {
@@ -312,15 +346,8 @@ impl<'a> LogTab<'a> {
                     self.head.commit_id.as_str().to_owned(),
                 ))));
             }
-            LogTabEvent::Push {
-                all_bookmarks,
-                allow_new,
-            } => {
-                return Ok(Some(AppAction::Run(Command::Push {
-                    commit_id: self.head.commit_id.clone(),
-                    all_bookmarks,
-                    allow_new,
-                })));
+            LogTabEvent::Push(scope) => {
+                return self.handle_push(scope);
             }
             LogTabEvent::Fetch { all_remotes } => {
                 return Ok(Some(AppAction::Run(Command::Fetch { all_remotes })));

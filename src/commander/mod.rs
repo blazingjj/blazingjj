@@ -61,9 +61,9 @@ use crate::env::Env;
 use crate::env::get_env;
 
 /// The oldest version of jj that is known to work with blazingjj.
-/// 0.37.0 added `status_char()` and `display_diff_path()`, which the files
-/// list is built from
-const JJ_MIN_VERSION: &str = "0.37.0";
+/// 0.42.0 dropped `jj git push --allow-new` and took `--all` to mean what
+/// it and `--allow-new` meant together, which is how we push
+const JJ_MIN_VERSION: &str = "0.42.0";
 const JJ_VERSION_IGNORE_HELP: &str = "If you want to continue anyway, use --ignore-jj-version";
 
 /// The narrowest width jj is told to limit secondary programs to. Anything

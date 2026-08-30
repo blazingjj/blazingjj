@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The keybindings shared by all tabs are now configured under `[blazingjj.keybinds]`:
   `focus-current`, `refresh` and `open-help` move there from
   `[blazingjj.keybinds.log-tab]`, which also loses its `scroll-*` overrides
-- jj 0.37.0 or newer is now required
+- jj 0.42.0 or newer is now required
 - The confirmation dialogs are now popups of the app and go away on `q` or
   Escape, like the other popups, rather than on the log tab's `close-popup`
   and `cancel` bindings. `[blazingjj.keybinds.log-tab] close-popup` and
@@ -151,6 +151,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   renders the change again
 - With `diff-format = "stat"`, the histogram is now scaled to the panel rather
   than to the whole terminal
+- Pushing new bookmarks works again: `ctrl+p` now names the bookmarks on the
+  selected change, which is what makes jj track them, and says so when the
+  change has none. `ctrl+shift+p` pushes all bookmarks and `shift+p` only the
+  tracked ones, as they did before
 
 ## [0.8.0] - 2026-04-19
 

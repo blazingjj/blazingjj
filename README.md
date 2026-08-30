@@ -129,9 +129,10 @@ See all key mappings for the current tab with `?`.
   - Squash current changes to the selected change ignoring immutability with `S` (`jj squash --ignore-immutable`)
 - Git fetch with `f` (`jj git fetch`)
   - Git fetch all remotes with `F` (`jj git fetch --all-remotes`)
-- Git push with `p` (`jj git push`)
-  - Git push all bookmarks with `P` (`jj git push --all`)
-  - Use `Ctrl+p` or `Ctrl+P` to include pushing new bookmarks (`--allow-new`)
+- Git push the tracked bookmarks on the highlighted change with `p` (`jj git push -r`)
+  - Push its bookmarks the remote does not have yet as well with `Ctrl+p` (`jj git push --bookmark`)
+  - Push all tracked bookmarks with `P` (`jj git push --tracked`)
+  - Push all bookmarks, new ones included, with `Ctrl+P` (`jj git push --all`)
 
 ### Files tab
 
