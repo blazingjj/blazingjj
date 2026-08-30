@@ -28,11 +28,11 @@ use crate::ui::utils::error_text;
 
     The log operates with two index:
     - line index (into self.log_output.text)
-    - head index (into self.log_output.heads)
+    - item index (into self.log_output.items)
 
     The line index is used for scrolling at the display level.
 
-    The head index is used for scrolling at the user level
+    The item index is used for scrolling at the user level
     as well as for selecting which lines to highlight.
 */
 pub struct LogPanel<'a> {
@@ -45,17 +45,17 @@ pub struct LogPanel<'a> {
     /// The title the log is shown under
     title: String,
 
-    /// How many lines of the graph one head takes
-    lines_per_head: usize,
+    /// How many lines of the graph one item takes
+    lines_per_item: usize,
 
     /// Scroll offset and cursor position
     log_list_state: ListState,
 
     /// Currently selected commit
-    pub head: Head,
+    pub selected: Head,
 
     /// Currently marked commits
-    pub marked_heads: HashSet<CommitId>,
+    pub marked: HashSet<CommitId>,
 
     list_pane: ListPane,
 
@@ -83,35 +83,35 @@ pub enum LogPanelEvent {
 }
 */
 
-fn get_head_index(head: &Head, log_output: &Result<LogOutput, CommandError>) -> Option<usize> {
+fn get_item_index(item: &Head, log_output: &Result<LogOutput, CommandError>) -> Option<usize> {
     match log_output {
         Ok(log_output) => log_output
-            .heads
+            .items
             .iter()
-            .position(|heads| heads == head)
+            .position(|items| items == item)
             .or_else(|| {
                 log_output
-                    .heads
+                    .items
                     .iter()
-                    .position(|commit| commit.change_id == head.change_id)
+                    .position(|commit| commit.change_id == item.change_id)
             }),
         Err(_) => None,
     }
 }
 
 impl<'a> LogPanel<'a> {
-    /// A panel showing `head` selected in an empty log. The graphs it is
-    /// later given take `lines_per_head` lines per head.
-    pub fn new(head: Head, lines_per_head: usize) -> Self {
+    /// A panel showing `selected` in an empty log. The graphs it is later
+    /// given take `lines_per_item` lines per item.
+    pub fn new(selected: Head, lines_per_item: usize) -> Self {
         Self {
             log_output_text: Text::default(),
             log_output: Ok(LogOutput::default()),
             title: String::new(),
-            lines_per_head,
+            lines_per_item,
             log_list_state: ListState::default(),
 
-            head,
-            marked_heads: HashSet::new(),
+            selected,
+            marked: HashSet::new(),
 
             list_pane: ListPane::default(),
 
@@ -142,8 +142,8 @@ impl<'a> LogPanel<'a> {
         // Add commit mark
         let add_mark = |line: &mut Line, i: usize| {
             let at_marked_commit = log_output
-                .head_at(i)
-                .is_some_and(|head| self.is_head_marked(head));
+                .item_at(i)
+                .is_some_and(|item| self.is_item_marked(item));
 
             let symbol = if at_marked_commit {
                 LEFT_MARGIN_MARKED
@@ -176,8 +176,8 @@ impl<'a> LogPanel<'a> {
                 // Add padding at start
                 add_mark(&mut line, i);
 
-                // Highlight lines that correspond to self.head
-                if log_output.head_at(i) == Some(&self.head) {
+                // Highlight lines that correspond to self.selected
+                if log_output.item_at(i) == Some(&self.selected) {
                     set_bg(&mut line, highlight);
                 };
 
@@ -194,123 +194,123 @@ impl<'a> LogPanel<'a> {
         }
     }
 
-    /// Get a list of all heads in log list
-    pub fn log_heads(&self) -> Vec<Head> {
+    /// Get a list of all items in log list
+    pub fn items(&self) -> Vec<Head> {
         match self.log_output.as_ref() {
-            Ok(log_output) => log_output.heads.clone(),
+            Ok(log_output) => log_output.items.clone(),
             Err(_) => vec![],
         }
     }
 
     //
-    //  Selected head and the special head index
+    //  Selected item and the special item index
     //
 
-    /// Find the line in self.log_output that match self.head
+    /// Find the line in self.log_output that match self.selected
     fn selected_log_line(&self) -> Option<usize> {
         let log_output = self.log_output.as_ref().ok()?;
 
         log_output
-            .graph_heads
+            .graph_items
             .iter()
-            .position(|opt_h| opt_h.as_ref().is_some_and(|h| h == &self.head))
+            .position(|opt_h| opt_h.as_ref().is_some_and(|h| h == &self.selected))
     }
 
     /// Where to put something that wants to show up next to the selected
     /// change.
     pub fn selected_position(&self) -> Option<Position> {
         self.list_pane
-            .item_anchor(self.selected_log_line()?, self.lines_per_head as u16)
+            .item_anchor(self.selected_log_line()?, self.lines_per_item as u16)
     }
 
-    /// Find head of the provided log_output line
-    pub fn head_at_log_line(&self, log_line: usize) -> Option<Head> {
-        self.log_output.as_ref().ok()?.head_at(log_line).cloned()
+    /// Find item of the provided log_output line
+    pub fn item_at_log_line(&self, log_line: usize) -> Option<Head> {
+        self.log_output.as_ref().ok()?.item_at(log_line).cloned()
     }
 
-    // Return the head-index for the selection
-    fn get_current_head_index(&self) -> Option<usize> {
-        get_head_index(&self.head, &self.log_output)
+    // Return the item-index for the selection
+    fn current_item_index(&self) -> Option<usize> {
+        get_item_index(&self.selected, &self.log_output)
     }
 
-    /// Whether the log holds a head, taking a different commit for the
+    /// Whether the log holds an item, taking a different commit for the
     /// same change as a match.
-    pub fn shows_head(&self, head: &Head) -> bool {
-        get_head_index(head, &self.log_output).is_some()
+    pub fn shows_item(&self, item: &Head) -> bool {
+        get_item_index(item, &self.log_output).is_some()
     }
 
-    /// Number of heads that fit on screen. Think of this as in unit
-    /// head-index. Moving the head-index this much causes a full page
+    /// Number of items that fit on screen. Think of this as in unit
+    /// item-index. Moving the item-index this much causes a full page
     /// scroll.
-    pub fn visible_heads(&self) -> isize {
-        // Every item in the log list is one line, and every head spans as
+    pub fn visible_items(&self) -> isize {
+        // Every entry in the log list is one line, and every item spans as
         // many of them as the graph takes.
-        self.list_pane.visible_items() / self.lines_per_head as isize
+        self.list_pane.visible_items() / self.lines_per_item as isize
     }
 
-    /// Move selection to a specific head. This may cause the next draw to
+    /// Move selection to a specific item. This may cause the next draw to
     /// scroll to a different line.
-    pub fn set_head(&mut self, head: Head) {
+    pub fn set_selected(&mut self, item: Head) {
         self.scroll_padding_active = true;
-        head.clone_into(&mut self.head);
+        item.clone_into(&mut self.selected);
     }
 
-    /// Move selection to a specific head, leaving the viewport where it
+    /// Move selection to a specific item, leaving the viewport where it
     /// is. Used when the selection follows the mouse, which is already
     /// pointing at the line it wants to stay on.
-    pub fn set_head_in_place(&mut self, head: Head) {
+    pub fn set_selected_in_place(&mut self, item: Head) {
         self.scroll_padding_active = false;
-        head.clone_into(&mut self.head);
+        item.clone_into(&mut self.selected);
     }
 
     /// Move selection relative to the current position.
-    /// The scroll is relative to head-index, not line-index.
-    /// This will update self.head
+    /// The scroll is relative to item-index, not line-index.
+    /// This will update self.selected
     pub fn scroll_relative(&mut self, scroll: isize) {
         let log_output = match self.log_output.as_ref() {
             Ok(log_output) => log_output,
             Err(_) => return,
         };
 
-        let heads: &Vec<Head> = log_output.heads.as_ref();
+        let items: &Vec<Head> = log_output.items.as_ref();
 
-        let current_head_index = self.get_current_head_index();
-        let next_head = match current_head_index {
-            Some(current_head_index) => heads.get(
-                current_head_index
+        let current_item_index = self.current_item_index();
+        let next_item = match current_item_index {
+            Some(current_item_index) => items.get(
+                current_item_index
                     .saturating_add_signed(scroll)
-                    .min(heads.len() - 1),
+                    .min(items.len() - 1),
             ),
-            None => heads.first(),
+            None => items.first(),
         };
-        if let Some(next_head) = next_head {
-            self.set_head(next_head.clone());
+        if let Some(next_item) = next_item {
+            self.set_selected(next_item.clone());
         }
-        // TODO Notify about change of head
+        // TODO Notify about change of selection
     }
 
     //
-    //  Marked heads
+    //  Marked items
     //
 
-    /// Mark or unmark the specified head
-    pub fn set_head_mark(&mut self, head: &Head, mark: bool) {
+    /// Mark or unmark the specified item
+    pub fn set_item_mark(&mut self, item: &Head, mark: bool) {
         if mark {
-            self.marked_heads.insert(head.commit_id.clone());
+            self.marked.insert(item.commit_id.clone());
         } else {
-            self.marked_heads.remove(&head.commit_id);
+            self.marked.remove(&item.commit_id);
         }
     }
 
-    /// Check if a head is marked for batch operation
-    pub fn is_head_marked(&self, head: &Head) -> bool {
-        self.marked_heads.contains(&head.commit_id)
+    /// Check if an item is marked for batch operation
+    pub fn is_item_marked(&self, item: &Head) -> bool {
+        self.marked.contains(&item.commit_id)
     }
 
-    /// Toggle the mark on the current head
-    pub fn toggle_head_mark(&mut self) {
-        let was_marked = self.is_head_marked(&self.head);
-        self.set_head_mark(&self.head.clone(), !was_marked);
+    /// Toggle the mark on the selected item
+    pub fn toggle_item_mark(&mut self) {
+        let was_marked = self.is_item_marked(&self.selected);
+        self.set_item_mark(&self.selected.clone(), !was_marked);
     }
 }
 
