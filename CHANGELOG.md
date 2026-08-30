@@ -46,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   log tab with `v` (`open-evolog`), or from the tab bar with `4`. A version's
   files open with `Enter`, `D` duplicates it as a new change, and `Y` yanks its
   revision
+- The tabs overview takes the mouse: a click switches to the tab clicked, and
+  the wheel cycles through the tabs
 - The help popup now scrolls with the mouse wheel
 - Keybinding for jj absorb (`A`)
 - Global keybindings under `[blazingjj.keybinds]` (`scroll-down`, `scroll-up`,

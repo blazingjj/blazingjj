@@ -98,6 +98,10 @@ pub struct App<'a> {
     pub evolog: EvologTab<'a>,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
+    /// Where the tabs overview was last drawn, for mouse input.
+    tabs_rect: Rect,
+    /// Where each tab's title was last drawn, for mouse input.
+    tab_hits: Vec<(Rect, TabId)>,
     global_keybinds: GlobalKeybinds,
     /// The keys a popup that does not answer to them itself is taken
     /// down by
@@ -132,6 +136,8 @@ impl<'a> App<'a> {
             stats: Stats {
                 start_time: Instant::now(),
             },
+            tabs_rect: Rect::ZERO,
+            tab_hits: Vec::new(),
             global_keybinds,
             popup_keybinds: PopupKeybinds::dialog(),
 
@@ -363,25 +369,27 @@ impl<'a> App<'a> {
             .split(chunks[0]);
 
         {
-            let tabs = Tabs::new(
-                TabId::VALUES
-                    .iter()
-                    .enumerate()
-                    .map(|(i, tab)| format!("[{}] {}", i + 1, tab)),
-            )
-            .block(
-                Block::bordered()
-                    .title(" Tabs ")
-                    .border_type(BorderType::Rounded),
-            )
-            .highlight_style(Style::default().bg(get_env().jj_config.highlight_color()))
-            .select(
-                TabId::VALUES
-                    .iter()
-                    .position(|tab| tab == &self.current_tab)
-                    .unwrap_or(0),
-            )
-            .divider(symbols::line::VERTICAL);
+            let titles: Vec<String> = TabId::VALUES
+                .iter()
+                .enumerate()
+                .map(|(i, tab)| format!("[{}] {}", i + 1, tab))
+                .collect();
+
+            let block = Block::bordered()
+                .title(" Tabs ")
+                .border_type(BorderType::Rounded);
+            self.record_tab_hits(header_chunks[0], block.inner(header_chunks[0]), &titles);
+
+            let tabs = Tabs::new(titles)
+                .block(block)
+                .highlight_style(Style::default().bg(get_env().jj_config.highlight_color()))
+                .select(
+                    TabId::VALUES
+                        .iter()
+                        .position(|tab| tab == &self.current_tab)
+                        .unwrap_or(0),
+                )
+                .divider(symbols::line::VERTICAL);
 
             f.render_widget(tabs, header_chunks[0]);
         }
@@ -430,6 +438,59 @@ impl<'a> App<'a> {
         }
 
         Ok(())
+    }
+
+    /// Note where each tab's title ends up inside `area`, following how
+    /// [Tabs] lays them out: one cell of padding on either side of a
+    /// title, then a one cell divider. The padding counts as part of the
+    /// title, so that clicking next to a name still hits it.
+    fn record_tab_hits(&mut self, block: Rect, area: Rect, titles: &[String]) {
+        self.tabs_rect = block;
+        self.tab_hits.clear();
+
+        let mut x = area.left();
+        for (title, tab) in titles.iter().zip(TabId::VALUES) {
+            let width = Line::raw(title).width() as u16 + 2;
+            if x >= area.right() {
+                break;
+            }
+            self.tab_hits.push((
+                Rect {
+                    x,
+                    y: area.top(),
+                    width: width.min(area.right() - x),
+                    height: 1,
+                },
+                tab,
+            ));
+            x += width + 1;
+        }
+    }
+
+    /// Whether the mouse event went to the tabs overview.
+    fn input_tabs(&mut self, mouse: event::MouseEvent) -> bool {
+        let position = Position::new(mouse.column, mouse.row);
+        match mouse.kind {
+            event::MouseEventKind::Down(event::MouseButton::Left) => {
+                let Some((_, tab)) = self
+                    .tab_hits
+                    .iter()
+                    .find(|(rect, _)| rect.contains(position))
+                    .copied()
+                else {
+                    return false;
+                };
+                self.set_tab(tab);
+            }
+            event::MouseEventKind::ScrollDown if self.tabs_rect.contains(position) => {
+                self.set_next_tab_with_offset(1);
+            }
+            event::MouseEventKind::ScrollUp if self.tabs_rect.contains(position) => {
+                self.set_next_tab_with_offset(-1);
+            }
+            _ => return false,
+        }
+        true
     }
 
     /// Set up threads that capture input and send AppEvents
@@ -533,6 +594,13 @@ impl<'a> App<'a> {
                     }
                 }
             };
+        }
+
+        if to_tab
+            && let TermEvent::Mouse(mouse) = event
+            && self.input_tabs(mouse)
+        {
+            return Ok(Handled::Redraw);
         }
 
         if to_tab {
