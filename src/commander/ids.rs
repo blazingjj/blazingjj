@@ -75,6 +75,27 @@ impl Display for CommitId {
     }
 }
 
+/// How many characters of an operation id we show, which is the number
+/// jj puts in an operation log.
+const SHORT_OPERATION_ID_LEN: usize = 12;
+
 /// Wrapper around operation ID.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Default, PartialEq, Eq, Hash, Debug, Deserialize)]
 pub struct OperationId(pub String);
+
+impl OperationId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The leading [SHORT_OPERATION_ID_LEN] characters of the id.
+    pub fn short(&self) -> &str {
+        &self.0[..SHORT_OPERATION_ID_LEN.min(self.0.len())]
+    }
+}
+
+impl Display for OperationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}

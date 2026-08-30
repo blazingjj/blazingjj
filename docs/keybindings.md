@@ -22,7 +22,7 @@ action answers to, `a` takes it as another key beside the ones it has.
 ### Global
 
 These work in every tab, and `scroll-down` and `scroll-up` scroll the
-popups as well. Selecting a tab by its number in the tab bar (`0` to `4`)
+popups as well. Selecting a tab by its number in the tab bar (`0` to `5`)
 is not configurable.
 
 ```toml
@@ -185,6 +185,14 @@ edit-change-ignore-immutable = "shift+e"
 open-files = "enter"
 duplicate = "shift+d"
 copy-rev = "shift+y"
+```
+
+### Operation log tab
+
+```toml
+[blazingjj.keybinds.op-log-tab]
+load-more = "m"
+copy-id = "shift+y"
 ```
 
 ### Settings tab

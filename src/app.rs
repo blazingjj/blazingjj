@@ -58,6 +58,7 @@ use crate::ui::evolog_tab::EvologTab;
 use crate::ui::files_tab::FilesTab;
 use crate::ui::keybindings_tab::KeybindingsTab;
 use crate::ui::log_tab::LogTab;
+use crate::ui::op_log_tab::OpLogTab;
 use crate::ui::settings_tab::SettingsTab;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
@@ -66,6 +67,7 @@ pub enum TabId {
     Files,
     Bookmarks,
     Evolog,
+    OpLog,
     Settings,
     /// The keybindings, which the settings tab opens and which has no
     /// place of its own in the tab bar.
@@ -79,6 +81,7 @@ impl fmt::Display for TabId {
             TabId::Files => write!(f, "Files"),
             TabId::Bookmarks => write!(f, "Bookmarks"),
             TabId::Evolog => write!(f, "Evolog"),
+            TabId::OpLog => write!(f, "Op log"),
             TabId::Settings => write!(f, "Settings"),
             TabId::Keybindings => write!(f, "Keybindings"),
         }
@@ -87,21 +90,23 @@ impl fmt::Display for TabId {
 
 impl TabId {
     /// Every tab there is, the transient one included
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         TabId::Log,
         TabId::Files,
         TabId::Bookmarks,
         TabId::Evolog,
+        TabId::OpLog,
         TabId::Settings,
         TabId::Keybindings,
     ];
 
     /// The tabs the tab bar lists, in the order it lists them
-    pub const VALUES: [Self; 5] = [
+    pub const VALUES: [Self; 6] = [
         TabId::Log,
         TabId::Files,
         TabId::Bookmarks,
         TabId::Evolog,
+        TabId::OpLog,
         TabId::Settings,
     ];
 
@@ -124,6 +129,7 @@ impl TabId {
             TabId::Files => 2,
             TabId::Bookmarks => 3,
             TabId::Evolog => 4,
+            TabId::OpLog => 5,
         }
     }
 }
@@ -132,7 +138,7 @@ impl TabId {
 /// is lit up on its own in.
 const HINTS_BEFORE_REFRESH: &str = "q: quit | ?: help | ";
 const HINTS_REFRESH: &str = "R: refresh";
-const HINTS_AFTER_REFRESH: &str = " | 0-4: tabs";
+const HINTS_AFTER_REFRESH: &str = " | 0-5: tabs";
 
 /// How much of the right of the header the runtime is drawn over. It is
 /// a count of milliseconds, which takes a column more every tenfold, so
@@ -167,6 +173,7 @@ pub struct App<'a> {
     pub files: FilesTab,
     pub bookmarks: BookmarksTab,
     pub evolog: EvologTab<'a>,
+    pub op_log: OpLogTab<'a>,
     pub settings: SettingsTab,
     pub keybindings: KeybindingsTab,
     pub popup: Option<Box<dyn Component>>,
@@ -208,6 +215,7 @@ impl<'a> App<'a> {
             files: FilesTab::new(&current_head, background_tasks.clone()),
             bookmarks: BookmarksTab::new(background_tasks.clone()),
             evolog: EvologTab::new(&current_head, background_tasks.clone()),
+            op_log: OpLogTab::new(background_tasks.clone()),
             settings: SettingsTab::new(),
             keybindings: KeybindingsTab::new(),
             popup: None,
@@ -368,6 +376,7 @@ impl<'a> App<'a> {
             TabId::Files => &mut self.files,
             TabId::Bookmarks => &mut self.bookmarks,
             TabId::Evolog => &mut self.evolog,
+            TabId::OpLog => &mut self.op_log,
             TabId::Settings => &mut self.settings,
             TabId::Keybindings => &mut self.keybindings,
         }
@@ -664,7 +673,8 @@ impl<'a> App<'a> {
             }
             TaskSlot::CommitShow(tab, _)
             | TaskSlot::FileDiff(tab, _)
-            | TaskSlot::EvologShow(tab, _) => Some(self.get_tab(tab)),
+            | TaskSlot::EvologShow(tab, _)
+            | TaskSlot::OpShow(tab, _) => Some(self.get_tab(tab)),
             // The cast reborrows the popup for the body rather than for
             // the lifetime the app is tied to.
             TaskSlot::GitPush | TaskSlot::GitFetch => self
@@ -837,6 +847,7 @@ impl<'a> App<'a> {
                             GlobalEvent::FilesTab => self.set_tab(TabId::Files),
                             GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks),
                             GlobalEvent::EvologTab => self.set_tab(TabId::Evolog),
+                            GlobalEvent::OpLogTab => self.set_tab(TabId::OpLog),
                             GlobalEvent::SettingsTab => self.set_tab(TabId::Settings),
                             GlobalEvent::OpenContextMenu => {
                                 if let Some(action) = self.get_current_tab().open_context_menu()? {

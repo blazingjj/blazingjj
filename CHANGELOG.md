@@ -49,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `blazingjj.diff-pager` and toggled through with `w` like the others
 - The details panel now names the diff format it renders in, in its top
   right corner
+- Operation log tab, listing what the repo has been through and showing what
+  the selected operation did to it; opened from the tab bar with `5`. It reads
+  the newest 200 operations, `m` reads twice as far back, and `Y` yanks the
+  selected operation's id
 - Settings tab, listing the `blazingjj.*` options with what the configuration
   says about them and what the app goes by while it says nothing; opened from the
   tab bar with `0`, where it sits after the tabs that show the repo. `Enter`

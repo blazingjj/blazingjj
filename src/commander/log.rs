@@ -179,7 +179,7 @@ const EVOLOG_TEMPLATE: &str = r#"
 /// starts at the first brace of the line. A line the graph draws for edges
 /// alone carries no template output, and neither does one for an elided
 /// revision, so those have no brace and no record.
-fn parse_record<T: DeserializeOwned>(text: &str) -> Result<T> {
+pub(super) fn parse_record<T: DeserializeOwned>(text: &str) -> Result<T> {
     text.find('{')
         .and_then(|start| serde_json::from_str(&text[start..]).ok())
         .ok_or_else(|| RecordParseError(text.to_owned()).into())
@@ -226,7 +226,7 @@ impl Commander {
     /// draws the graph in `lines_per_item` lines per item, and
     /// `record_template` writes the item one of those lines belongs to.
     /// Leaves the working copy alone.
-    fn get_graph_log<T: LogItem>(
+    pub(super) fn get_graph_log<T: LogItem>(
         &self,
         command: &[&str],
         graph_template: &str,
