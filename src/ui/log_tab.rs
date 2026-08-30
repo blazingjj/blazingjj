@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyEventKind;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -197,9 +198,15 @@ taking whatever that request acts on off the selection. The app runs it
 from there.
 */
 impl<'a> LogTab<'a> {
-    /// What the operations in a menu or behind a key would act on.
+    /// What the operations in a menu or behind a key would act on: the
+    /// marked changes once the prefix key has asked for them, and
+    /// nothing otherwise, leaving every operation its own default.
     fn marked(&self) -> Vec<CommitId> {
-        self.log_panel.marked.iter().cloned().collect()
+        if self.log_panel.use_marks {
+            self.log_panel.marked.iter().cloned().collect()
+        } else {
+            vec![]
+        }
     }
 
     /// The menu of what can be done to the selected change, put at
@@ -251,6 +258,25 @@ impl<'a> LogTab<'a> {
                 &relatives,
                 &out_of_view,
             ))))),
+        }
+    }
+
+    /// What a key press asks of the tab, be it of the details panel or
+    /// of the log itself.
+    fn input_key(&mut self, key: KeyEvent) -> Result<ComponentInputResult> {
+        match self.details_keybinds.match_event(key) {
+            DetailsPanelEvent::Unbound => {}
+            ev => {
+                self.head_panel.handle_event(ev);
+                return Ok(ComponentInputResult::Handled);
+            }
+        }
+
+        match self.keybinds.match_event(key) {
+            // Not something the tab acts on here, so whoever else wants
+            // the key is welcome to it.
+            LogTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
+            event => Ok(self.handle_event(event)?.into()),
         }
     }
 
@@ -357,7 +383,8 @@ impl<'a> LogTab<'a> {
                 return self.handle_goto(relation);
             }
 
-            LogTabEvent::Unbound => {}
+            // Both are taken before an event is handled at all.
+            LogTabEvent::UseMarks | LogTabEvent::Unbound => {}
         };
         Ok(None)
     }
@@ -525,20 +552,16 @@ impl Component for LogTab<'_> {
                 return Ok(ComponentInputResult::Handled);
             }
 
-            match self.details_keybinds.match_event(key) {
-                DetailsPanelEvent::Unbound => {}
-                ev => {
-                    self.head_panel.handle_event(ev);
-                    return Ok(ComponentInputResult::Handled);
-                }
+            // The prefix key hands the marks to whatever key comes
+            // next. Every other key gives them up again, whether or not
+            // it stood for an operation that could have used them.
+            if self.keybinds.match_event(key) == LogTabEvent::UseMarks {
+                self.log_panel.use_marks = true;
+                return Ok(ComponentInputResult::Handled);
             }
-
-            return match self.keybinds.match_event(key) {
-                // Not something the tab acts on here, so whoever else
-                // wants the key is welcome to it.
-                LogTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
-                event => Ok(self.handle_event(event)?.into()),
-            };
+            let result = self.input_key(key);
+            self.log_panel.use_marks = false;
+            return result;
         }
 
         Ok(ComponentInputResult::Handled)

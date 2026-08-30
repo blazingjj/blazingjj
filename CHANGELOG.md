@@ -174,6 +174,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which the tab bar shows for itself
 - Clicking a change in the log tab no longer scrolls the log to put the
   selection into the middle of the panel; the line clicked stays where it is
+- The marked changes are now only acted on when the operation is prefixed
+  with `;` (`use-marks`), rather than whenever anything is marked; without
+  the prefix an operation acts on the selected change, as it does with
+  nothing marked
 - The set-bookmark dialog now offers the bookmarks the change is standing on
   first, nearest first, rather than ordering them by how recently the change
   each points at was committed

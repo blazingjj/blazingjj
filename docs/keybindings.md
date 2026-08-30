@@ -120,9 +120,13 @@ toggle-wrap = "shift+w"
 
 ### Log tab
 
+`use-marks` is a prefix: the operation that follows it acts on the marked
+changes rather than on the selected one.
+
 ```toml
 [blazingjj.keybinds.log-tab]
 mark-head = "space"
+use-marks = ";"
 goto-parent = "-"
 goto-child = "+"
 
