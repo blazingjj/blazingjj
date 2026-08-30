@@ -1,4 +1,5 @@
-/*! The log panel shows a list of changes on the left side of a tab. */
+/*! The log panel shows a graph on the left side of a tab: the changes of
+the log, or the entries of the operation log. */
 
 use std::collections::HashSet;
 
@@ -12,8 +13,7 @@ use super::ListPane;
 use super::MouseInput;
 use super::PanelMouseInput;
 use crate::commander::CommandError;
-use crate::commander::ids::CommitId;
-use crate::commander::log::Head;
+use crate::commander::log::LogItem;
 use crate::commander::log::LogOutput;
 use crate::env::get_env;
 use crate::event::Mouse;
@@ -22,8 +22,8 @@ use crate::ui::Component;
 use crate::ui::utils::error_text;
 
 /**
-    A panel that displays a graph of changes. This panel is used on the
-    left side of a tab. It shows a selected change, which is expanded on
+    A panel that displays a graph of items. This panel is used on the
+    left side of a tab. It shows a selected item, which is expanded on
     the right side of the tab.
 
     The log operates with two index:
@@ -35,9 +35,9 @@ use crate::ui::utils::error_text;
     The item index is used for scrolling at the user level
     as well as for selecting which lines to highlight.
 */
-pub struct LogPanel<'a> {
+pub struct LogPanel<'a, T: LogItem> {
     /// The log to show, or what went wrong reading it
-    log_output: Result<LogOutput, CommandError>,
+    log_output: Result<LogOutput<T>, CommandError>,
 
     /// The log converted to Ratatui Text
     log_output_text: Text<'a>,
@@ -51,11 +51,11 @@ pub struct LogPanel<'a> {
     /// Scroll offset and cursor position
     log_list_state: ListState,
 
-    /// Currently selected commit
-    pub selected: Head,
+    /// Currently selected item
+    pub selected: T,
 
-    /// Currently marked commits
-    pub marked: HashSet<CommitId>,
+    /// Currently marked items
+    pub marked: HashSet<T::Mark>,
 
     list_pane: ListPane,
 
@@ -83,7 +83,10 @@ pub enum LogPanelEvent {
 }
 */
 
-fn get_item_index(item: &Head, log_output: &Result<LogOutput, CommandError>) -> Option<usize> {
+fn get_item_index<T: LogItem>(
+    item: &T,
+    log_output: &Result<LogOutput<T>, CommandError>,
+) -> Option<usize> {
     match log_output {
         Ok(log_output) => log_output
             .items
@@ -93,16 +96,16 @@ fn get_item_index(item: &Head, log_output: &Result<LogOutput, CommandError>) -> 
                 log_output
                     .items
                     .iter()
-                    .position(|commit| commit.change_id == item.change_id)
+                    .position(|other| other.same_subject(item))
             }),
         Err(_) => None,
     }
 }
 
-impl<'a> LogPanel<'a> {
+impl<'a, T: LogItem> LogPanel<'a, T> {
     /// A panel showing `selected` in an empty log. The graphs it is later
     /// given take `lines_per_item` lines per item.
-    pub fn new(selected: Head, lines_per_item: usize) -> Self {
+    pub fn new(selected: T, lines_per_item: usize) -> Self {
         Self {
             log_output_text: Text::default(),
             log_output: Ok(LogOutput::default()),
@@ -125,7 +128,7 @@ impl<'a> LogPanel<'a> {
 
     /// Replace what the panel shows. An error takes the place of the
     /// graph.
-    pub fn show(&mut self, log_output: Result<LogOutput, CommandError>, title: String) {
+    pub fn show(&mut self, log_output: Result<LogOutput<T>, CommandError>, title: String) {
         self.log_output = log_output;
         self.title = title;
         self.log_output_text = match self.log_output.as_ref() {
@@ -138,7 +141,7 @@ impl<'a> LogPanel<'a> {
     }
 
     /// Convert log output to a list of formatted lines
-    fn output_to_lines(&self, log_output: &LogOutput) -> Vec<Line<'a>> {
+    fn output_to_lines(&self, log_output: &LogOutput<T>) -> Vec<Line<'a>> {
         // Add commit mark
         let add_mark = |line: &mut Line, i: usize| {
             let at_marked_commit = log_output
@@ -195,7 +198,7 @@ impl<'a> LogPanel<'a> {
     }
 
     /// Get a list of all items in log list
-    pub fn items(&self) -> Vec<Head> {
+    pub fn items(&self) -> Vec<T> {
         match self.log_output.as_ref() {
             Ok(log_output) => log_output.items.clone(),
             Err(_) => vec![],
@@ -224,7 +227,7 @@ impl<'a> LogPanel<'a> {
     }
 
     /// Find item of the provided log_output line
-    pub fn item_at_log_line(&self, log_line: usize) -> Option<Head> {
+    pub fn item_at_log_line(&self, log_line: usize) -> Option<T> {
         self.log_output.as_ref().ok()?.item_at(log_line).cloned()
     }
 
@@ -233,9 +236,9 @@ impl<'a> LogPanel<'a> {
         get_item_index(&self.selected, &self.log_output)
     }
 
-    /// Whether the log holds an item, taking a different commit for the
-    /// same change as a match.
-    pub fn shows_item(&self, item: &Head) -> bool {
+    /// Whether the log holds an item, taking another version of the same
+    /// subject as a match.
+    pub fn shows_item(&self, item: &T) -> bool {
         get_item_index(item, &self.log_output).is_some()
     }
 
@@ -250,7 +253,7 @@ impl<'a> LogPanel<'a> {
 
     /// Move selection to a specific item. This may cause the next draw to
     /// scroll to a different line.
-    pub fn set_selected(&mut self, item: Head) {
+    pub fn set_selected(&mut self, item: T) {
         self.scroll_padding_active = true;
         item.clone_into(&mut self.selected);
     }
@@ -258,7 +261,7 @@ impl<'a> LogPanel<'a> {
     /// Move selection to a specific item, leaving the viewport where it
     /// is. Used when the selection follows the mouse, which is already
     /// pointing at the line it wants to stay on.
-    pub fn set_selected_in_place(&mut self, item: Head) {
+    pub fn set_selected_in_place(&mut self, item: T) {
         self.scroll_padding_active = false;
         item.clone_into(&mut self.selected);
     }
@@ -272,7 +275,7 @@ impl<'a> LogPanel<'a> {
             Err(_) => return,
         };
 
-        let items: &Vec<Head> = log_output.items.as_ref();
+        let items: &Vec<T> = log_output.items.as_ref();
 
         let current_item_index = self.current_item_index();
         let next_item = match current_item_index {
@@ -294,17 +297,17 @@ impl<'a> LogPanel<'a> {
     //
 
     /// Mark or unmark the specified item
-    pub fn set_item_mark(&mut self, item: &Head, mark: bool) {
+    pub fn set_item_mark(&mut self, item: &T, mark: bool) {
         if mark {
-            self.marked.insert(item.commit_id.clone());
+            self.marked.insert(item.mark());
         } else {
-            self.marked.remove(&item.commit_id);
+            self.marked.remove(&item.mark());
         }
     }
 
     /// Check if an item is marked for batch operation
-    pub fn is_item_marked(&self, item: &Head) -> bool {
-        self.marked.contains(&item.commit_id)
+    pub fn is_item_marked(&self, item: &T) -> bool {
+        self.marked.contains(&item.mark())
     }
 
     /// Toggle the mark on the selected item
@@ -314,7 +317,7 @@ impl<'a> LogPanel<'a> {
     }
 }
 
-impl Component for LogPanel<'_> {
+impl<T: LogItem> Component for LogPanel<'_, T> {
     fn update(&mut self) -> Result<Option<AppAction>> {
         Ok(None)
     }
@@ -338,7 +341,7 @@ impl Component for LogPanel<'_> {
     }
 }
 
-impl PanelMouseInput for LogPanel<'_> {
+impl<T: LogItem> PanelMouseInput for LogPanel<'_, T> {
     fn input_mouse(&mut self, mouse: Mouse) -> MouseInput {
         self.list_pane.input_mouse(mouse)
     }

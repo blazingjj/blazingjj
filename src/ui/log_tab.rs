@@ -54,7 +54,7 @@ pub struct LogTab<'a> {
     log_revset_textarea: Option<TextArea<'a>>,
 
     /// The list of changes shown to the left
-    log_panel: LogPanel<'a>,
+    log_panel: LogPanel<'a, Head>,
 
     /// The panel showing change content to the right
     head_panel: CommitShowPanel,

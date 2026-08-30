@@ -45,7 +45,7 @@ pub struct EvologTab<'a> {
     change: Head,
 
     /// The versions of the change, newest first
-    entry_panel: LogPanel<'a>,
+    entry_panel: LogPanel<'a, Head>,
 
     /// The panel showing what the selected version changed
     patch_panel: EvologShowPanel,

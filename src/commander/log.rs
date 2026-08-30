@@ -6,6 +6,7 @@ It is mostly used in the [log_tab][crate::ui::log_tab] module.
 */
 
 use std::fmt::Display;
+use std::hash::Hash;
 
 use anyhow::Context;
 use anyhow::Result;
@@ -51,16 +52,52 @@ pub const LOG_LINES_PER_ITEM: usize = 2;
 /// How many lines [EVOLOG_TEMPLATE] writes per item.
 pub const EVOLOG_LINES_PER_ITEM: usize = 3;
 
-#[derive(Clone, Debug, Default)]
-pub struct LogOutput {
-    pub graph: String,
-    // Maps graph line -> items
-    pub graph_items: Vec<Option<Head>>,
-    pub items: Vec<Head>,
+/// What a log graph draws a line for, as the template behind it
+/// describes the thing.
+pub trait LogItem: Clone + Eq + Hash + DeserializeOwned {
+    /// What the panel remembers a marked item by.
+    type Mark: Clone + Eq + Hash;
+
+    /// Whether the two are the same thing as the repo has held it at
+    /// different times, so that a selection can follow it across a
+    /// rewrite rather than fall back to the top of the log.
+    fn same_subject(&self, other: &Self) -> bool;
+
+    fn mark(&self) -> Self::Mark;
 }
 
-impl LogOutput {
-    pub fn item_at(&self, line: usize) -> Option<&Head> {
+impl LogItem for Head {
+    type Mark = CommitId;
+
+    fn same_subject(&self, other: &Self) -> bool {
+        self.change_id == other.change_id
+    }
+
+    fn mark(&self) -> CommitId {
+        self.commit_id.clone()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct LogOutput<T> {
+    pub graph: String,
+    // Maps graph line -> items
+    pub graph_items: Vec<Option<T>>,
+    pub items: Vec<T>,
+}
+
+impl<T> Default for LogOutput<T> {
+    fn default() -> Self {
+        Self {
+            graph: String::new(),
+            graph_items: Vec::new(),
+            items: Vec::new(),
+        }
+    }
+}
+
+impl<T> LogOutput<T> {
+    pub fn item_at(&self, line: usize) -> Option<&T> {
         self.graph_items.get(line).and_then(Option::as_ref)
     }
 }
@@ -183,19 +220,19 @@ impl Commander {
         .run()
     }
 
-    /// A graph of changes and the item behind each of its lines.
+    /// A graph and the item behind each of its lines.
     ///
     /// `command` is the whole invocation except `graph_template`, which
-    /// draws the graph in `lines_per_item` lines per item, and `commit` is
-    /// the template expression naming the commit it renders. Leaves the
-    /// working copy alone.
-    fn get_graph_log(
+    /// draws the graph in `lines_per_item` lines per item, and
+    /// `record_template` writes the item one of those lines belongs to.
+    /// Leaves the working copy alone.
+    fn get_graph_log<T: LogItem>(
         &self,
         command: &[&str],
         graph_template: &str,
-        commit: &str,
+        record_template: &str,
         lines_per_item: usize,
-    ) -> Result<LogOutput, CommandError> {
+    ) -> Result<LogOutput<T>, CommandError> {
         let graph = self
             .jj([command, &["--template", graph_template]].concat())
             .color()
@@ -207,10 +244,9 @@ impl Commander {
         // index into the items. The root commit breaks that, taking a
         // single line however many the template writes, but it comes last
         // and so only leaves items past the end of the graph.
-        let item = head_template(commit);
         let items_template =
-            std::iter::repeat_n(item.as_str(), lines_per_item).join(r#" ++ "\n" ++ "#);
-        let graph_items: Vec<Option<Head>> = self
+            std::iter::repeat_n(record_template, lines_per_item).join(r#" ++ "\n" ++ "#);
+        let graph_items: Vec<Option<T>> = self
             .jj([command, &["--template", &items_template]].concat())
             .ignore_working_copy()
             .run()?
@@ -231,14 +267,19 @@ impl Commander {
     /// Leaves the working copy alone.
     /// Maps to `jj log --ignore-working-copy`
     #[instrument(level = "trace", skip(self))]
-    pub fn get_log(&self, revset: &Option<String>) -> Result<LogOutput, CommandError> {
+    pub fn get_log(&self, revset: &Option<String>) -> Result<LogOutput<Head>, CommandError> {
         let mut command = vec!["log"];
         if let Some(revset) = revset {
             command.push("-r");
             command.push(revset);
         }
 
-        self.get_graph_log(&command, "builtin_log_compact", "self", LOG_LINES_PER_ITEM)
+        self.get_graph_log(
+            &command,
+            "builtin_log_compact",
+            &head_template("self"),
+            LOG_LINES_PER_ITEM,
+        )
     }
 
     /// Get the evolog of a commit: the versions it came out of, newest
@@ -246,11 +287,11 @@ impl Commander {
     /// of one change. Leaves the working copy alone.
     /// Maps to `jj evolog -r <commit> --ignore-working-copy`
     #[instrument(level = "trace", skip(self))]
-    pub fn get_evolog(&self, commit_id: &CommitId) -> Result<LogOutput, CommandError> {
+    pub fn get_evolog(&self, commit_id: &CommitId) -> Result<LogOutput<Head>, CommandError> {
         self.get_graph_log(
             &["evolog", "-r", commit_id.as_str()],
             EVOLOG_TEMPLATE,
-            "commit",
+            &head_template("commit"),
             EVOLOG_LINES_PER_ITEM,
         )
     }
