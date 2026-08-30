@@ -47,6 +47,20 @@ pub enum RebaseTarget {
     Before,
 }
 
+/// What a push sends to the remote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PushTarget {
+    /// `jj git push -r <rev>` — the tracked bookmarks on the change.
+    Revision(Revset),
+    /// `jj git push -b <name>` — these bookmarks, which jj starts
+    /// tracking if the remote does not have them yet.
+    Bookmarks(Vec<String>),
+    /// `jj git push --tracked` — every tracked bookmark.
+    Tracked,
+    /// `jj git push --all` — every bookmark, new ones included.
+    All,
+}
+
 impl Commander {
     /// Create a new change. Maps to `jj new <revset>`. Only the tests
     /// create one without saying where it goes.
@@ -261,21 +275,23 @@ impl Commander {
 
     /// Git push. Maps to `jj git push`
     #[instrument(level = "trace", skip(self))]
-    pub fn git_push(
-        &self,
-        all_bookmarks: bool,
-        allow_new: bool,
-        commit_id: &CommitId,
-    ) -> Result<String, CommandError> {
-        let mut args = vec!["git", "push"];
-        if allow_new {
-            args.push("--allow-new");
-        }
-        if all_bookmarks {
-            args.push("--all");
-        } else {
-            args.push("-r");
-            args.push(commit_id.as_str());
+    pub fn git_push(&self, target: &PushTarget) -> Result<String, CommandError> {
+        let mut args = vec!["git".to_owned(), "push".to_owned()];
+        match target {
+            PushTarget::Revision(revset) => {
+                args.push("-r".to_owned());
+                args.push(revset.as_str().to_owned());
+            }
+            // A bookmark name is a revset symbol, quoted where a plain
+            // name would not do, which is what `exact:` takes as well.
+            PushTarget::Bookmarks(names) => {
+                for name in names {
+                    args.push("-b".to_owned());
+                    args.push(format!("exact:{name}"));
+                }
+            }
+            PushTarget::Tracked => args.push("--tracked".to_owned()),
+            PushTarget::All => args.push("--all".to_owned()),
         }
 
         self.jj(args).color().run()

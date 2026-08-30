@@ -15,6 +15,7 @@ pub use global::GlobalEvent;
 pub use global::GlobalKeybinds;
 pub use log_tab::LogTabEvent;
 pub use log_tab::LogTabKeybinds;
+pub use log_tab::PushScope;
 pub use popup::PopupEvent;
 pub use popup::PopupKeybinds;
 use ratatui::crossterm::event::KeyCode;

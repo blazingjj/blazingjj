@@ -22,6 +22,7 @@ use crate::commander::bookmarks::Bookmark;
 use crate::commander::files::File;
 use crate::commander::ids::CommitId;
 use crate::commander::jj::NewInsertMode;
+use crate::commander::jj::PushTarget;
 use crate::commander::jj::RebaseSource;
 use crate::commander::jj::RebaseTarget;
 use crate::commander::log::Head;
@@ -86,12 +87,7 @@ pub enum Command {
         target: Head,
         target_mode: RebaseTarget,
     },
-    /// Push the bookmarks pointing at this change, or all of them.
-    Push {
-        commit_id: CommitId,
-        all_bookmarks: bool,
-        allow_new: bool,
-    },
+    Push(PushTarget),
     Fetch {
         all_remotes: bool,
     },
@@ -225,15 +221,11 @@ impl Command {
                 Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
                 Err(err) => Ok(Some(refused("Rebase", err))),
             },
-            Command::Push {
-                commit_id,
-                all_bookmarks,
-                allow_new,
-            } => Ok(Some(with_loader(
+            Command::Push(target) => Ok(Some(with_loader(
                 background_tasks,
                 "Pushing",
                 TaskSlot::GitPush,
-                move || Ok(new_commander().git_push(all_bookmarks, allow_new, &commit_id)?),
+                move || Ok(new_commander().git_push(&target)?),
             ))),
             Command::Fetch { all_remotes } => Ok(Some(with_loader(
                 background_tasks,
