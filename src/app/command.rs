@@ -209,8 +209,8 @@ impl Command {
                 insert,
                 describe,
             } => {
-                // Inserting can hit immutable changes, so the marks are
-                // left for another attempt.
+                // Inserting can hit immutable changes, so the changes stay
+                // marked for another attempt, which has to ask for them again.
                 if let Err(err) = new_commander().run_new_with_insert(revset, insert) {
                     return Ok(Some(refused("New", err)));
                 }

@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyEventKind;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -154,6 +155,16 @@ impl<'a> LogTab<'a> {
         self.log_panel.marked.clear();
     }
 
+    /// Hold the marked changes out to whatever comes next.
+    fn hold_marks_out(&mut self) {
+        self.log_panel.use_marks = true;
+    }
+
+    /// Stop holding the marks out, whatever has just been handed them.
+    pub fn marks_taken(&mut self) {
+        self.log_panel.use_marks = false;
+    }
+
     /// Move the cursor, updating the details panel. The log itself is
     /// left as it was.
     pub fn set_head(&mut self, head: Head) {
@@ -237,20 +248,29 @@ taking whatever that request acts on off the selection. The app runs it
 from there.
 */
 impl<'a> LogTab<'a> {
-    /// What the operations in a menu or behind a key would act on.
+    /// What the operations in a menu or behind a key would act on: the
+    /// marked changes once the prefix key has asked for them, and
+    /// nothing otherwise, leaving every operation its own default.
     fn marked(&self) -> Vec<CommitId> {
-        self.log_panel.marked.iter().cloned().collect()
+        if self.log_panel.use_marks {
+            self.log_panel.marked.iter().cloned().collect()
+        } else {
+            vec![]
+        }
     }
 
     /// The menu of what can be done to the selected change, put at
     /// `anchor` or centered when there is nowhere to point at.
-    fn context_menu(&self, anchor: Option<Position>) -> Result<Option<AppAction>> {
-        Ok(Some(AppAction::SetPopup(Box::new(log_context_menu(
+    fn context_menu(&mut self, anchor: Option<Position>) -> Result<Option<AppAction>> {
+        let menu = log_context_menu(
             get_env().jj_config.clone(),
             anchor,
             &self.head,
             &self.marked(),
-        )?))))
+        )?;
+        self.marks_taken();
+
+        Ok(Some(AppAction::SetPopup(Box::new(menu))))
     }
 
     /// Move the selection the way `relation` points, asking which
@@ -290,6 +310,38 @@ impl<'a> LogTab<'a> {
                 &relatives,
                 &out_of_view,
             ))))),
+        }
+    }
+
+    /// What a key press asks of the tab, be it of the details panel or
+    /// of the log itself.
+    fn input_key(&mut self, key: KeyEvent) -> Result<ComponentInputResult> {
+        match self.details_keybinds.match_event(key) {
+            DetailsPanelEvent::Unbound => {}
+            ev => {
+                self.head_panel.handle_event(ev);
+                self.marks_taken();
+                return Ok(ComponentInputResult::Handled);
+            }
+        }
+
+        match self.keybinds.match_event(key) {
+            // Whoever else wants the key is welcome to it, and to the
+            // marks with it: the context menu and the command popup are
+            // opened from outside the tab.
+            LogTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
+            LogTabEvent::UseMarks => {
+                self.hold_marks_out();
+                Ok(ComponentInputResult::Handled)
+            }
+            event => {
+                // Held back so that the marks are given up even where
+                // the operation could not be asked for.
+                let result = self.handle_event(event);
+                self.marks_taken();
+
+                Ok(result?.into())
+            }
         }
     }
 
@@ -393,7 +445,8 @@ impl<'a> LogTab<'a> {
                 self.refresh_log_output();
             }
 
-            LogTabEvent::Unbound => {}
+            // Both are taken before an event is dispatched at all.
+            LogTabEvent::UseMarks | LogTabEvent::Unbound => {}
         };
         Ok(None)
     }
@@ -567,20 +620,7 @@ impl Component for LogTab<'_> {
                 return Ok(ComponentInputResult::Handled);
             }
 
-            match self.details_keybinds.match_event(key) {
-                DetailsPanelEvent::Unbound => {}
-                ev => {
-                    self.head_panel.handle_event(ev);
-                    return Ok(ComponentInputResult::Handled);
-                }
-            }
-
-            return match self.keybinds.match_event(key) {
-                // Not something the tab acts on here, so whoever else
-                // wants the key is welcome to it.
-                LogTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
-                event => Ok(self.handle_event(event)?.into()),
-            };
+            return self.input_key(key);
         }
 
         Ok(ComponentInputResult::Handled)
@@ -590,16 +630,25 @@ impl Component for LogTab<'_> {
         if self.pane_divider.handle_mouse(mouse) {
             return Ok(ComponentInputResult::Handled);
         }
+        // Acting on a change with the mouse gives the marks up the way a
+        // key does; the menu is handed them as it is built.
         match route_mouse(mouse, &mut [&mut self.log_panel, &mut self.head_panel]) {
-            MouseInput::Scroll(delta) => self.log_panel.scroll_relative(delta),
+            MouseInput::Scroll(delta) => {
+                self.log_panel.scroll_relative(delta);
+                self.marks_taken();
+            }
             MouseInput::Select(index) => {
                 if let Some(head) = self.log_panel.item_at_log_line(index) {
                     self.log_panel.set_selected_in_place(head);
                 }
+                self.marks_taken();
             }
             // The press before this one selected the change, so all that
             // is left to do is mark it.
-            MouseInput::Activate => self.log_panel.toggle_item_mark(),
+            MouseInput::Activate => {
+                self.log_panel.toggle_item_mark();
+                self.marks_taken();
+            }
             // The graph takes lines of its own, which name no change
             // for a menu to act on.
             MouseInput::Context(index) => {
@@ -609,7 +658,10 @@ impl Component for LogTab<'_> {
                     return Ok(self.context_menu(Some(mouse.position()))?.into());
                 }
             }
-            MouseInput::Copy(text) => return Ok(copy_marked(text)),
+            MouseInput::Copy(text) => {
+                self.marks_taken();
+                return Ok(copy_marked(text));
+            }
             MouseInput::Handled => {}
             MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
         }
@@ -620,6 +672,8 @@ impl Component for LogTab<'_> {
 
 #[cfg(test)]
 mod tests {
+    use ratatui::crossterm::event::KeyCode;
+
     use super::*;
     use crate::commander::ids::ChangeId;
     use crate::env::set_test_env;
@@ -637,6 +691,43 @@ mod tests {
         };
 
         LogTab::new(BackgroundTasks::new(sender), head)
+    }
+
+    #[test]
+    fn the_marks_are_handed_to_the_key_after_the_prefix_only() -> Result<()> {
+        let mut tab = tab();
+        let marked = CommitId("abc".to_owned());
+        tab.log_panel.marked.insert(marked.clone());
+
+        assert!(tab.marked().is_empty());
+
+        tab.input_key(KeyEvent::from(KeyCode::Char(';')))?;
+        assert_eq!(tab.marked(), vec![marked]);
+
+        tab.input_key(KeyEvent::from(KeyCode::Char('m')))?;
+        assert!(tab.marked().is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn the_marks_wait_for_a_key_the_tab_does_not_act_on() -> Result<()> {
+        let mut tab = tab();
+        let marked = CommitId("abc".to_owned());
+        tab.log_panel.marked.insert(marked.clone());
+
+        tab.input_key(KeyEvent::from(KeyCode::Char(';')))?;
+        // Whoever else takes the key may be the one opening the context
+        // menu, which is offered the marks in turn.
+        tab.input_key(KeyEvent::from(KeyCode::F(12)))?;
+        assert_eq!(tab.marked(), vec![marked]);
+
+        // Whatever it was that took the key says so once it has been
+        // handed them.
+        tab.marks_taken();
+        assert!(tab.marked().is_empty());
+
+        Ok(())
     }
 
     #[test]

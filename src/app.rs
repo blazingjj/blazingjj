@@ -1042,6 +1042,11 @@ impl<'a> App<'a> {
                             }
                             GlobalEvent::Unbound => {}
                         }
+
+                        // The marks are held out to whatever takes the
+                        // key next; whatever did not take them here
+                        // gives them up.
+                        self.log.marks_taken();
                     }
                 }
             };
