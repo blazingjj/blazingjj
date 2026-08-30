@@ -145,7 +145,7 @@ impl FilesTab {
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
         let keybinds = FilesTabKeybinds::default();
-        let details_keybinds = DetailsPanelKeybinds::default();
+        let details_keybinds = DetailsPanelKeybinds::new();
 
         Self {
             head: current_head.clone(),

@@ -118,7 +118,7 @@ impl BookmarksTab {
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
         let keybinds = BookmarksTabKeybinds::default();
-        let details_keybinds = DetailsPanelKeybinds::default();
+        let details_keybinds = DetailsPanelKeybinds::new();
 
         Self {
             bookmarks_output: Ok(Vec::new()),

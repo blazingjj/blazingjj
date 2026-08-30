@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `o`, only on what accepts or cancels a popup
 - Escape no longer quits the app; `q` and `Ctrl+c` still do, and
   `[blazingjj.keybinds] quit` can bind it back
+- The details panel is now configured under `[blazingjj.keybinds.details-panel]`
+  and answers to the same keys in every tab. `[blazingjj.keybinds.log-tab]
+  toggle-diff-format`, which only ever reached the log tab's panel, is gone
 
 ### Added
 
@@ -53,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   revision
 - The tabs overview takes the mouse: a click switches to the tab clicked, and
   the wheel cycles through the tabs
+- The details panel keybindings are now all configurable: `scroll-down`,
+  `scroll-up`, the `scroll-*-half` and `scroll-*-page` bindings, `toggle-wrap`
+  and `toggle-diff-format`
 - The help popup now scrolls with the mouse wheel
 - The help popup now shows a scrollbar when it does not fit on screen
 - Keybinding for jj absorb (`A`)

@@ -61,17 +61,31 @@ accept = "ctrl+s"
 cancel = "esc"
 ```
 
+### Details panel
+
+These work in the details panel of every tab.
+
+```toml
+[blazingjj.keybinds.details-panel]
+scroll-down = "ctrl+e"
+scroll-up = "ctrl+y"
+scroll-down-half = "ctrl+d"
+scroll-up-half = "ctrl+u"
+scroll-down-page = "ctrl+f"
+scroll-up-page = "ctrl+b"
+
+toggle-diff-format = "w"
+toggle-wrap = "shift+w"
+```
+
 ### Log tab
 
 Only the log tab has bindings of its own; the other tabs and the keys that
 mark a change (`space`) or jump to the top or bottom of the log
-(`ctrl+home`/`ctrl+end`) are not configurable. `toggle-diff-format` is the
-one details panel key that is, and it applies to the log tab only.
+(`ctrl+home`/`ctrl+end`) are not configurable.
 
 ```toml
 [blazingjj.keybinds.log-tab]
-toggle-diff-format = "w"
-
 goto-parent = "-"
 
 create-new = "n"

@@ -93,15 +93,9 @@ impl<'a> LogTab<'a> {
     #[instrument(level = "info", name = "Initializing log tab", parent = None, skip(background_tasks))]
     pub fn new(background_tasks: BackgroundTasks, head: Head) -> Self {
         let mut keybinds = LogTabKeybinds::default();
-        let mut details_keybinds = DetailsPanelKeybinds::default();
+        let details_keybinds = DetailsPanelKeybinds::new();
         if let Some(keybinds_config) = get_env().jj_config.keybinds() {
             keybinds.extend_from_config(keybinds_config);
-            details_keybinds.extend_from_config(
-                keybinds_config
-                    .log_tab
-                    .as_ref()
-                    .and_then(|c| c.toggle_diff_format.as_ref()),
-            );
         }
 
         let config = get_env().jj_config.clone();
