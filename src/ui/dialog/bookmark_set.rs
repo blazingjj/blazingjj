@@ -2,7 +2,6 @@ use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyCode;
-use ratatui::crossterm::event::KeyModifiers;
 use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -28,6 +27,8 @@ use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
 use crate::commander::new_commander;
 use crate::env::JjConfig;
+use crate::keybinds::PopupEvent;
+use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -51,6 +52,8 @@ pub struct BookmarkSetPopup<'a> {
     list_height: u16,
     config: JjConfig,
     creating: Option<TextArea<'a>>,
+    keybinds: PopupKeybinds,
+    name_keybinds: PopupKeybinds,
 }
 
 fn generate_options(change_id: Option<&ChangeId>, commit_id: &CommitId) -> Vec<BookmarkSetOption> {
@@ -105,6 +108,8 @@ impl BookmarkSetPopup<'_> {
             config,
             commit_id,
             creating: None,
+            keybinds: PopupKeybinds::dialog(),
+            name_keybinds: PopupKeybinds::text_line(),
         }
     }
 
@@ -116,6 +121,14 @@ impl BookmarkSetPopup<'_> {
                 .unwrap_or(0)
                 .min(self.options.len().saturating_sub(1)),
         ));
+    }
+
+    /// The name typed into the field, when there is a field.
+    fn name_typed(&self) -> String {
+        self.creating
+            .as_ref()
+            .map(|creating| creating.lines().join("\n"))
+            .unwrap_or_default()
     }
 
     fn on_creating(&mut self) {
@@ -159,7 +172,7 @@ impl Component for BookmarkSetPopup<'_> {
 
             f.render_widget(creating, popup_chunks[0]);
 
-            let help = Paragraph::new(vec!["Ctrl+s: save | Escape: cancel".into()])
+            let help = Paragraph::new(vec![self.name_keybinds.hint("accept").into()])
                 .fg(Color::DarkGray)
                 .alignment(Alignment::Center)
                 .block(
@@ -212,7 +225,7 @@ impl Component for BookmarkSetPopup<'_> {
             f.render_stateful_widget(list, popup_chunks[0], &mut self.list_state);
             self.list_height = popup_chunks[0].height;
 
-            let help = Paragraph::new(vec!["j/k: scroll down/up | Escape: cancel".into()])
+            let help = Paragraph::new(vec![self.keybinds.scroll_hint("select").into()])
                 .fg(Color::DarkGray)
                 .alignment(Alignment::Center)
                 .block(
@@ -230,54 +243,51 @@ impl Component for BookmarkSetPopup<'_> {
 
     /// Handle input. Returns bool of if to close
     fn input(&mut self, event: Event) -> anyhow::Result<ComponentInputResult> {
-        if let Some(creating) = self.creating.as_mut() {
+        if self.creating.is_some() {
             if let Event::Key(key) = event {
-                match key.code {
-                    _ if (key.code == KeyCode::Char('s')
-                        && key.modifiers.contains(KeyModifiers::CONTROL))
-                        || (key.code == KeyCode::Enter) =>
-                    {
-                        let name = &creating.lines().join("\n");
+                match self.name_keybinds.match_event(key) {
+                    PopupEvent::Accept => {
+                        let name = self.name_typed();
                         if name.trim().is_empty() {
                             return Ok(ComponentInputResult::Handled);
                         }
 
-                        return Ok(self.set_bookmark(name.clone()));
+                        return Ok(self.set_bookmark(name));
                     }
-                    KeyCode::Esc => {
+                    PopupEvent::Cancel => {
                         return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
                     }
                     _ => {}
                 }
             }
 
-            creating.input(event);
+            if let Some(creating) = self.creating.as_mut() {
+                creating.input(event);
+            }
             return Ok(ComponentInputResult::Handled);
         }
 
         if let Event::Key(key) = event {
-            match key.code {
-                KeyCode::Char('j') | KeyCode::Down => {
+            match self.keybinds.match_event(key) {
+                PopupEvent::ScrollDown => {
                     self.scroll(1);
                 }
-                KeyCode::Char('k') | KeyCode::Up => {
+                PopupEvent::ScrollUp => {
                     self.scroll(-1);
                 }
-                KeyCode::Char('J') => {
+                PopupEvent::ScrollDownHalf => {
                     self.scroll(self.list_height as isize / 2);
                 }
-                KeyCode::Char('K') => {
+                PopupEvent::ScrollUpHalf => {
                     self.scroll((self.list_height as isize / 2).saturating_neg());
                 }
-                KeyCode::Char('g') => {
-                    if let Some(name) = self.generated_name() {
-                        return Ok(self.set_bookmark(name));
-                    }
+                PopupEvent::ScrollDownPage => {
+                    self.scroll(self.list_height as isize);
                 }
-                KeyCode::Char('c') => {
-                    self.on_creating();
+                PopupEvent::ScrollUpPage => {
+                    self.scroll((self.list_height as isize).saturating_neg());
                 }
-                KeyCode::Enter => {
+                PopupEvent::Accept => {
                     if let Some(action) = self
                         .list_state
                         .selected()
@@ -300,10 +310,20 @@ impl Component for BookmarkSetPopup<'_> {
                         }
                     }
                 }
-                KeyCode::Char('q') | KeyCode::Esc => {
+                PopupEvent::Cancel => {
                     return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
                 }
-                _ => return Ok(ComponentInputResult::NotHandled),
+                // The options carry the letter they are picked by, so
+                // those keys are the popup's own.
+                PopupEvent::Unbound => match key.code {
+                    KeyCode::Char('g') => {
+                        if let Some(name) = self.generated_name() {
+                            return Ok(self.set_bookmark(name));
+                        }
+                    }
+                    KeyCode::Char('c') => self.on_creating(),
+                    _ => return Ok(ComponentInputResult::NotHandled),
+                },
             }
 
             return Ok(ComponentInputResult::Handled);

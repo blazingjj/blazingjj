@@ -15,8 +15,8 @@ pub use global::GlobalEvent;
 pub use global::GlobalKeybinds;
 pub use log_tab::LogTabEvent;
 pub use log_tab::LogTabKeybinds;
-pub use message_popup::MessagePopupEvent;
-pub use message_popup::MessagePopupKeybinds;
+pub use popup::PopupEvent;
+pub use popup::PopupKeybinds;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyModifiers;
@@ -29,7 +29,7 @@ mod files_tab;
 mod global;
 mod keybinds_store;
 mod log_tab;
-mod message_popup;
+mod popup;
 pub mod rebase_popup;
 
 /*#[derive(Debug)]

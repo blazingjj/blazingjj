@@ -24,6 +24,8 @@ use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::LogTabEvent;
 use crate::keybinds::LogTabKeybinds;
+use crate::keybinds::PopupEvent;
+use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -61,6 +63,7 @@ pub struct LogTab<'a> {
     pane_divider: PaneDivider,
     keybinds: LogTabKeybinds,
     details_keybinds: DetailsPanelKeybinds,
+    revset_keybinds: PopupKeybinds,
 
     stale: bool,
 }
@@ -115,6 +118,7 @@ impl<'a> LogTab<'a> {
             pane_divider,
             keybinds,
             details_keybinds,
+            revset_keybinds: PopupKeybinds::text(),
 
             stale: true,
         }
@@ -329,9 +333,7 @@ impl<'a> LogTab<'a> {
                 return self.open_context_menu(self.log_panel.selected_position());
             }
 
-            // Not operations of their own; the key handler deals with
-            // them where they mean something.
-            LogTabEvent::Save | LogTabEvent::Cancel | LogTabEvent::Unbound => {}
+            LogTabEvent::Unbound => {}
         };
         Ok(None)
     }
@@ -440,7 +442,7 @@ impl Component for LogTab<'_> {
 
                 f.render_widget(&*log_revset_textarea, popup_chunks[0]);
 
-                let help = Paragraph::new(vec!["Ctrl+s: save | Escape: cancel".into()])
+                let help = Paragraph::new(vec![self.revset_keybinds.hint("accept").into()])
                     .fg(Color::DarkGray)
                     .alignment(Alignment::Center)
                     .block(
@@ -460,8 +462,8 @@ impl Component for LogTab<'_> {
     fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
         if let Some(log_revset_textarea) = self.log_revset_textarea.as_mut() {
             if let Event::Key(key) = event {
-                match self.keybinds.match_event(key) {
-                    LogTabEvent::Save => {
+                match self.revset_keybinds.match_event(key) {
+                    PopupEvent::Accept => {
                         let log_revset = log_revset_textarea.lines().join("\n");
                         self.log_revset = if log_revset.trim().is_empty() {
                             None
@@ -472,7 +474,7 @@ impl Component for LogTab<'_> {
                         self.log_revset_textarea = None;
                         return Ok(ComponentInputResult::Handled);
                     }
-                    LogTabEvent::Cancel => {
+                    PopupEvent::Cancel => {
                         self.log_revset_textarea = None;
                         return Ok(ComponentInputResult::Handled);
                     }
@@ -500,9 +502,7 @@ impl Component for LogTab<'_> {
             return match self.keybinds.match_event(key) {
                 // Not something the tab acts on here, so whoever else
                 // wants the key is welcome to it.
-                LogTabEvent::Save | LogTabEvent::Cancel | LogTabEvent::Unbound => {
-                    Ok(ComponentInputResult::NotHandled)
-                }
+                LogTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
                 event => Ok(self.handle_event(event)?.into()),
             };
         }

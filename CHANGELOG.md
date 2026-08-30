@@ -19,8 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - jj 0.37.0 or newer is now required
 - The confirmation dialogs are now popups of the app and go away on `q` or
   Escape, like the other popups, rather than on the log tab's `close-popup`
-  and `cancel` bindings. `[blazingjj.keybinds.log-tab] close-popup` bound
-  nothing else and is gone; `cancel` stays, for the revset editor
+  and `cancel` bindings. `[blazingjj.keybinds.log-tab] close-popup` and
+  `cancel` bound nothing else and are gone
+- The keys every popup answers to are now configured under
+  `[blazingjj.keybinds.popup]` (`accept`, `cancel` and the `scroll-*-half`
+  and `scroll-*-page` bindings) and `[blazingjj.keybinds.text-popup]` (`accept`,
+  `cancel`), rather than being the log tab's `save` and `cancel` or not
+  configurable at all. `[blazingjj.keybinds.log-tab] save` is gone with them
+- A popup now scrolls a line at a time by the global `scroll-down` and
+  `scroll-up`, which it can no longer override, and by half a page and by a
+  page the way the details panel does: `[blazingjj.keybinds.message-popup]`
+  is gone
+- A popup showing a message or the help no longer goes away on `y`, `n` or
+  `o`, only on what accepts or cancels a popup
 
 ### Added
 
@@ -38,8 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global keybindings under `[blazingjj.keybinds]` (`scroll-down`, `scroll-up`,
   `scroll-down-half`, `scroll-up-half`, `focus-current`, `refresh`, `open-help`,
   `next-tab`, `prev-tab`, `command-popup`, `quit`) that work the same in every
-  tab; the scroll ones also apply as defaults to the popups, which can override
-  them per-component
+  tab; `scroll-down` and `scroll-up` scroll the popups as well
 - The help popup now lists the global keybindings alongside the main and details panel ones
 - Message popup now supports scrolling with a scrollbar
 - Command popup output now preserves ANSI color
@@ -73,6 +83,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each points at was committed
 - The files tab now reads a change's files when it comes on screen, so an
   operation no longer runs `jj` for it while another tab is up
+- The popups now all scroll alike, so the lists and the help scroll by half a
+  page on `Ctrl+d` and `Ctrl+u` and by a page on `Ctrl+f` and `Ctrl+b` as well,
+  as the message popup already did
+- The line under a popup naming the keys it answers to now names the keys
+  they are bound to, rather than the ones they were bound to when it was
+  written
 - The help popup is now sized to fit what it lists
 - The message popup is now sized to fit its message, rather than always
   taking up most of the screen

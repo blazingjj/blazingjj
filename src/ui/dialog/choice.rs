@@ -5,7 +5,6 @@ app is to take, and raises the one picked.
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
-use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::MouseButton;
 use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Alignment;
@@ -27,6 +26,8 @@ use ratatui::widgets::ListState;
 use ratatui::widgets::Paragraph;
 
 use crate::env::JjConfig;
+use crate::keybinds::PopupEvent;
+use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -35,8 +36,6 @@ use crate::ui::utils::anchored_rect_fixed;
 use crate::ui::utils::centered_rect;
 use crate::ui::utils::centered_rect_fixed;
 use crate::ui::utils::chrome;
-
-const HELP: &str = "j/k: scroll | Enter: select | Escape: cancel";
 
 /// The help line and the border it sits under
 const HELP_HEIGHT: u16 = 2;
@@ -54,6 +53,9 @@ pub struct ChoicePopup {
     /// List area inside the popup, updated on every draw
     list_area: Rect,
     config: JjConfig,
+    keybinds: PopupKeybinds,
+    /// The line under the choices, saying what the popup answers to
+    hint: String,
 }
 
 impl ChoicePopup {
@@ -63,7 +65,9 @@ impl ChoicePopup {
         title: &'static str,
         items: Vec<(Line<'static>, AppAction)>,
     ) -> Self {
+        let keybinds = PopupKeybinds::dialog();
         Self {
+            hint: keybinds.scroll_hint("select"),
             title,
             items,
             footnote: vec![],
@@ -72,6 +76,7 @@ impl ChoicePopup {
             popup_area: Rect::ZERO,
             list_area: Rect::ZERO,
             config,
+            keybinds,
         }
     }
 
@@ -110,7 +115,7 @@ impl ChoicePopup {
         // side and between the two corners.
         let title_width = Line::raw(self.title).width() as u16 + 4;
         let width = rows_width
-            .max(Line::raw(HELP).width() as u16)
+            .max(Line::raw(&self.hint).width() as u16)
             .saturating_add(extra_width)
             .max(title_width)
             .min(max.width);
@@ -178,7 +183,7 @@ impl Component for ChoicePopup {
 
         f.render_stateful_widget(list, chunks[0], &mut self.list_state);
 
-        let help = Paragraph::new(vec![HELP.into()])
+        let help = Paragraph::new(vec![self.hint.clone().into()])
             .fg(Color::DarkGray)
             .alignment(Alignment::Center)
             .block(
@@ -194,16 +199,20 @@ impl Component for ChoicePopup {
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
         match event {
-            Event::Key(key) => match key.code {
-                KeyCode::Char('j') | KeyCode::Down => self.scroll(1),
-                KeyCode::Char('k') | KeyCode::Up => self.scroll(-1),
-                KeyCode::Char('J') => self.scroll(self.list_area.height as isize / 2),
-                KeyCode::Char('K') => {
+            Event::Key(key) => match self.keybinds.match_event(key) {
+                PopupEvent::ScrollDown => self.scroll(1),
+                PopupEvent::ScrollUp => self.scroll(-1),
+                PopupEvent::ScrollDownHalf => self.scroll(self.list_area.height as isize / 2),
+                PopupEvent::ScrollUpHalf => {
                     self.scroll((self.list_area.height as isize / 2).saturating_neg())
                 }
-                KeyCode::Enter => return self.confirm(),
-                KeyCode::Char('q') | KeyCode::Esc => return Self::close(),
-                _ => {}
+                PopupEvent::ScrollDownPage => self.scroll(self.list_area.height as isize),
+                PopupEvent::ScrollUpPage => {
+                    self.scroll((self.list_area.height as isize).saturating_neg())
+                }
+                PopupEvent::Accept => return self.confirm(),
+                PopupEvent::Cancel => return Self::close(),
+                PopupEvent::Unbound => {}
             },
             // Where the popup sits is only known once it has been drawn,
             // and events are handled in batches without a draw between
@@ -244,6 +253,7 @@ impl Component for ChoicePopup {
 pub(super) mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::crossterm::event::KeyCode;
     use ratatui::crossterm::event::KeyModifiers;
     use ratatui::crossterm::event::MouseEvent;
 
@@ -363,9 +373,9 @@ pub(super) mod tests {
         draw(&mut popup);
 
         // Five rows and the help line under its own border, centered
-        assert_eq!(popup.popup_area, Rect::new(26, 15, 48, 9));
+        assert_eq!(popup.popup_area, Rect::new(27, 15, 45, 9));
         // Inside the popup border and its padding, above the help line
-        assert_eq!(popup.list_area, Rect::new(28, 16, 44, 5));
+        assert_eq!(popup.list_area, Rect::new(29, 16, 41, 5));
     }
 
     #[test]
@@ -491,12 +501,12 @@ pub(super) mod tests {
         assert_eq!(rect.height, 5 + HELP_HEIGHT + 2);
         // The help line is wider than any row, and the popup borders and
         // pads around it
-        assert_eq!(rect.width, Line::raw(HELP).width() as u16 + 4);
+        assert_eq!(rect.width, Line::raw(&popup.hint).width() as u16 + 4);
     }
 
     #[test]
     fn a_row_wider_than_the_help_line_widens_the_popup() {
-        let label = "x".repeat(Line::raw(HELP).width() + 10);
+        let label = "x".repeat(Line::raw(&popup(0, 0).hint).width() + 10);
         let popup = ChoicePopup::new(
             JjConfig::default(),
             None,

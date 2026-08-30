@@ -19,18 +19,27 @@ pub struct KeybindsConfig {
     pub quit: Option<Keybind>,
 
     pub log_tab: Option<LogTabKeybindsConfig>,
-    pub message_popup: Option<MessagePopupKeybindsConfig>,
+    pub popup: Option<PopupKeybindsConfig>,
+    pub text_popup: Option<TextPopupKeybindsConfig>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct MessagePopupKeybindsConfig {
-    pub scroll_down: Option<Keybind>,
-    pub scroll_up: Option<Keybind>,
+pub struct PopupKeybindsConfig {
+    pub accept: Option<Keybind>,
+    pub cancel: Option<Keybind>,
+
     pub scroll_down_half: Option<Keybind>,
     pub scroll_up_half: Option<Keybind>,
     pub scroll_down_page: Option<Keybind>,
     pub scroll_up_page: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct TextPopupKeybindsConfig {
+    pub accept: Option<Keybind>,
+    pub cancel: Option<Keybind>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -44,9 +53,6 @@ pub enum Keybind {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct LogTabKeybindsConfig {
-    pub save: Option<Keybind>,
-    pub cancel: Option<Keybind>,
-
     pub toggle_diff_format: Option<Keybind>,
 
     pub goto_parent: Option<Keybind>,

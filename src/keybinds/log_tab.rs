@@ -18,9 +18,6 @@ pub struct LogTabKeybinds {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum LogTabEvent {
-    Save,
-    Cancel,
-
     ScrollToBottom,
     ScrollToTop,
 
@@ -67,8 +64,6 @@ impl Default for LogTabKeybinds {
         let mut keys = KeybindsStore::<LogTabEvent>::default();
         set_keybinds!(
             keys,
-            LogTabEvent::Save => "ctrl+s",
-            LogTabEvent::Cancel => "esc",
             LogTabEvent::ScrollToBottom => "ctrl+end",
             LogTabEvent::ScrollToTop => "ctrl+home",
             LogTabEvent::ToggleHeadMark => "space",
@@ -120,8 +115,6 @@ impl LogTabKeybinds {
     fn extend_from_log_tab_config(&mut self, config: &LogTabKeybindsConfig) {
         update_keybinds!(
             self.keys,
-            LogTabEvent::Save => config.save,
-            LogTabEvent::Cancel => config.cancel,
             LogTabEvent::GotoParent => config.goto_parent,
             LogTabEvent::Duplicate => config.duplicate,
             LogTabEvent::CreateNew { describe: false } => config.create_new,

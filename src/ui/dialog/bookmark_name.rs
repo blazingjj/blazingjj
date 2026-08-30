@@ -2,9 +2,7 @@ use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
-use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
-use ratatui::crossterm::event::KeyModifiers;
 use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -23,6 +21,8 @@ use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 
 use crate::app::command::Command;
+use crate::keybinds::PopupEvent;
+use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -37,6 +37,7 @@ pub struct BookmarkNamePopup<'a> {
     mode: BookmarkNameMode,
     textarea: TextArea<'a>,
     error: Option<anyhow::Error>,
+    keybinds: PopupKeybinds,
 }
 
 impl BookmarkNamePopup<'_> {
@@ -73,6 +74,7 @@ impl BookmarkNamePopup<'_> {
             mode,
             textarea,
             error: None,
+            keybinds: PopupKeybinds::text_line(),
         }
     }
 
@@ -137,7 +139,7 @@ impl Component for BookmarkNamePopup<'_> {
         }
 
         f.render_widget(
-            Paragraph::new(vec!["Ctrl+s: save | Escape: cancel".into()])
+            Paragraph::new(vec![self.keybinds.hint("accept").into()])
                 .fg(Color::DarkGray)
                 .alignment(Alignment::Center)
                 .block(
@@ -156,23 +158,21 @@ impl Component for BookmarkNamePopup<'_> {
         if let Event::Key(key) = event
             && key.kind == KeyEventKind::Press
         {
-            let is_save = (key.code == KeyCode::Char('s')
-                && key.modifiers.contains(KeyModifiers::CONTROL))
-                || key.code == KeyCode::Enter;
-
-            if is_save {
-                let name = self.textarea.lines().join("\n");
-                if name.trim().is_empty() {
-                    self.error = Some(anyhow::anyhow!("Bookmark name cannot be empty"));
-                    return Ok(ComponentInputResult::Handled);
+            match self.keybinds.match_event(key) {
+                PopupEvent::Accept => {
+                    let name = self.textarea.lines().join("\n");
+                    if name.trim().is_empty() {
+                        self.error = Some(anyhow::anyhow!("Bookmark name cannot be empty"));
+                        return Ok(ComponentInputResult::Handled);
+                    }
+                    return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
+                        vec![AppAction::ClosePopup, AppAction::Run(self.command(name))],
+                    )));
                 }
-                return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                    vec![AppAction::ClosePopup, AppAction::Run(self.command(name))],
-                )));
-            }
-
-            if key.code == KeyCode::Esc {
-                return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
+                PopupEvent::Cancel => {
+                    return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
+                }
+                _ => {}
             }
         }
         self.textarea.input(event);

@@ -1,6 +1,5 @@
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
-use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::MouseEventKind;
 use ratatui::crossterm::event::{self};
 use ratatui::layout::Alignment;
@@ -16,6 +15,8 @@ use ratatui::widgets::Clear;
 use ratatui::widgets::Row;
 use ratatui::widgets::Table;
 
+use crate::keybinds::PopupEvent;
+use crate::keybinds::PopupKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::styles::create_popup_block;
@@ -167,6 +168,9 @@ pub struct HelpPopup {
     pub global_items: Vec<(String, String)>,
     max_scroll: u16,
     scroll: u16,
+    /// Height of what the popup shows at once, updated on every draw
+    viewport: u16,
+    keybinds: PopupKeybinds,
 }
 
 impl HelpPopup {
@@ -182,6 +186,8 @@ impl HelpPopup {
             max_scroll: 0,
             // Can't use TableState as it's broken: https://github.com/ratatui-org/ratatui/issues/1179
             scroll: 0,
+            viewport: 0,
+            keybinds: PopupKeybinds::dialog(),
         }
     }
 
@@ -232,6 +238,7 @@ impl Component for HelpPopup {
         let block_inner = block.inner(area);
         f.render_widget(&block, area);
 
+        self.viewport = block_inner.height;
         self.max_scroll = contents_height.saturating_sub(block_inner.height);
         self.scroll = self.scroll.min(self.max_scroll);
 
@@ -273,10 +280,20 @@ impl Component for HelpPopup {
     fn input(&mut self, event: Event) -> anyhow::Result<ComponentInputResult> {
         match event {
             Event::Key(key) if key.kind == event::KeyEventKind::Press => {
-                let delta = match key.code {
-                    KeyCode::Char('j') => 1,
-                    KeyCode::Char('k') => -1,
-                    _ => return Ok(ComponentInputResult::NotHandled),
+                let half_page = i32::from(self.viewport) / 2;
+                let full_page = i32::from(self.viewport);
+                let delta = match self.keybinds.match_event(key) {
+                    PopupEvent::ScrollDown => 1,
+                    PopupEvent::ScrollUp => -1,
+                    PopupEvent::ScrollDownHalf => half_page,
+                    PopupEvent::ScrollUpHalf => -half_page,
+                    PopupEvent::ScrollDownPage => full_page,
+                    PopupEvent::ScrollUpPage => -full_page,
+                    // The help has nothing to accept, so what would
+                    // accept it takes it down like a cancel does.
+                    PopupEvent::Accept | PopupEvent::Cancel | PopupEvent::Unbound => {
+                        return Ok(ComponentInputResult::NotHandled);
+                    }
                 };
 
                 self.do_scroll(delta);
@@ -300,6 +317,7 @@ impl Component for HelpPopup {
 
 #[cfg(test)]
 mod tests {
+    use ratatui::crossterm::event::KeyCode;
     use ratatui::crossterm::event::KeyModifiers;
     use ratatui::crossterm::event::MouseEvent;
 

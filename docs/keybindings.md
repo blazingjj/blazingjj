@@ -13,9 +13,9 @@ In below examples default values are used.
 
 ### Global
 
-These work in every tab. The scroll bindings also apply as defaults to the
-popups, which can override them in their own section. Selecting a tab by its
-number in the tab bar (`1` to `4`) is not configurable.
+These work in every tab, and `scroll-down` and `scroll-up` scroll the
+popups as well. Selecting a tab by its number in the tab bar (`1` to `4`)
+is not configurable.
 
 ```toml
 [blazingjj.keybinds]
@@ -35,30 +35,35 @@ command-popup = ":"
 quit = ["q", "ctrl+c", "esc"]
 ```
 
-### Message popup
+### Popups
 
-Overrides the global scroll bindings. `scroll-down-page` and `scroll-up-page`
-are only configurable here.
+These work in every popup, and are left out of the help, which lists what
+the tab under the popup answers to. A popup scrolls a line at a time by
+the global `scroll-down` and `scroll-up`, and by half a page and by a
+page the way the details panel does. A popup holding a text field takes
+every key the field can take, so it has bindings of its own; the field of
+a single line, having no newline to put an Enter in, accepts on Enter as
+well.
 
 ```toml
-[blazingjj.keybinds.message-popup]
-scroll-down = ["j", "down"]
-scroll-up = ["k", "up"]
+[blazingjj.keybinds.popup]
+accept = "enter"
+cancel = ["esc", "q"]
+
 scroll-down-half = "ctrl+d"
 scroll-up-half = "ctrl+u"
 scroll-down-page = ["ctrl+f", "space", "pagedown"]
 scroll-up-page = ["ctrl+b", "pageup"]
+
+[blazingjj.keybinds.text-popup]
+accept = "ctrl+s"
+cancel = "esc"
 ```
 
 ### Log tab
 
 ```toml
 [blazingjj.keybinds.log-tab]
-save = "ctrl+s"
-cancel = "esc"
-
-close-popup = "q"
-
 toggle-diff-format = "w"
 
 goto-parent = "-"
