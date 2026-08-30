@@ -18,6 +18,17 @@ impl Revset {
         Self(expression.into())
     }
 
+    /// The working copy commit.
+    pub fn working_copy() -> Self {
+        Self("@".to_owned())
+    }
+
+    /// Every commit a change id names, which is more than one where the
+    /// change is divergent.
+    pub fn change(id: &ChangeId) -> Self {
+        Self(format!("change_id({id})"))
+    }
+
     /// The union of the given revsets, or [None] if there are none.
     pub fn union(revsets: impl IntoIterator<Item = impl Into<Revset>>) -> Option<Self> {
         let expressions: Vec<_> = revsets.into_iter().map(|revset| revset.into().0).collect();
