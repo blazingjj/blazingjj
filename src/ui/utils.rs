@@ -20,37 +20,44 @@ use ratatui::text::Text;
 use ratatui::widgets::Block;
 
 use crate::env::JJLayout;
+use crate::env::get_env;
 use crate::event::Mouse;
 use crate::keybinds::Shortcut;
 
 /// Tracks the split position between two panes and handles drag-to-resize mouse events.
+#[derive(Default)]
 pub struct PaneDivider {
-    init_percent: u16,
+    /// The share of the area the first pane takes as configured, which
+    /// the divider goes back to whenever the configuration changes.
+    percent: u16,
+    /// Which way round the panes sat when the divider was last placed.
+    /// Its position counts cells along the axis they are divided on, so
+    /// it says nothing about the panes once they turn.
+    layout: JJLayout,
     size: Option<u16>,
     dragging: bool,
     rects: [Rect; 2],
 }
 
 impl PaneDivider {
-    pub fn new(percent: u16) -> Self {
-        Self {
-            init_percent: percent.min(100),
-            size: None,
-            dragging: false,
-            rects: [Rect::ZERO, Rect::ZERO],
-        }
-    }
-
     /// Split `area` into two panes at the current divider position and remember
     /// the resulting rects for hit-testing in `handle_mouse`.
-    pub fn split(&mut self, area: Rect, layout: JJLayout) -> [Rect; 2] {
+    pub fn split(&mut self, area: Rect) -> [Rect; 2] {
+        let config = &get_env().jj_config;
+        let (layout, percent) = (config.layout(), config.layout_percent());
+        if percent != self.percent || layout != self.layout {
+            self.percent = percent;
+            self.layout = layout;
+            self.size = None;
+        }
+
         let total = match layout {
             JJLayout::Horizontal => area.width,
             JJLayout::Vertical => area.height,
         };
         let size = match self.size {
             None => {
-                let s = ((total as u32 * self.init_percent as u32) / 100) as u16;
+                let s = ((total as u32 * self.percent as u32) / 100) as u16;
                 self.size = Some(s);
                 s
             }
@@ -67,21 +74,21 @@ impl PaneDivider {
     }
 
     /// Handle a mouse event. Returns true if the event was consumed.
-    pub fn handle_mouse(&mut self, mouse: Mouse, layout: JJLayout) -> bool {
+    pub fn handle_mouse(&mut self, mouse: Mouse) -> bool {
         let position = mouse.position();
         match mouse.kind() {
             MouseEventKind::Down(MouseButton::Left) => {
                 self.dragging = false;
-                if self.on_border(position, layout) {
+                if self.on_border(position, self.layout) {
                     self.dragging = true;
-                    self.update_size(position, layout);
+                    self.update_size(position, self.layout);
                     true
                 } else {
                     false
                 }
             }
             MouseEventKind::Drag(MouseButton::Left) if self.dragging => {
-                self.update_size(position, layout);
+                self.update_size(position, self.layout);
                 true
             }
             MouseEventKind::Up(MouseButton::Left) if self.dragging => {
@@ -388,6 +395,44 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
+    use crate::env::set_test_env;
+
+    /// A divider that was dragged keeps where it was put until the
+    /// configuration says something else.
+    #[test]
+    fn test_a_dragged_divider_goes_back_when_the_configuration_changes() {
+        set_test_env();
+        let area = Rect::new(0, 0, 100, 10);
+        let mut divider = PaneDivider::default();
+
+        let [main, _] = divider.split(area);
+        assert_eq!(main.width, 50);
+
+        divider.update_size(Position::new(20, 0), JJLayout::Horizontal);
+        let [main, _] = divider.split(area);
+        assert_eq!(main.width, 20);
+
+        // What the divider remembers is what the configuration said
+        // when it was last placed, so it stands in for a change of it.
+        divider.percent = 80;
+        let [main, _] = divider.split(area);
+        assert_eq!(main.width, 50);
+    }
+
+    /// It goes back to it when the panes turn as well.
+    #[test]
+    fn test_a_dragged_divider_goes_back_when_the_panes_turn() {
+        set_test_env();
+        let area = Rect::new(0, 0, 100, 10);
+        let mut divider = PaneDivider::default();
+
+        divider.split(area);
+        divider.update_size(Position::new(20, 0), JJLayout::Horizontal);
+        divider.layout = JJLayout::Vertical;
+
+        let [main, _] = divider.split(area);
+        assert_eq!(main.width, 50);
+    }
 
     /// A label marks the key that picks it in place where the key is one
     /// of its characters, and names it after the label otherwise.

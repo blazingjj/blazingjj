@@ -19,7 +19,6 @@ use crate::commander::log::Head;
 use crate::commander::log::LOG_LINES_PER_HEAD;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
-use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::event::Mouse;
 use crate::keybinds::DetailsPanelEvent;
@@ -64,7 +63,6 @@ pub struct LogTab<'a> {
     /// so if these differ, we need to update `self.head`
     head: Head,
 
-    config: JjConfig,
     pane_divider: PaneDivider,
     keybinds: LogTabKeybinds,
     details_keybinds: DetailsPanelKeybinds,
@@ -98,8 +96,7 @@ impl<'a> LogTab<'a> {
         let keybinds = LogTabKeybinds::new();
         let details_keybinds = DetailsPanelKeybinds::new();
 
-        let config = get_env().jj_config.clone();
-        let pane_divider = PaneDivider::new(config.layout_percent());
+        let pane_divider = PaneDivider::default();
 
         Self {
             log_revset: get_env().default_revset.clone(),
@@ -110,7 +107,6 @@ impl<'a> LogTab<'a> {
             head,
             head_panel: CommitShowPanel::new(TabId::Log, background_tasks),
 
-            config,
             pane_divider,
             keybinds,
             details_keybinds,
@@ -170,7 +166,7 @@ impl<'a> LogTab<'a> {
     /// `anchor` or centered when there is nowhere to point at.
     fn context_menu(&self, anchor: Option<Position>) -> Result<Option<AppAction>> {
         Ok(Some(AppAction::SetPopup(Box::new(log_context_menu(
-            self.config.clone(),
+            get_env().jj_config.clone(),
             anchor,
             &self.head,
             &self.marked(),
@@ -210,7 +206,7 @@ impl<'a> LogTab<'a> {
                 Ok(None)
             }
             _ => Ok(Some(AppAction::SetPopup(Box::new(parent_select(
-                self.config.clone(),
+                get_env().jj_config.clone(),
                 &parents,
                 &out_of_view,
             ))))),
@@ -263,7 +259,7 @@ impl<'a> LogTab<'a> {
 
             LogTabEvent::CreateNew { describe } => {
                 return Ok(Some(command::ask_new_change_from_selection(
-                    self.config.clone(),
+                    get_env().jj_config.clone(),
                     &self.head,
                     &self.marked(),
                     describe,
@@ -274,14 +270,14 @@ impl<'a> LogTab<'a> {
             }
             LogTabEvent::Squash { ignore_immutable } => {
                 return Ok(Some(command::ask_squash(
-                    self.config.clone(),
+                    get_env().jj_config.clone(),
                     &self.head,
                     ignore_immutable,
                 )?));
             }
             LogTabEvent::EditChange { ignore_immutable } => {
                 return Ok(Some(command::ask_edit(
-                    self.config.clone(),
+                    get_env().jj_config.clone(),
                     &self.head,
                     format!("Change: {}", self.head.change_id.as_str()),
                     ignore_immutable,
@@ -289,7 +285,7 @@ impl<'a> LogTab<'a> {
             }
             LogTabEvent::Abandon => {
                 return Ok(Some(command::ask_abandon(
-                    self.config.clone(),
+                    get_env().jj_config.clone(),
                     &self.head,
                     self.marked(),
                 )));
@@ -314,7 +310,10 @@ impl<'a> LogTab<'a> {
                 return Ok(None);
             }
             LogTabEvent::SetBookmark => {
-                return Ok(Some(command::set_bookmark(self.config.clone(), &self.head)));
+                return Ok(Some(command::set_bookmark(
+                    get_env().jj_config.clone(),
+                    &self.head,
+                )));
             }
             LogTabEvent::OpenFiles => {
                 return Ok(Some(AppAction::ViewFiles(self.head.clone())));
@@ -423,7 +422,7 @@ impl Component for LogTab<'_> {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = self.pane_divider.split(area, self.config.layout());
+        let chunks = self.pane_divider.split(area);
 
         // Draw log
         self.log_panel.draw(f, chunks[0])?;
@@ -519,7 +518,7 @@ impl Component for LogTab<'_> {
     }
 
     fn input_mouse(&mut self, mouse: Mouse) -> Result<ComponentInputResult> {
-        if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+        if self.pane_divider.handle_mouse(mouse) {
             return Ok(ComponentInputResult::Handled);
         }
         match route_mouse(mouse, &mut [&mut self.log_panel, &mut self.head_panel]) {

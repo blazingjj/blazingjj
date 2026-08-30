@@ -182,6 +182,7 @@ impl JjConfig {
         self.blazingjj.layout
     }
 
+    /// The share of a tab the main panel takes, in percent.
     pub fn layout_percent(&self) -> u16 {
         self.blazingjj.layout_percent
     }
