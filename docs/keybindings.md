@@ -32,7 +32,7 @@ next-tab = "l"
 prev-tab = "h"
 
 command-popup = ":"
-quit = ["q", "ctrl+c", "esc"]
+quit = ["q", "ctrl+c"]
 ```
 
 ### Popups

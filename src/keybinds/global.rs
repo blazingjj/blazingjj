@@ -64,7 +64,6 @@ impl Default for GlobalKeybinds {
             GlobalEvent::OpenHelp => "?",
             GlobalEvent::Quit => "q",
             GlobalEvent::Quit => "ctrl+c",
-            GlobalEvent::Quit => "esc",
         );
         Self { keys }
     }
