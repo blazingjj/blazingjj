@@ -2,11 +2,11 @@
 
 ```toml
 # change keybinding
-save = "ctrl+s"
+describe = "d"
 # set multiple keybindings
-save = ["ctrl+s", "ctrl+shift+g"]
+describe = ["d", "ctrl+shift+g"]
 # disable keybinding
-save = false
+describe = false
 ```
 
 In below examples default values are used.
@@ -62,6 +62,11 @@ cancel = "esc"
 
 ### Log tab
 
+Only the log tab has bindings of its own; the other tabs and the keys that
+mark a change (`space`) or jump to the top or bottom of the log
+(`ctrl+home`/`ctrl+end`) are not configurable. `toggle-diff-format` is the
+one details panel key that is, and it applies to the log tab only.
+
 ```toml
 [blazingjj.keybinds.log-tab]
 toggle-diff-format = "w"
@@ -71,6 +76,7 @@ goto-parent = "-"
 create-new = "n"
 create-new-describe = "shift+n"
 duplicate = "shift+d"
+rebase = "ctrl+r"
 squash = "s"
 squash-ignore-immutable = "shift+s"
 edit-change = "e"
@@ -91,4 +97,6 @@ push-all = "shift+p"
 push-all-new = "ctrl+shift+p"
 fetch = "f"
 fetch-all = "shift+f"
+
+open-context-menu = "menu"
 ```
