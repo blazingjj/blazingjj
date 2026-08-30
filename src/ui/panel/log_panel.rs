@@ -60,6 +60,10 @@ pub struct LogPanel<'a, T: LogItem> {
     /// Currently marked items
     pub marked: HashSet<T::Mark>,
 
+    /// Whether the next operation acts on the marked commits rather
+    /// than on the selected one
+    pub use_marks: bool,
+
     list_pane: ListPane,
 
     /// Whether to apply scroll_padding on the next draw.
@@ -118,6 +122,7 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
 
             selected,
             marked: HashSet::new(),
+            use_marks: false,
 
             list_pane: ListPane::default(),
 
@@ -329,7 +334,14 @@ impl<T: LogItem> Component for LogPanel<'_, T> {
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let log_lines = self.log_lines();
-        let log_block = panel_block().title(panel_title(self.title.clone()));
+        let mut log_block = panel_block().title(panel_title(self.title.clone()));
+        if self.use_marks {
+            log_block = log_block.title_top(
+                Line::styled(" marked ", Role::Warning.style())
+                    .bold()
+                    .right_aligned(),
+            );
+        }
         self.log_list_state.select(self.selected_log_line());
         let log = List::new(log_lines);
         let log = if self.scroll_padding_active {
