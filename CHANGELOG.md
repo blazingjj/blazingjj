@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   revision
 - The tabs overview takes the mouse: a click switches to the tab clicked, and
   the wheel cycles through the tabs
+- The keys the confirmation, set-bookmark and rebase popups have of their own
+  are now configurable, under `[blazingjj.keybinds.confirm-popup]`,
+  `[blazingjj.keybinds.bookmark-set-popup]` and
+  `[blazingjj.keybinds.rebase-popup]`. The first two mark the key a button or
+  option is bound to in its label, or name it after the label where the label
+  has no such letter, rather than marking a letter that a rebinding would move
 - `[blazingjj.keybinds.log-tab] mark-head` for marking a change, which had no
   binding to configure and no line in the help
 - The files, bookmarks and evolog tabs can now have their keybindings
@@ -118,6 +124,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The popups now all scroll alike, so the lists and the help scroll by half a
   page on `Ctrl+d` and `Ctrl+u` and by a page on `Ctrl+f` and `Ctrl+b` as well,
   as the message popup already did
+- A popup's own keys are now matched after the ones every popup answers to,
+  which is what the set-bookmark and confirmation popups already did and the
+  rebase popup did the other way round
 - The line under a popup naming the keys it answers to now names the keys
   they are bound to, rather than the ones they were bound to when it was
   written

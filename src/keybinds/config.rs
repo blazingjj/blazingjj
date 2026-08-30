@@ -29,6 +29,38 @@ pub struct KeybindsConfig {
     pub details_panel: Option<DetailsPanelKeybindsConfig>,
     pub popup: Option<PopupKeybindsConfig>,
     pub text_popup: Option<TextPopupKeybindsConfig>,
+    pub confirm_popup: Option<ConfirmPopupKeybindsConfig>,
+    pub bookmark_set_popup: Option<BookmarkSetPopupKeybindsConfig>,
+    pub rebase_popup: Option<RebasePopupKeybindsConfig>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct ConfirmPopupKeybindsConfig {
+    pub yes: Option<Keybind>,
+    pub no: Option<Keybind>,
+
+    pub select_yes: Option<Keybind>,
+    pub select_no: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct BookmarkSetPopupKeybindsConfig {
+    pub use_generated_name: Option<Keybind>,
+    pub create_bookmark: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct RebasePopupKeybindsConfig {
+    pub source_with_descendants: Option<Keybind>,
+    pub source_whole_branch: Option<Keybind>,
+    pub source_single_revision: Option<Keybind>,
+
+    pub target_new_branch: Option<Keybind>,
+    pub target_insert_after: Option<Keybind>,
+    pub target_insert_before: Option<Keybind>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

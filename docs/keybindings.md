@@ -64,6 +64,33 @@ accept = "ctrl+s"
 cancel = "esc"
 ```
 
+Three popups have keys of their own besides, for the buttons and options
+they put up. Those are matched after the keys every popup answers to, so
+binding one of them to a key a popup already uses leaves it unreachable.
+The confirmation popup and the set-bookmark popup mark these keys in the
+label of the button or option they press, or name them after it where the
+label has no such letter, so a rebinding shows up there.
+
+```toml
+[blazingjj.keybinds.confirm-popup]
+yes = "y"
+no = "n"
+select-yes = "left"
+select-no = "right"
+
+[blazingjj.keybinds.bookmark-set-popup]
+use-generated-name = "g"
+create-bookmark = "c"
+
+[blazingjj.keybinds.rebase-popup]
+source-with-descendants = "s"
+source-whole-branch = "b"
+source-single-revision = "r"
+target-new-branch = "d"
+target-insert-after = "shift+a"
+target-insert-before = "shift+b"
+```
+
 ### Details panel
 
 These work in the details panel of every tab.

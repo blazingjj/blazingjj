@@ -5,8 +5,11 @@ use std::str::FromStr; // used by set_keybinds macro
 use ratatui::crossterm::event::KeyEvent;
 
 use super::Shortcut;
+use super::config::RebasePopupKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
+use crate::env::keybinds_config;
 use crate::set_keybinds;
+use crate::update_keybinds;
 
 /// How should rebase cut revisions from source
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -60,11 +63,77 @@ impl Default for Keybinds {
 }
 
 impl Keybinds {
+    /// The bindings as the configuration has them.
+    pub fn new() -> Self {
+        let mut keybinds = Self::default();
+        if let Some(config) = keybinds_config().and_then(|config| config.rebase_popup.as_ref()) {
+            keybinds.extend_from_config(config);
+        }
+        keybinds
+    }
+
     pub fn match_event(&self, event: KeyEvent) -> PopupAction {
         if let Some(action) = self.keys.match_event(event) {
             action
         } else {
             PopupAction::None
         }
+    }
+
+    fn extend_from_config(&mut self, config: &RebasePopupKeybindsConfig) {
+        update_keybinds!(
+            self.keys,
+            PopupAction::SetSourceMode(CutOption::IncludeDescendants) => config.source_with_descendants,
+            PopupAction::SetSourceMode(CutOption::IncludeBranch) => config.source_whole_branch,
+            PopupAction::SetSourceMode(CutOption::SingleRevision) => config.source_single_revision,
+            PopupAction::SetTargetMode(PasteOption::NewBranch) => config.target_new_branch,
+            PopupAction::SetTargetMode(PasteOption::InsertAfter) => config.target_insert_after,
+            PopupAction::SetTargetMode(PasteOption::InsertBefore) => config.target_insert_before,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::crossterm::event::KeyCode;
+    use ratatui::crossterm::event::KeyModifiers;
+
+    use super::*;
+    use crate::keybinds::Keybind;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::empty())
+    }
+
+    #[test]
+    fn test_extend_from_config_replaces_bindings() {
+        let config = RebasePopupKeybindsConfig {
+            source_single_revision: Some(Keybind::Single(
+                Shortcut::from_str("1").expect("shortcut should parse"),
+            )),
+            source_with_descendants: None,
+            source_whole_branch: None,
+            target_new_branch: None,
+            target_insert_after: None,
+            target_insert_before: None,
+        };
+
+        let mut keybinds = Keybinds::default();
+        keybinds.extend_from_config(&config);
+
+        assert_eq!(
+            keybinds.match_event(key(KeyCode::Char('1'))),
+            PopupAction::SetSourceMode(CutOption::SingleRevision)
+        );
+        assert_eq!(
+            keybinds.match_event(key(KeyCode::Char('r'))),
+            PopupAction::None
+        );
+
+        // Anything the config leaves out keeps its default.
+        assert_eq!(
+            keybinds.match_event(key(KeyCode::Char('b'))),
+            PopupAction::SetSourceMode(CutOption::IncludeBranch)
+        );
     }
 }

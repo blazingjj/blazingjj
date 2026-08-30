@@ -1,10 +1,14 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
+pub use bookmark_set_popup::BookmarkSetPopupEvent;
+pub use bookmark_set_popup::BookmarkSetPopupKeybinds;
 pub use bookmarks_tab::BookmarksTabEvent;
 pub use bookmarks_tab::BookmarksTabKeybinds;
 pub use config::Keybind;
 pub use config::KeybindsConfig;
+pub use confirm_popup::ConfirmPopupEvent;
+pub use confirm_popup::ConfirmPopupKeybinds;
 pub use details_panel::DetailsPanelEvent;
 pub use details_panel::DetailsPanelKeybinds;
 pub use evolog_tab::EvologTabEvent;
@@ -22,8 +26,10 @@ use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyModifiers;
 
+mod bookmark_set_popup;
 mod bookmarks_tab;
 mod config;
+mod confirm_popup;
 mod details_panel;
 mod evolog_tab;
 mod files_tab;
@@ -99,6 +105,15 @@ impl Shortcut {
     pub fn new_mod_key(modifiers: KeyModifiers, key: KeyCode) -> Self {
         Self { key, modifiers }
     }
+    /// The character the shortcut is, where it is a plain one that no
+    /// modifier goes with.
+    pub fn as_char(&self) -> Option<char> {
+        match self.key {
+            KeyCode::Char(c) if self.modifiers.is_empty() => Some(c),
+            _ => None,
+        }
+    }
+
     pub fn from_event(event: KeyEvent) -> Self {
         Self {
             key: match event.code {
