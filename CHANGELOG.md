@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is gone
 - A popup showing a message or the help no longer goes away on `y`, `n` or
   `o`, only on what accepts or cancels a popup
+- Escape no longer quits the app; `q` and `Ctrl+c` still do, and
+  `[blazingjj.keybinds] quit` can bind it back
 
 ### Added
 
