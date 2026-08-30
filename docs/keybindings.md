@@ -192,6 +192,10 @@ copy-rev = "shift+y"
 ```toml
 [blazingjj.keybinds.op-log-tab]
 load-more = "m"
+
+restore = "r"
+revert = "v"
+
 copy-id = "shift+y"
 ```
 

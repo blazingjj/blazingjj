@@ -22,12 +22,14 @@ use crate::commander::bookmarks::Bookmark;
 use crate::commander::files::File;
 use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
+use crate::commander::ids::OperationId;
 use crate::commander::jj::NewInsertMode;
 use crate::commander::jj::PushTarget;
 use crate::commander::jj::RebaseSource;
 use crate::commander::jj::RebaseTarget;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
+use crate::commander::operation::Operation;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::ui::AppAction;
@@ -100,6 +102,10 @@ pub enum Command {
     Fetch {
         all_remotes: bool,
     },
+    /// Take the repo back to the state this operation left it in.
+    RestoreOperation(OperationId),
+    /// Take back this one operation, leaving what came after it in place.
+    RevertOperation(OperationId),
     RestoreFile(File),
     UntrackFile(File),
     CreateBookmark(String),
@@ -261,6 +267,14 @@ impl Command {
                 TaskSlot::GitFetch,
                 move || Ok(new_commander().git_fetch(all_remotes)?),
             ))),
+            Command::RestoreOperation(id) => match new_commander().run_op_restore(&id) {
+                Ok(()) => Ok(Some(repo_moved()?)),
+                Err(err) => Ok(Some(refused("Restore", err))),
+            },
+            Command::RevertOperation(id) => match new_commander().run_op_revert(&id) {
+                Ok(()) => Ok(Some(repo_moved()?)),
+                Err(err) => Ok(Some(refused("Revert", err))),
+            },
             Command::RestoreFile(file) => match new_commander().restore_file(&file) {
                 Ok(_) => Ok(Some(show_working_copy_files()?)),
                 Err(err) => Ok(Some(refused("Restore", err))),
@@ -566,6 +580,42 @@ pub fn ask_abandon(config: JjConfig, selected: &Head, marked: Vec<CommitId>) -> 
     )
 }
 
+/// Asking to take the repo back to the state `operation` left it in.
+pub fn ask_op_restore(config: JjConfig, operation: &Operation) -> AppAction {
+    confirm(
+        config,
+        "Restore",
+        Text::from(vec![
+            Line::from("Are you sure you want to restore the repo to this operation?"),
+            Line::from(name_of(operation)),
+        ]),
+        Command::RestoreOperation(operation.id.clone()),
+    )
+}
+
+/// Asking to take back `operation` alone.
+pub fn ask_op_revert(config: JjConfig, operation: &Operation) -> AppAction {
+    confirm(
+        config,
+        "Revert",
+        Text::from(vec![
+            Line::from("Are you sure you want to revert this operation?"),
+            Line::from(name_of(operation)),
+        ]),
+        Command::RevertOperation(operation.id.clone()),
+    )
+}
+
+/// How a question names an operation: as short as the operation log
+/// writes it, and with what it says of itself.
+fn name_of(operation: &Operation) -> String {
+    format!(
+        "Operation: {} {}",
+        operation.id.short(),
+        operation.description
+    )
+}
+
 /// Asking to delete the bookmark of this name.
 pub fn ask_delete_bookmark(config: JjConfig, name: &str) -> AppAction {
     confirm(
@@ -634,6 +684,16 @@ fn show_change(change: Head) -> AppAction {
         AppAction::ChangeHead(change),
         AppAction::MarkTabsStale,
     ])
+}
+
+/// The repo is somewhere else altogether, an operation of the operation
+/// log having been taken back. Every tab is behind, and the change the
+/// working copy is on is not the one it was.
+fn repo_moved() -> Result<AppAction> {
+    Ok(AppAction::Multiple(vec![
+        AppAction::ChangeHead(new_commander().get_current_head()?),
+        AppAction::MarkTabsStale,
+    ]))
 }
 
 /// Show the files of the working copy commit, the operation having
@@ -757,6 +817,25 @@ mod tests {
         assert!(says(
             ask_abandon(JjConfig::default(), &head("a", false), marked),
             "abandon 2 marked changes"
+        ));
+    }
+
+    #[test]
+    fn taking_an_operation_back_names_it_as_the_operation_log_does() {
+        let operation = Operation {
+            id: OperationId("0123456789abcdef".to_owned()),
+            description: "describe commit".to_owned(),
+            current: false,
+            root: false,
+        };
+
+        assert!(says(
+            ask_op_restore(JjConfig::default(), &operation),
+            "Operation: 0123456789ab describe commit"
+        ));
+        assert!(says(
+            ask_op_revert(JjConfig::default(), &operation),
+            "Operation: 0123456789ab describe commit"
         ));
     }
 

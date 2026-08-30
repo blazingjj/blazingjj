@@ -21,6 +21,8 @@ pub struct OpLogTabKeybinds {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum OpLogTabEvent {
+    Restore,
+    Revert,
     CopyId,
     LoadMore,
 
@@ -32,6 +34,8 @@ impl Default for OpLogTabKeybinds {
         let mut keys = KeybindsStore::<OpLogTabEvent>::default();
         set_keybinds!(
             keys,
+            OpLogTabEvent::Restore => "r",
+            OpLogTabEvent::Revert => "v",
             OpLogTabEvent::CopyId => "shift+y",
             OpLogTabEvent::LoadMore => "m",
         );
@@ -57,6 +61,8 @@ impl OpLogTabKeybinds {
     fn extend_from_config(&mut self, config: &OpLogTabKeybindsConfig) {
         update_keybinds!(
             self.keys,
+            OpLogTabEvent::Restore => config.restore,
+            OpLogTabEvent::Revert => config.revert,
             OpLogTabEvent::CopyId => config.copy_id,
             OpLogTabEvent::LoadMore => config.load_more,
         );
@@ -72,6 +78,8 @@ impl OpLogTabKeybinds {
         make_bindings!(
             self.keys, Self::default().keys, Context::OpLogTab,
             OpLogTabEvent::LoadMore => "load-more", Some(Section::Navigation), "read further back in the operation log",
+            OpLogTabEvent::Restore => "restore", Some(Section::Changes), "restore the repo to this operation",
+            OpLogTabEvent::Revert => "revert", Some(Section::Changes), "revert this operation",
             OpLogTabEvent::CopyId => "copy-id", Some(Section::Clipboard), "yank operation id to clipboard",
         )
     }

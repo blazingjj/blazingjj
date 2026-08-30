@@ -10,6 +10,7 @@ use ratatui::prelude::*;
 use tracing::instrument;
 
 use crate::app::TabId;
+use crate::app::command;
 use crate::app::command::Command;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
@@ -17,6 +18,7 @@ use crate::background_tasks::TaskSlot;
 use crate::commander::new_commander;
 use crate::commander::operation::OP_LOG_LINES_PER_ITEM;
 use crate::commander::operation::Operation;
+use crate::env::get_env;
 use crate::event::Mouse;
 use crate::keybinds::Binding;
 use crate::keybinds::DetailsPanelEvent;
@@ -28,6 +30,7 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Scroll;
 use crate::ui::Tab;
+use crate::ui::dialog::op_log_context_menu;
 use crate::ui::panel::LogPanel;
 use crate::ui::panel::MouseInput;
 use crate::ui::panel::OpShowPanel;
@@ -128,8 +131,30 @@ impl<'a> OpLogTab<'a> {
         self.sync_show_output();
     }
 
+    /// The menu of what can be done to the selected operation, put at
+    /// `anchor` or centered when there is nowhere to point at.
+    fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
+        Some(AppAction::SetPopup(Box::new(op_log_context_menu(
+            get_env().jj_config.clone(),
+            anchor,
+            &self.op_panel.selected,
+        ))))
+    }
+
     fn handle_event(&mut self, event: OpLogTabEvent) -> Result<Option<AppAction>> {
         match event {
+            OpLogTabEvent::Restore => {
+                return Ok(Some(command::ask_op_restore(
+                    get_env().jj_config.clone(),
+                    &self.op_panel.selected,
+                )));
+            }
+            OpLogTabEvent::Revert => {
+                return Ok(Some(command::ask_op_revert(
+                    get_env().jj_config.clone(),
+                    &self.op_panel.selected,
+                )));
+            }
             OpLogTabEvent::CopyId => {
                 return Ok(Some(AppAction::Run(Command::Copy(
                     self.op_panel.selected.id.as_str().to_owned(),
@@ -194,9 +219,8 @@ impl Tab for OpLogTab<'_> {
         Ok(())
     }
 
-    /// The operation log has nothing to offer on a selection yet.
     fn open_context_menu(&self) -> Result<Option<AppAction>> {
-        Ok(None)
+        Ok(self.context_menu(self.op_panel.selected_position()))
     }
 
     fn main_panel_bindings(&self) -> Vec<Binding> {
@@ -272,10 +296,18 @@ impl Component for OpLogTab<'_> {
                     self.sync_show_output();
                 }
             }
+            // The graph takes lines of its own, which name no operation
+            // for a menu to act on.
+            MouseInput::Context(index) => {
+                if let Some(operation) = self.op_panel.item_at_log_line(index) {
+                    self.op_panel.set_selected_in_place(operation);
+                    self.sync_show_output();
+                    return Ok(self.context_menu(Some(mouse.position())).into());
+                }
+            }
             MouseInput::Copy(text) => return Ok(copy_marked(text)),
-            // Nothing here has a menu to open or a second thing a double
-            // click could do.
-            MouseInput::Context(_) | MouseInput::Activate | MouseInput::Handled => {}
+            // Nothing here has a second thing a double click could do.
+            MouseInput::Activate | MouseInput::Handled => {}
             MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
         }
         Ok(ComponentInputResult::Handled)

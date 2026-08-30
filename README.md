@@ -52,6 +52,8 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - View what the repo has been through and what the selected operation did
     to it
   - Read further back with `m`
+  - Restore the repo to the selected operation with `r`, or take that one
+    operation back with `v`
   - Yank an operation's id to the system clipboard with `Y`
 - Details panel: toggle between color words and git diff with `w`, wrapping
   with `W`
@@ -213,6 +215,8 @@ See all key mappings for the current tab with `?`.
 
 - Select the operation the repo is at with `@`
 - Read further back in the operation log with `m` (`jj op log -n`)
+- Restore the repo to the highlighted operation with `r` (`jj op restore`)
+- Revert the highlighted operation, leaving what came after it in place, with `v` (`jj op revert`)
 - Yank the highlighted operation's id to the clipboard with `Y`
 
 ### Evolog tab

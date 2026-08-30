@@ -1,6 +1,8 @@
 /*!
 [Commander] member functions related to jj operations.
 */
+use anyhow::Context;
+use anyhow::Result;
 use serde::Deserialize;
 use tracing::instrument;
 
@@ -121,6 +123,25 @@ impl Commander {
         args.append(&mut diff_format.get_args());
 
         self.jj(args).ignore_working_copy()
+    }
+
+    /// Take the repo back to the state an operation left it in.
+    /// Maps to `jj op restore <id>`
+    #[instrument(level = "trace", skip(self))]
+    pub fn run_op_restore(&self, id: &OperationId) -> Result<()> {
+        self.jj(["op", "restore", id.as_str()])
+            .run_void()
+            .context("Failed executing jj op restore")
+    }
+
+    /// Take back a single operation, leaving whatever happened after it
+    /// in place.
+    /// Maps to `jj op revert <id>`
+    #[instrument(level = "trace", skip(self))]
+    pub fn run_op_revert(&self, id: &OperationId) -> Result<()> {
+        self.jj(["op", "revert", id.as_str()])
+            .run_void()
+            .context("Failed executing jj op revert")
     }
 }
 
@@ -268,6 +289,63 @@ mod tests {
 
         assert!(show.contains(current.short()));
         assert!(show.contains("describe commit"));
+
+        Ok(())
+    }
+
+    /// What the working copy commit and the one before it say of
+    /// themselves.
+    fn descriptions(test_repo: &TestRepo) -> Result<(String, String)> {
+        let head = test_repo.commander.get_current_head()?;
+        let parent = test_repo.commander.get_commit_parent(&head.commit_id)?;
+
+        Ok((
+            test_repo
+                .commander
+                .get_commit_description(&head.commit_id)?,
+            test_repo
+                .commander
+                .get_commit_description(&parent.commit_id)?,
+        ))
+    }
+
+    #[test]
+    fn run_op_restore_takes_the_repo_back_to_an_operation() -> Result<()> {
+        let test_repo = worked_in()?;
+
+        // The operation before the description of the working copy commit
+        // left it without one.
+        let before = &test_repo.commander.get_op_log(2)?.items[1];
+        test_repo.commander.run_op_restore(&before.id)?;
+
+        assert_eq!(
+            descriptions(&test_repo)?,
+            ("".to_owned(), "first".to_owned())
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_op_revert_takes_back_a_single_operation() -> Result<()> {
+        let test_repo = worked_in()?;
+
+        // Reverting the description of the change made before the working
+        // copy commit leaves the working copy commit's own alone. Two
+        // operations described a commit, the older of them that one.
+        let op_log = test_repo.commander.get_op_log(100)?;
+        let described_first = op_log
+            .items
+            .iter()
+            .rev()
+            .find(|entry| entry.description.starts_with("describe commit"))
+            .expect("the operation that described the first commit");
+        test_repo.commander.run_op_revert(&described_first.id)?;
+
+        assert_eq!(
+            descriptions(&test_repo)?,
+            ("second\n\nwith a body".to_owned(), "".to_owned())
+        );
 
         Ok(())
     }

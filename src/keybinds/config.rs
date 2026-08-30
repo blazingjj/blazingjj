@@ -178,6 +178,10 @@ pub struct EvologTabKeybindsConfig {
 #[serde(rename_all = "kebab-case")]
 pub struct OpLogTabKeybindsConfig {
     pub load_more: Option<Keybind>,
+
+    pub restore: Option<Keybind>,
+    pub revert: Option<Keybind>,
+
     pub copy_id: Option<Keybind>,
 }
 
