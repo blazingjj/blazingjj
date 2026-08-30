@@ -56,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   revision
 - The tabs overview takes the mouse: a click switches to the tab clicked, and
   the wheel cycles through the tabs
+- `[blazingjj.keybinds.log-tab] mark-head` for marking a change, which had no
+  binding to configure and no line in the help
 - The files, bookmarks and evolog tabs can now have their keybindings
   configured, under `[blazingjj.keybinds.files-tab]`,
   `[blazingjj.keybinds.bookmarks-tab]` and `[blazingjj.keybinds.evolog-tab]`

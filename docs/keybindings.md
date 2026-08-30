@@ -81,11 +81,9 @@ toggle-wrap = "shift+w"
 
 ### Log tab
 
-The keys that mark a change (`space`) and jump to the top or bottom of the
-log (`ctrl+home`/`ctrl+end`) are not configurable.
-
 ```toml
 [blazingjj.keybinds.log-tab]
+mark-head = "space"
 goto-parent = "-"
 
 create-new = "n"

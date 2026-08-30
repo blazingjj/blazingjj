@@ -118,6 +118,7 @@ impl LogTabKeybinds {
     fn extend_from_config(&mut self, config: &LogTabKeybindsConfig) {
         update_keybinds!(
             self.keys,
+            LogTabEvent::ToggleHeadMark => config.mark_head,
             LogTabEvent::GotoParent => config.goto_parent,
             LogTabEvent::Duplicate => config.duplicate,
             LogTabEvent::CreateNew { describe: false } => config.create_new,
@@ -148,6 +149,7 @@ impl LogTabKeybinds {
         make_keybinds_help!(
             self.keys,
             LogTabEvent::GotoParent => "go to parent commit",
+            LogTabEvent::ToggleHeadMark => "mark change to act on",
             LogTabEvent::OpenFiles => "see files",
             LogTabEvent::OpenEvolog => "see how the change evolved",
             LogTabEvent::EditRevset => "set revset",

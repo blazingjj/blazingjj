@@ -73,6 +73,7 @@ pub enum Keybind {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct LogTabKeybindsConfig {
+    pub mark_head: Option<Keybind>,
     pub goto_parent: Option<Keybind>,
 
     pub duplicate: Option<Keybind>,
