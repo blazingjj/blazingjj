@@ -12,12 +12,16 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
 
 - Log
   - Scroll through the jj log and view change details in side panel
-  - Create new changes from selected change with `n`
+  - Create new changes from selected change with `n`, as its child or spliced
+    in before or after it
+  - Mark several changes with `Space` to make them the parents of a new change
+  - Go to a change's parent with `-`
   - Edit changes with `e`/`E`
   - Describe changes with `d`
   - Abandon changes with `a`
+  - Duplicate a change with `D`
+  - Rebase a change with `Ctrl+r`, picking what moves and where it lands
   - Absorb a change's diff into its mutable ancestors with `A`
-  - Toggle between color words and git diff with `p`
   - See different revset with `r`
   - Set a bookmark to selected change with `b`
   - Fetch/push with `f`/`p`
@@ -28,12 +32,13 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - View files in current change and diff in side panel
   - See a change's files from the log tab with `Enter`
   - View conflicts list in current change
-  - Toggle between color words and git diff with `w`
-  - Untrack file with `x`
+  - Untrack a file with `x`, restore it with `r`
 - Bookmarks
   - View list of bookmarks, including from all remotes with `a`
   - Create with `c`, rename with `r`, delete with `d`, forget with `f`
   - Track bookmarks with `t`, untrack bookmarks with `T`
+  - Point a bookmark at the selected line's change with `b`
+  - View a bookmark's change in the log with `Enter`
   - Create new change with `n`, edit change with `e`/`E`
 - Evolog
   - View the versions a change has had and what the rewrite that produced the
@@ -43,15 +48,17 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Duplicate a version as a new change with `D`, to recover what a rewrite
     folded away
   - Yank a version's revision to the system clipboard with `Y`
-  - Toggle between color words and git diff with `w`
-- Command log: View every command blazingjj executes
+- Details panel: toggle between color words and git diff with `w`, wrapping
+  with `W`
+- Mouse: scroll the panels, click to select, drag the divider to resize, right
+  click for the context menu
 - Config: Configure blazingjj with your jj config
 - Command box: Run jj commands directly in blazingjj with `:`
 - Help: See all key mappings with `?`
 
 ## Setup
 
-Make sure you have [`jj`](https://martinvonz.github.io/jj/latest/install-and-setup) installed first.
+Make sure you have [`jj`](https://martinvonz.github.io/jj/latest/install-and-setup) 0.42.0 or newer installed first.
 
 - With [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall): `cargo binstall blazingjj`
 - With `cargo install`: `cargo install blazingjj --locked` (may take a few moments to compile)
@@ -86,30 +93,41 @@ To use a different repository: `blazingjj --path ~/path/to/repo`
 
 To start with a different default revset: `blazingjj -r '::@'`
 
+To use a different `jj` binary: `blazingjj --jj-bin ~/bin/jj` (or set `JJ_BIN`)
+
+To start even though the `jj` version check fails: `blazingjj --ignore-jj-version`
+
 ## Key mappings
 
 See all key mappings for the current tab with `?`.
 
 ### Basic navigation
 
-- Quit with `q`
-- Change tab with `1`/`2`/`3` or with `h`/`l`
+- Quit with `q` or `Ctrl+c`
+- Change tab with `1`/`2`/`3`/`4` or with `h`/`l`
+- Go to the current change with `@`
+- Refresh the current tab with `R` or `F5`
 - Scrolling in main panel
   - Scroll down/up by one line with `j`/`k` or down/up arrow
-  - Scroll down/up by half page with `J`/`K` or down/up arrow
+  - Scroll down/up by half page with `J`/`K`
 - Scrolling in details panel
   - Scroll down/up by one line with `Ctrl+e`/`Ctrl+y`
   - Scroll down/up by a half page with `Ctrl+d`/`Ctrl+u`
   - Scroll down/up by a full page with `Ctrl+f`/`Ctrl+b`
+- Change details panel diff format between color words (default) and Git (and diff tool if set) with `w`
+- Toggle details panel wrapping with `W`
+- Open the context menu for what the tab has selected with `Menu` or a right click
 - Open a command popup to run jj commands using `:` (jj prefix not required, e.g. write `new main` instead of `jj new main`)
 
 ### Log tab
 
-- Select current change with `@`
 - View change files in files tab with `Enter`
+- View how the change evolved in the evolog tab with `v`
+- Go to the top/bottom of the visible log with `Ctrl+Home`/`Ctrl+End`
+- Go to the highlighted change's parent with `-`, choosing which one when a
+  merge has more than one in view
+- Mark the highlighted change with `Space`, to give a new change several parents
 - Display different revset with `r` (`jj log -r`)
-- Change details panel diff format between color words (default) and Git (and diff tool if set) with `w`
-- Toggle details panel wrapping with `W`
 - Create new change with `n`, choosing whether it becomes a child of the
   highlighted change or is spliced in before or after it
   (`jj new [--insert-before|--insert-after]`)
@@ -117,6 +135,10 @@ See all key mappings for the current tab with `?`.
 - Edit highlighted change with `e` (`jj edit`)
   - Edit highlighted change ignoring immutability with `E` (`jj edit --ignore-immutable`)
 - Abandon a change with `a` (`jj abandon`)
+- Duplicate the highlighted change with `D` (`jj duplicate`)
+- Rebase with `Ctrl+r` (`jj rebase`), choosing whether the change moves alone,
+  with its descendants or as a whole branch, and whether it lands on the
+  selected change or before or after it
 - Absorb the highlighted change's diff into its mutable ancestors with `A` (`jj absorb --from`)
 - Describe the highlighted change with `d` (`jj describe`)
   - Save with `Ctrl+s`
@@ -127,6 +149,7 @@ See all key mappings for the current tab with `?`.
   - Use auto-generated name with `g`
 - Squash current changes (in @) to the selected change with `s` (`jj squash`)
   - Squash current changes to the selected change ignoring immutability with `S` (`jj squash --ignore-immutable`)
+- Yank the change ID with `y` and the revision with `Y`
 - Git fetch with `f` (`jj git fetch`)
   - Git fetch all remotes with `F` (`jj git fetch --all-remotes`)
 - Git push the tracked bookmarks on the highlighted change with `p` (`jj git push -r`)
@@ -136,9 +159,8 @@ See all key mappings for the current tab with `?`.
 
 ### Files tab
 
-- Select current change with `@`
-- Change details panel diff format between color words (default) and Git (and diff tool if set) with `w`
-- Toggle details panel wrapping with `W`
+- Untrack the highlighted file with `x` (`jj file untrack`)
+- Restore the highlighted file with `r` (`jj restore`)
 
 ### Bookmarks tab
 
@@ -149,25 +171,28 @@ See all key mappings for the current tab with `?`.
 - Forget a bookmark with `f` (`jj bookmark forget`)
 - Track a bookmark with `t` (only works for bookmarks with remotes) (`jj bookmark track`)
 - Untrack a bookmark with `T` (only works for bookmarks with remotes) (`jj bookmark untrack`)
-- Change details panel diff format between color words (default) and Git (and diff tool if set) with `w`
-- Toggle details panel wrapping with `W`
-- Create a new change after the highlighted bookmark's change with `n` (`jj new`)
+- Point the bookmark at the change the selected line stands for with `b`
+  (`jj bookmark set`), which settles a conflicted bookmark on that change
+- View the highlighted bookmark's change in the log tab with `Enter`
+- Create a new change from the highlighted bookmark's change with `n`, choosing
+  where it goes (`jj new`)
   - Create a new change and describe with `N` (`jj new -m`)
 - Edit the highlighted bookmark's change with `e` (`jj edit`)
   - Edit the highlighted bookmark's change ignoring immutability with `E` (`jj edit --ignore-immutable`)
 
-### Command log tab
+### Evolog tab
 
-- Select latest command with `@`
-- Toggle details panel wrapping with `W`
+- View the highlighted version's files in the files tab with `Enter`
+- Duplicate the highlighted version as a new change with `D` (`jj duplicate`)
+- Yank the highlighted version's revision with `Y`
 
 ### Configuring
 
 Keys can be configured
 
 ```toml
-[blazingjj.keybinds.log_tab]
-save = "ctrl+s"
+[blazingjj.keybinds.log-tab]
+describe = "d"
 ```
 
 See more in [keybindings.md](docs/keybindings.md)
@@ -198,10 +223,3 @@ blazingjj has 2 debugging tools:
 Create a release commit using [cargo
 release](https://github.com/crate-ci/cargo-release), e.g. `cargo release
 minor`, then open a PR and after it has been merged, create a GitHub release
-for that commit. The "Release" workflow will fill in the description from the
-changelog, generate and attach the binaries and publish the new version to
-crates.io. That's it.
-
-## Acknowledgements
-
-Blazingjj is a fork of lazyjj, started by Charles Crete in 2023.
