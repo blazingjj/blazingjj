@@ -18,9 +18,6 @@ pub struct LogTabKeybinds {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum LogTabEvent {
-    ScrollToBottom,
-    ScrollToTop,
-
     ToggleHeadMark,
 
     GotoParent,
@@ -64,8 +61,6 @@ impl Default for LogTabKeybinds {
         let mut keys = KeybindsStore::<LogTabEvent>::default();
         set_keybinds!(
             keys,
-            LogTabEvent::ScrollToBottom => "ctrl+end",
-            LogTabEvent::ScrollToTop => "ctrl+home",
             LogTabEvent::ToggleHeadMark => "space",
             LogTabEvent::GotoParent => "-",
             LogTabEvent::Duplicate => "shift+d",

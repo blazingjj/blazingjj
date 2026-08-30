@@ -7,6 +7,8 @@ pub struct KeybindsConfig {
     pub scroll_up: Option<Keybind>,
     pub scroll_down_half: Option<Keybind>,
     pub scroll_up_half: Option<Keybind>,
+    pub scroll_to_top: Option<Keybind>,
+    pub scroll_to_bottom: Option<Keybind>,
 
     pub focus_current: Option<Keybind>,
     pub refresh: Option<Keybind>,

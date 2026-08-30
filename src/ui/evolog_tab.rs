@@ -181,13 +181,7 @@ impl Tab for EvologTab<'_> {
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
-        let half_page = self.entry_panel.visible_heads() / 2;
-        self.scroll_entries(match scroll {
-            Scroll::Down => 1,
-            Scroll::Up => -1,
-            Scroll::DownHalfPage => half_page,
-            Scroll::UpHalfPage => half_page.saturating_neg(),
-        });
+        self.scroll_entries(scroll.distance(self.entry_panel.visible_heads()));
         Ok(())
     }
 

@@ -385,13 +385,7 @@ impl Tab for BookmarksTab {
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
-        let half_page = self.bookmarks_pane.visible_items() / 2;
-        self.scroll_bookmarks(match scroll {
-            Scroll::Down => 1,
-            Scroll::Up => -1,
-            Scroll::DownHalfPage => half_page,
-            Scroll::UpHalfPage => half_page.saturating_neg(),
-        });
+        self.scroll_bookmarks(scroll.distance(self.bookmarks_pane.visible_items()));
         Ok(())
     }
 

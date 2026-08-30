@@ -23,6 +23,8 @@ scroll-down = ["j", "down"]
 scroll-up = ["k", "up"]
 scroll-down-half = "shift+j"
 scroll-up-half = "shift+k"
+scroll-to-top = "ctrl+home"
+scroll-to-bottom = "ctrl+end"
 
 focus-current = "@"
 refresh = ["shift+r", "f5"]

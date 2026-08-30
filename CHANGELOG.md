@@ -67,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The help popup now scrolls with the mouse wheel
 - The help popup now shows a scrollbar when it does not fit on screen
 - Keybinding for jj absorb (`A`)
+- Going to the top or bottom of the list (`Ctrl+Home` and `Ctrl+End`) now works
+  in the files, bookmarks and evolog tabs as well, and is configured under
+  `[blazingjj.keybinds]` as `scroll-to-top` and `scroll-to-bottom` alongside
+  the other ways of scrolling
 - Global keybindings under `[blazingjj.keybinds]` (`scroll-down`, `scroll-up`,
   `scroll-down-half`, `scroll-up-half`, `focus-current`, `refresh`, `open-help`,
   `next-tab`, `prev-tab`, `open-context-menu`, `command-popup`,

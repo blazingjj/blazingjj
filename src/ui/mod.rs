@@ -90,6 +90,23 @@ pub enum Scroll {
     Up,
     DownHalfPage,
     UpHalfPage,
+    ToTop,
+    ToBottom,
+}
+
+impl Scroll {
+    /// How far to move in a list of `page` entries, as far as there is
+    /// to go for the ends.
+    fn distance(self, page: isize) -> isize {
+        match self {
+            Scroll::Down => 1,
+            Scroll::Up => -1,
+            Scroll::DownHalfPage => page / 2,
+            Scroll::UpHalfPage => (page / 2).saturating_neg(),
+            Scroll::ToBottom => isize::MAX,
+            Scroll::ToTop => -isize::MAX,
+        }
+    }
 }
 
 pub trait Component {

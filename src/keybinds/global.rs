@@ -21,6 +21,8 @@ pub enum GlobalEvent {
     ScrollUp,
     ScrollDownHalf,
     ScrollUpHalf,
+    ScrollToTop,
+    ScrollToBottom,
 
     FocusCurrent,
     Refresh,
@@ -53,6 +55,8 @@ impl Default for GlobalKeybinds {
             GlobalEvent::ScrollUp => "up",
             GlobalEvent::ScrollDownHalf => "shift+j",
             GlobalEvent::ScrollUpHalf => "shift+k",
+            GlobalEvent::ScrollToTop => "ctrl+home",
+            GlobalEvent::ScrollToBottom => "ctrl+end",
             GlobalEvent::FocusCurrent => "@",
             GlobalEvent::Refresh => "shift+r",
             GlobalEvent::Refresh => "f5",
@@ -85,6 +89,8 @@ impl GlobalKeybinds {
             GlobalEvent::ScrollUp => config.scroll_up,
             GlobalEvent::ScrollDownHalf => config.scroll_down_half,
             GlobalEvent::ScrollUpHalf => config.scroll_up_half,
+            GlobalEvent::ScrollToTop => config.scroll_to_top,
+            GlobalEvent::ScrollToBottom => config.scroll_to_bottom,
             GlobalEvent::FocusCurrent => config.focus_current,
             GlobalEvent::Refresh => config.refresh,
             GlobalEvent::OpenHelp => config.open_help,
@@ -104,6 +110,8 @@ impl GlobalKeybinds {
             GlobalEvent::ScrollUp => "scroll up",
             GlobalEvent::ScrollDownHalf => "scroll down by ½ page",
             GlobalEvent::ScrollUpHalf => "scroll up by ½ page",
+            GlobalEvent::ScrollToTop => "go to the top of the list",
+            GlobalEvent::ScrollToBottom => "go to the bottom of the list",
             GlobalEvent::FocusCurrent => "go to current change",
             GlobalEvent::Refresh => "refresh",
             GlobalEvent::NextTab => "next tab",
@@ -156,6 +164,10 @@ mod tests {
         assert_eq!(
             keybinds.match_event(key(KeyCode::Char('@'))),
             GlobalEvent::FocusCurrent
+        );
+        assert_eq!(
+            keybinds.match_event(KeyEvent::new(KeyCode::Home, KeyModifiers::CONTROL)),
+            GlobalEvent::ScrollToTop
         );
         assert_eq!(
             keybinds.match_event(key(KeyCode::F(5))),

@@ -661,6 +661,12 @@ impl<'a> App<'a> {
                                 self.get_current_tab()
                                     .scroll_main_panel(Scroll::UpHalfPage)?;
                             }
+                            GlobalEvent::ScrollToTop => {
+                                self.get_current_tab().scroll_main_panel(Scroll::ToTop)?;
+                            }
+                            GlobalEvent::ScrollToBottom => {
+                                self.get_current_tab().scroll_main_panel(Scroll::ToBottom)?;
+                            }
                             GlobalEvent::FocusCurrent => {
                                 self.get_current_tab().focus_current()?;
                                 // The tabs that read what they show when

@@ -248,14 +248,6 @@ impl<'a> LogTab<'a> {
 
     fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<Option<AppAction>> {
         match log_tab_event {
-            LogTabEvent::ScrollToBottom => {
-                self.log_panel.scroll_relative(isize::MAX);
-                self.sync_head_output();
-            }
-            LogTabEvent::ScrollToTop => {
-                self.log_panel.scroll_relative(-isize::MAX);
-                self.sync_head_output();
-            }
             LogTabEvent::ToggleHeadMark => {
                 self.log_panel.toggle_head_mark();
                 self.sync_head_output();
@@ -381,13 +373,8 @@ impl Tab for LogTab<'_> {
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
-        let half_page = self.log_panel.visible_heads() / 2;
-        self.log_panel.scroll_relative(match scroll {
-            Scroll::Down => 1,
-            Scroll::Up => -1,
-            Scroll::DownHalfPage => half_page,
-            Scroll::UpHalfPage => half_page.saturating_neg(),
-        });
+        self.log_panel
+            .scroll_relative(scroll.distance(self.log_panel.visible_heads()));
         self.sync_head_output();
         Ok(())
     }

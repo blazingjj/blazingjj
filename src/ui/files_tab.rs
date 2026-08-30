@@ -307,13 +307,7 @@ impl Tab for FilesTab {
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
-        let half_page = self.files_pane.visible_items() / 2;
-        self.scroll_files(match scroll {
-            Scroll::Down => 1,
-            Scroll::Up => -1,
-            Scroll::DownHalfPage => half_page,
-            Scroll::UpHalfPage => half_page.saturating_neg(),
-        });
+        self.scroll_files(scroll.distance(self.files_pane.visible_items()));
         Ok(())
     }
 
