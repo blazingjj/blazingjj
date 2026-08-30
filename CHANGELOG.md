@@ -132,6 +132,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A keybinding on Home, End or the space bar now shows the key's name rather
+  than "Unknown" or a blank
 - The help popup now lists the key that opens the context menu in every tab,
   the bookmarks tab included
 - An operation jj turns down no longer takes the app down with it: the reason

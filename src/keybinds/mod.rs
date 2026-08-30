@@ -173,7 +173,11 @@ impl Display for Shortcut {
             KeyCode::Down => "Down".to_string(),
             KeyCode::PageDown => "PageDown".to_string(),
             KeyCode::PageUp => "PageUp".to_string(),
+            KeyCode::Home => "Home".to_string(),
+            KeyCode::End => "End".to_string(),
             KeyCode::F(n) => format!("F{n}"),
+            // A space of its own would be read as no key at all.
+            KeyCode::Char(' ') => "Space".to_string(),
             KeyCode::Char(c) => c.to_string(),
             KeyCode::Esc => "Esc".to_string(),
             KeyCode::Menu => "Menu".to_string(),
@@ -254,6 +258,39 @@ mod tests {
         for (s, expected) in table {
             assert_eq!(
                 Shortcut::from_str(s),
+                expected,
+                "Shortcut::from_str(\"{s}\")"
+            );
+        }
+    }
+
+    /// Every key a binding can be given has to have a name to show it
+    /// by, or the help offers a key the user cannot make out.
+    #[test]
+    fn test_shortcut_display() {
+        let table = [
+            ("q", "q"),
+            ("ctrl+shift+q", "Control+Shift+q"),
+            ("space", "Space"),
+            ("enter", "Enter"),
+            ("esc", "Esc"),
+            ("left", "Left"),
+            ("right", "Right"),
+            ("up", "Up"),
+            ("down", "Down"),
+            ("home", "Home"),
+            ("end", "End"),
+            ("ctrl+end", "Control+End"),
+            ("pagedown", "PageDown"),
+            ("pageup", "PageUp"),
+            ("menu", "Menu"),
+            ("f5", "F5"),
+        ];
+
+        for (s, expected) in table {
+            let shortcut = Shortcut::from_str(s).expect("shortcut should parse");
+            assert_eq!(
+                shortcut.to_string(),
                 expected,
                 "Shortcut::from_str(\"{s}\")"
             );
