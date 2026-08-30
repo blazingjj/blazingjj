@@ -92,11 +92,8 @@ The main functions are:
 impl<'a> LogTab<'a> {
     #[instrument(level = "info", name = "Initializing log tab", parent = None, skip(background_tasks))]
     pub fn new(background_tasks: BackgroundTasks, head: Head) -> Self {
-        let mut keybinds = LogTabKeybinds::default();
+        let keybinds = LogTabKeybinds::new();
         let details_keybinds = DetailsPanelKeybinds::new();
-        if let Some(keybinds_config) = get_env().jj_config.keybinds() {
-            keybinds.extend_from_config(keybinds_config);
-        }
 
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());

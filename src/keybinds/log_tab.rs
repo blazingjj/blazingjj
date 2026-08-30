@@ -3,9 +3,9 @@ use std::str::FromStr;
 use ratatui::crossterm::event::KeyEvent;
 
 use super::Shortcut;
-use super::config::KeybindsConfig;
 use super::config::LogTabKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
+use crate::env::keybinds_config;
 use crate::make_keybinds_help;
 use crate::set_keybinds;
 use crate::update_keybinds;
@@ -98,6 +98,15 @@ impl Default for LogTabKeybinds {
 }
 
 impl LogTabKeybinds {
+    /// The bindings as the configuration has them.
+    pub fn new() -> Self {
+        let mut keybinds = Self::default();
+        if let Some(config) = keybinds_config().and_then(|config| config.log_tab.as_ref()) {
+            keybinds.extend_from_config(config);
+        }
+        keybinds
+    }
+
     pub fn match_event(&self, event: KeyEvent) -> LogTabEvent {
         if let Some(action) = self.keys.match_event(event) {
             action
@@ -105,13 +114,8 @@ impl LogTabKeybinds {
             LogTabEvent::Unbound
         }
     }
-    pub fn extend_from_config(&mut self, config: &KeybindsConfig) {
-        if let Some(ref log_tab) = config.log_tab {
-            self.extend_from_log_tab_config(log_tab);
-        }
-    }
 
-    fn extend_from_log_tab_config(&mut self, config: &LogTabKeybindsConfig) {
+    fn extend_from_config(&mut self, config: &LogTabKeybindsConfig) {
         update_keybinds!(
             self.keys,
             LogTabEvent::GotoParent => config.goto_parent,

@@ -81,9 +81,8 @@ toggle-wrap = "shift+w"
 
 ### Log tab
 
-Only the log tab has bindings of its own; the other tabs and the keys that
-mark a change (`space`) or jump to the top or bottom of the log
-(`ctrl+home`/`ctrl+end`) are not configurable.
+The keys that mark a change (`space`) and jump to the top or bottom of the
+log (`ctrl+home`/`ctrl+end`) are not configurable.
 
 ```toml
 [blazingjj.keybinds.log-tab]
@@ -113,4 +112,42 @@ push-all = "shift+p"
 push-all-new = "ctrl+shift+p"
 fetch = "f"
 fetch-all = "shift+f"
+```
+
+### Files tab
+
+```toml
+[blazingjj.keybinds.files-tab]
+untrack = "x"
+restore = "r"
+```
+
+### Bookmarks tab
+
+```toml
+[blazingjj.keybinds.bookmarks-tab]
+toggle-show-all = "a"
+
+create-bookmark = "c"
+rename-bookmark = "r"
+delete-bookmark = "d"
+forget-bookmark = "f"
+track-bookmark = "t"
+untrack-bookmark = "shift+t"
+set-bookmark = "b"
+
+view-in-log = "enter"
+create-new = "n"
+create-new-describe = "shift+n"
+edit-change = "e"
+edit-change-ignore-immutable = "shift+e"
+```
+
+### Evolog tab
+
+```toml
+[blazingjj.keybinds.evolog-tab]
+open-files = "enter"
+duplicate = "shift+d"
+copy-rev = "shift+y"
 ```

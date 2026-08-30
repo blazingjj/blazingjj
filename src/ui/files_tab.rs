@@ -144,7 +144,7 @@ impl FilesTab {
     pub fn new(current_head: &Head, background_tasks: BackgroundTasks) -> Self {
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
-        let keybinds = FilesTabKeybinds::default();
+        let keybinds = FilesTabKeybinds::new();
         let details_keybinds = DetailsPanelKeybinds::new();
 
         Self {

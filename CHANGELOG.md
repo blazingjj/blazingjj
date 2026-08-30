@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   revision
 - The tabs overview takes the mouse: a click switches to the tab clicked, and
   the wheel cycles through the tabs
+- The files, bookmarks and evolog tabs can now have their keybindings
+  configured, under `[blazingjj.keybinds.files-tab]`,
+  `[blazingjj.keybinds.bookmarks-tab]` and `[blazingjj.keybinds.evolog-tab]`
 - The details panel keybindings are now all configurable: `scroll-down`,
   `scroll-up`, the `scroll-*-half` and `scroll-*-page` bindings, `toggle-wrap`
   and `toggle-diff-format`

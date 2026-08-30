@@ -117,7 +117,7 @@ impl BookmarksTab {
     pub fn new(background_tasks: BackgroundTasks) -> Self {
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
-        let keybinds = BookmarksTabKeybinds::default();
+        let keybinds = BookmarksTabKeybinds::new();
         let details_keybinds = DetailsPanelKeybinds::new();
 
         Self {

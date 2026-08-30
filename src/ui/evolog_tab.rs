@@ -70,7 +70,7 @@ impl<'a> EvologTab<'a> {
 
             pane_divider: PaneDivider::new(config.layout_percent()),
             config,
-            keybinds: EvologTabKeybinds::default(),
+            keybinds: EvologTabKeybinds::new(),
             details_keybinds: DetailsPanelKeybinds::new(),
 
             stale: true,

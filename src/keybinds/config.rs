@@ -21,6 +21,9 @@ pub struct KeybindsConfig {
     pub quit: Option<Keybind>,
 
     pub log_tab: Option<LogTabKeybindsConfig>,
+    pub files_tab: Option<FilesTabKeybindsConfig>,
+    pub bookmarks_tab: Option<BookmarksTabKeybindsConfig>,
+    pub evolog_tab: Option<EvologTabKeybindsConfig>,
     pub details_panel: Option<DetailsPanelKeybindsConfig>,
     pub popup: Option<PopupKeybindsConfig>,
     pub text_popup: Option<TextPopupKeybindsConfig>,
@@ -96,4 +99,39 @@ pub struct LogTabKeybindsConfig {
     pub push_all_new: Option<Keybind>,
     pub fetch: Option<Keybind>,
     pub fetch_all: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct FilesTabKeybindsConfig {
+    pub untrack: Option<Keybind>,
+    pub restore: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct BookmarksTabKeybindsConfig {
+    pub toggle_show_all: Option<Keybind>,
+
+    pub create_bookmark: Option<Keybind>,
+    pub rename_bookmark: Option<Keybind>,
+    pub delete_bookmark: Option<Keybind>,
+    pub forget_bookmark: Option<Keybind>,
+    pub track_bookmark: Option<Keybind>,
+    pub untrack_bookmark: Option<Keybind>,
+    pub set_bookmark: Option<Keybind>,
+
+    pub view_in_log: Option<Keybind>,
+    pub create_new: Option<Keybind>,
+    pub create_new_describe: Option<Keybind>,
+    pub edit_change: Option<Keybind>,
+    pub edit_change_ignore_immutable: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct EvologTabKeybindsConfig {
+    pub open_files: Option<Keybind>,
+    pub duplicate: Option<Keybind>,
+    pub copy_rev: Option<Keybind>,
 }
