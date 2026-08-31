@@ -149,6 +149,8 @@ push = false
 push-new = false
 push-all = false
 push-all-new = false
+push-change = false
+push-named = false
 fetch = "f"
 fetch-all = "shift+f"
 ```

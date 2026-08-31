@@ -524,12 +524,23 @@ pub fn push(selected: &Head, scope: PushScope) -> AppAction {
         }
         PushScope::Tracked => PushTarget::Tracked,
         PushScope::All => PushTarget::All,
+        PushScope::Change => PushTarget::Change(revset),
+        // The name is the user's to give, so the push waits for it.
+        PushScope::Named => {
+            return AppAction::SetPopup(Box::new(BookmarkNamePopup::new_push(revset)));
+        }
     };
 
+    AppAction::Run(push_command(target))
+}
+
+/// Sending `target`, shown and asked about first unless that is turned
+/// off.
+pub fn push_command(target: PushTarget) -> Command {
     if get_env().jj_config.confirm_push() {
-        AppAction::Run(Command::PreviewPush(target))
+        Command::PreviewPush(target)
     } else {
-        AppAction::Run(Command::Push(target))
+        Command::Push(target)
     }
 }
 

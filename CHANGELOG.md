@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `blazingjj.diff-pager` and toggled through with `w` like the others
 - Push menu (`p`, `push-menu`, or `Push` in the log tab's context menu) listing
   what a push can send, each target on a key of its own inside the menu
+- The push menu can create the bookmark it sends, either named after the
+  change the way jj's `templates.git-push-bookmark` says (`c`) or under a name
+  you give (`n`)
 - A push now says what it would do and asks before it sends anything;
   `blazingjj.confirm-push = false` pushes right away as before
 - The details panel now names the diff format it renders in, in its top

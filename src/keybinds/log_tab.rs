@@ -59,6 +59,10 @@ pub enum PushScope {
     Tracked,
     /// Every bookmark, new ones included.
     All,
+    /// A new bookmark for the selected change, named after it.
+    Change,
+    /// A new bookmark for the selected change, under a name to be given.
+    Named,
 }
 
 impl Default for LogTabKeybinds {
@@ -144,6 +148,8 @@ impl LogTabKeybinds {
             LogTabEvent::Push(PushScope::SelectedWithNew) => config.push_new,
             LogTabEvent::Push(PushScope::Tracked) => config.push_all,
             LogTabEvent::Push(PushScope::All) => config.push_all_new,
+            LogTabEvent::Push(PushScope::Change) => config.push_change,
+            LogTabEvent::Push(PushScope::Named) => config.push_named,
             LogTabEvent::Fetch { all_remotes: false } => config.fetch,
             LogTabEvent::Fetch { all_remotes: true } => config.fetch_all,
         );
@@ -178,6 +184,8 @@ impl LogTabKeybinds {
             LogTabEvent::Push(PushScope::SelectedWithNew) => "push-new", Some(Section::BookmarksAndRemotes), "git push, tracking new bookmarks",
             LogTabEvent::Push(PushScope::Tracked) => "push-all", Some(Section::BookmarksAndRemotes), "git push all tracked bookmarks",
             LogTabEvent::Push(PushScope::All) => "push-all-new", Some(Section::BookmarksAndRemotes), "git push all bookmarks, new ones included",
+            LogTabEvent::Push(PushScope::Change) => "push-change", Some(Section::BookmarksAndRemotes), "git push a new bookmark named after the change",
+            LogTabEvent::Push(PushScope::Named) => "push-named", Some(Section::BookmarksAndRemotes), "git push a new bookmark under a name of your own",
 
             LogTabEvent::CopyChangeId => "copy-change-id", Some(Section::Clipboard), "yank change id",
             LogTabEvent::CopyRev => "copy-rev", Some(Section::Clipboard), "yank revision",

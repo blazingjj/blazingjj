@@ -59,6 +59,12 @@ pub enum PushTarget {
     Tracked,
     /// `jj git push --all` — every bookmark, new ones included.
     All,
+    /// `jj git push -c <rev>` — a new bookmark for the change, named by
+    /// jj after it.
+    Change(Revset),
+    /// `jj git push --named <name>=<rev>` — a new bookmark of this name
+    /// for the change.
+    Named { name: String, revset: Revset },
 }
 
 impl Commander {
@@ -296,6 +302,14 @@ impl Commander {
             }
             PushTarget::Tracked => args.push("--tracked".to_owned()),
             PushTarget::All => args.push("--all".to_owned()),
+            PushTarget::Change(revset) => {
+                args.push("-c".to_owned());
+                args.push(revset.as_str().to_owned());
+            }
+            PushTarget::Named { name, revset } => {
+                args.push("--named".to_owned());
+                args.push(format!("{name}={}", revset.as_str()));
+            }
         }
 
         let command = self.jj(args).color();
