@@ -1,4 +1,3 @@
-use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
@@ -26,6 +25,7 @@ use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::refusal;
 use crate::ui::utils::centered_rect_line_height;
 
 pub enum BookmarkNameMode {
@@ -105,13 +105,16 @@ impl Component for BookmarkNamePopup<'_> {
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Color::Green));
 
-        let error_lines = self
+        // The width the popup is about to get, which the answer has to
+        // be wrapped to before we know how tall to make it.
+        let width = block.inner(centered_rect_line_height(area, 30, 0)).width;
+        let error = self
             .error
             .as_ref()
-            .map(|e| e.to_string().into_text().unwrap().lines);
-        let error_height = error_lines.as_ref().map_or(0, |l| l.len() + 1);
+            .map(|error| refusal(&error.to_string(), width));
+        let error_height = error.as_ref().map_or(0, |(_, height)| *height);
 
-        let area = centered_rect_line_height(area, 30, 5 + error_height as u16);
+        let area = centered_rect_line_height(area, 30, 5 + error_height);
         f.render_widget(Clear, area);
         f.render_widget(&block, area);
 
@@ -119,23 +122,15 @@ impl Component for BookmarkNamePopup<'_> {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Fill(1),
-                Constraint::Length(error_height as u16),
+                Constraint::Length(error_height),
                 Constraint::Length(2),
             ])
             .split(block.inner(area));
 
         f.render_widget(&self.textarea, popup_chunks[0]);
 
-        if let Some(error_lines) = error_lines {
-            f.render_widget(
-                Paragraph::new(error_lines).block(
-                    Block::default()
-                        .borders(Borders::TOP)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(Color::DarkGray)),
-                ),
-                popup_chunks[1],
-            );
+        if let Some((error, _)) = error {
+            f.render_widget(error, popup_chunks[1]);
         }
 
         f.render_widget(

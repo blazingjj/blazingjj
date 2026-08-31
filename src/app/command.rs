@@ -20,6 +20,7 @@ use crate::background_tasks::TaskOutput;
 use crate::background_tasks::TaskSlot;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::files::File;
+use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
 use crate::commander::jj::NewInsertMode;
 use crate::commander::jj::PushTarget;
@@ -34,6 +35,7 @@ use crate::ui::dialog::BookmarkNameMode;
 use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::BookmarkSetPopup;
 use crate::ui::dialog::ConfirmPopup;
+use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
@@ -49,6 +51,13 @@ pub enum NewSource {
     Marks,
     /// A single change, named by the selection or by a bookmark.
     Change,
+}
+
+/// The change the set-bookmark dialog was opened for, which is all it
+/// takes to put it back up.
+pub struct BookmarkSetDialog {
+    pub config: JjConfig,
+    pub change_id: Option<ChangeId>,
 }
 
 pub enum Command {
@@ -103,6 +112,9 @@ pub enum Command {
     SetBookmark {
         name: String,
         commit_id: CommitId,
+        /// What the set-bookmark dialog needs to come back up when the
+        /// name is refused, for the asking that goes through it.
+        dialog: Option<Box<BookmarkSetDialog>>,
     },
     DeleteBookmark(String),
     ForgetBookmark(String),
@@ -198,10 +210,18 @@ impl Command {
             Command::Describe { head, description } => {
                 match new_commander().run_describe(&head.commit_id, &description) {
                     Ok(()) => Ok(Some(AppAction::Multiple(vec![
+                        AppAction::ClosePopup,
                         AppAction::ViewLog(new_commander().get_head_latest(&head)?),
                         AppAction::MarkTabsStale,
                     ]))),
-                    Err(err) => Ok(Some(refused("Describe", err))),
+                    // Put the editor back with what was written, since a
+                    // refused description is one to correct rather than
+                    // one to lose.
+                    Err(err) => Ok(Some(AppAction::SetPopup(Box::new(DescribePopup::refused(
+                        head,
+                        description,
+                        err,
+                    ))))),
                 }
             }
             Command::Rebase {
@@ -267,12 +287,26 @@ impl Command {
                     )))),
                 }
             }
-            Command::SetBookmark { name, commit_id } => {
-                match new_commander().set_bookmark_commit(&name, &commit_id) {
-                    Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
-                    Err(err) => Ok(Some(refused("Set bookmark", err))),
-                }
-            }
+            Command::SetBookmark {
+                name,
+                commit_id,
+                dialog,
+            } => match new_commander().set_bookmark_commit(&name, &commit_id) {
+                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                // Put the question back with the name that was refused,
+                // which is usually one to correct rather than one to
+                // give up on.
+                Err(err) => Ok(Some(match dialog {
+                    Some(dialog) => AppAction::SetPopup(Box::new(BookmarkSetPopup::refused(
+                        dialog.config,
+                        dialog.change_id,
+                        commit_id,
+                        name,
+                        err,
+                    ))),
+                    None => refused("Set bookmark", err),
+                })),
+            },
             Command::DeleteBookmark(name) => match new_commander().delete_bookmark(&name) {
                 Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
                 Err(err) => Ok(Some(refused("Delete", err))),
@@ -551,6 +585,7 @@ pub fn ask_set_bookmark(config: JjConfig, bookmark: &Bookmark, head: &Head) -> A
         Command::SetBookmark {
             name: bookmark.name.clone(),
             commit_id: head.commit_id.clone(),
+            dialog: None,
         },
     )
 }

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
@@ -18,8 +20,10 @@ use ratatui::widgets::Clear;
 use ratatui::widgets::List;
 use ratatui::widgets::ListState;
 use ratatui::widgets::Paragraph;
+use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 
+use crate::app::command::BookmarkSetDialog;
 use crate::app::command::Command;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::ids::ChangeId;
@@ -34,6 +38,7 @@ use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::styles::create_popup_block;
+use crate::ui::styles::refusal;
 use crate::ui::utils::centered_rect;
 use crate::ui::utils::centered_rect_line_height;
 use crate::ui::utils::mark_key;
@@ -54,6 +59,8 @@ pub struct BookmarkSetPopup<'a> {
     list_height: u16,
     config: JjConfig,
     creating: Option<TextArea<'a>>,
+    /// What was said about the name that was refused, shown alongside it.
+    error: Option<String>,
     keybinds: PopupKeybinds,
     name_keybinds: PopupKeybinds,
     own_keybinds: BookmarkSetPopupKeybinds,
@@ -111,9 +118,29 @@ impl BookmarkSetPopup<'_> {
             config,
             commit_id,
             creating: None,
+            error: None,
             keybinds: PopupKeybinds::dialog(),
             name_keybinds: PopupKeybinds::text_line(),
             own_keybinds: BookmarkSetPopupKeybinds::new(),
+        }
+    }
+
+    /// The name field again with the name that was refused and what was
+    /// said about it, whether it was typed or picked.
+    pub fn refused(
+        config: JjConfig,
+        change_id: Option<ChangeId>,
+        commit_id: CommitId,
+        name: String,
+        err: impl Display,
+    ) -> Self {
+        let mut creating = TextArea::new(vec![name]);
+        creating.move_cursor(CursorMove::End);
+
+        Self {
+            creating: Some(creating),
+            error: Some(format!("{err:#}")),
+            ..Self::new(config, change_id, commit_id)
         }
     }
 
@@ -147,6 +174,10 @@ impl BookmarkSetPopup<'_> {
             AppAction::Run(Command::SetBookmark {
                 name,
                 commit_id: self.commit_id.clone(),
+                dialog: Some(Box::new(BookmarkSetDialog {
+                    config: self.config.clone(),
+                    change_id: self.change_id.clone(),
+                })),
             }),
         ]))
     }
@@ -170,16 +201,30 @@ impl Component for BookmarkSetPopup<'_> {
     fn draw(&mut self, f: &mut ratatui::prelude::Frame<'_>, area: Rect) -> Result<()> {
         if let Some(creating) = self.creating.as_ref() {
             let block = create_popup_block("Create bookmark");
-            let area = centered_rect_line_height(area, 30, 5);
+            // The width the popup is about to get, which the answer has
+            // to be wrapped to before we know how tall to make it.
+            let width = block.inner(centered_rect_line_height(area, 30, 0)).width;
+            let error = self.error.as_ref().map(|error| refusal(error, width));
+            let error_height = error.as_ref().map_or(0, |(_, height)| *height);
+
+            let area = centered_rect_line_height(area, 30, 5 + error_height);
             f.render_widget(Clear, area);
             f.render_widget(&block, area);
 
             let popup_chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Fill(1), Constraint::Length(2)])
+                .constraints([
+                    Constraint::Fill(1),
+                    Constraint::Length(error_height),
+                    Constraint::Length(2),
+                ])
                 .split(block.inner(area));
 
             f.render_widget(creating, popup_chunks[0]);
+
+            if let Some((error, _)) = error {
+                f.render_widget(error, popup_chunks[1]);
+            }
 
             let help = Paragraph::new(vec![self.name_keybinds.hint("accept").into()])
                 .fg(Color::DarkGray)
@@ -191,7 +236,7 @@ impl Component for BookmarkSetPopup<'_> {
                         .border_style(Style::default().fg(Color::DarkGray)),
                 );
 
-            f.render_widget(help, popup_chunks[1]);
+            f.render_widget(help, popup_chunks[2]);
         } else {
             let block = Block::bordered()
                 .title(Span::styled(

@@ -176,14 +176,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   where it would be pointed at a single change to resolve it
 - Switching tabs right after an operation no longer briefly shows what they
   held before it
+- A describe jj turns down no longer loses what was written: the editor stays
+  up with the description and what jj said about it
 - Going to the current change (`@`) now shows it right away, rather than
   leaving the tab on the change it was on until the view is refreshed by hand
 - Creating a change from the bookmarks tab now brings the view up to date,
   rather than leaving it to the next poll
+- A bookmark name the set-bookmark dialog cannot put on a change is no longer
+  lost: the dialog comes back with the name and what jj said about it
 - Editing the change a bookmark points at now brings the other tabs up to date,
   as editing one from the log does
 - `d` in the bookmarks tab no longer offers to delete a bookmark that is not
   there to be deleted
+- What jj said about a bookmark name it turned down now wraps in the popup that
+  puts the question back, rather than being cut off at the edge
 - The help popup no longer drops the global keybindings when the terminal is too
   short to hold them next to the details panel ones
 - The help popup now scrolls its three keybinding lists as a whole rather than
