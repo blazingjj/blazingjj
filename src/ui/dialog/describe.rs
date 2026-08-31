@@ -1,4 +1,5 @@
 use std::cmp::max;
+use std::fmt::Display;
 
 use anyhow::Result;
 use ratatui::Frame;
@@ -32,6 +33,7 @@ use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Interactive;
+use crate::ui::styles::refusal;
 use crate::ui::utils::centered_rect_fixed;
 
 /// Put the user in front of an editor for `head`'s description, in whichever
@@ -53,9 +55,10 @@ pub fn describe_action(
     })
 }
 
-struct DescribePopup<'a> {
+pub struct DescribePopup<'a> {
     head: Head,
     textarea: TextArea<'a>,
+    error: Option<String>,
     keybinds: PopupKeybinds,
 }
 
@@ -66,7 +69,17 @@ impl DescribePopup<'_> {
         DescribePopup {
             head,
             textarea,
+            error: None,
             keybinds: PopupKeybinds::text(),
+        }
+    }
+
+    /// The editor again with the description that was refused and what
+    /// was said about it, so that it is not lost to a failed describe.
+    pub fn refused(head: Head, description: String, err: impl Display) -> DescribePopup<'static> {
+        DescribePopup {
+            error: Some(format!("{err:#}")),
+            ..Self::new(head, description.split('\n').map(str::to_owned).collect())
         }
     }
 }
@@ -81,20 +94,35 @@ impl Component for DescribePopup<'_> {
 
         const MAX_COMMIT_WIDTH: u16 = 72;
         const MIN_COMMIT_HEIGHT: u16 = 5;
+        let width = (MAX_COMMIT_WIDTH + 2).min(area.width);
+        let error = self
+            .error
+            .as_ref()
+            .map(|error| refusal(error, width.saturating_sub(2)));
+        let error_height = error.as_ref().map_or(0, |(_, height)| *height);
+
         let area = centered_rect_fixed(
             area,
-            MAX_COMMIT_WIDTH + 2,
-            max(MIN_COMMIT_HEIGHT + 4, area.height / 2),
+            width,
+            max(MIN_COMMIT_HEIGHT + 4 + error_height, area.height / 2),
         );
         f.render_widget(Clear, area);
         f.render_widget(&block, area);
 
         let popup_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Fill(1), Constraint::Length(2)])
+            .constraints([
+                Constraint::Fill(1),
+                Constraint::Length(error_height),
+                Constraint::Length(2),
+            ])
             .split(block.inner(area));
 
         f.render_widget(&self.textarea, popup_chunks[0]);
+
+        if let Some((error, _)) = error {
+            f.render_widget(error, popup_chunks[1]);
+        }
 
         let help = Paragraph::new(vec![self.keybinds.hint("accept").into()])
             .fg(Color::DarkGray)
@@ -105,7 +133,7 @@ impl Component for DescribePopup<'_> {
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(Color::DarkGray)),
             );
-        f.render_widget(help, popup_chunks[1]);
+        f.render_widget(help, popup_chunks[2]);
 
         Ok(())
     }
@@ -115,15 +143,14 @@ impl Component for DescribePopup<'_> {
             && key.kind == KeyEventKind::Press
         {
             match self.keybinds.match_event(key) {
+                // The popup stays up until the describe has gone
+                // through, so that a refused description is not lost.
                 PopupEvent::Accept => {
-                    return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                        vec![
-                            AppAction::ClosePopup,
-                            AppAction::Run(Command::Describe {
-                                head: self.head.clone(),
-                                description: self.textarea.lines().join("\n"),
-                            }),
-                        ],
+                    return Ok(ComponentInputResult::HandledAction(AppAction::Run(
+                        Command::Describe {
+                            head: self.head.clone(),
+                            description: self.textarea.lines().join("\n"),
+                        },
                     )));
                 }
                 PopupEvent::Cancel => {

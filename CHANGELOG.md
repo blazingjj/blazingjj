@@ -176,6 +176,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   where it would be pointed at a single change to resolve it
 - Switching tabs right after an operation no longer briefly shows what they
   held before it
+- A describe jj turns down no longer loses what was written: the editor stays
+  up with the description and what jj said about it
 - Going to the current change (`@`) now shows it right away, rather than
   leaving the tab on the change it was on until the view is refreshed by hand
 - Creating a change from the bookmarks tab now brings the view up to date,

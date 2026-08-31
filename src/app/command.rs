@@ -34,6 +34,7 @@ use crate::ui::dialog::BookmarkNameMode;
 use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::BookmarkSetPopup;
 use crate::ui::dialog::ConfirmPopup;
+use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
@@ -198,10 +199,18 @@ impl Command {
             Command::Describe { head, description } => {
                 match new_commander().run_describe(&head.commit_id, &description) {
                     Ok(()) => Ok(Some(AppAction::Multiple(vec![
+                        AppAction::ClosePopup,
                         AppAction::ViewLog(new_commander().get_head_latest(&head)?),
                         AppAction::MarkTabsStale,
                     ]))),
-                    Err(err) => Ok(Some(refused("Describe", err))),
+                    // Put the editor back with what was written, since a
+                    // refused description is one to correct rather than
+                    // one to lose.
+                    Err(err) => Ok(Some(AppAction::SetPopup(Box::new(DescribePopup::refused(
+                        head,
+                        description,
+                        err,
+                    ))))),
                 }
             }
             Command::Rebase {
