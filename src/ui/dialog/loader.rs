@@ -32,6 +32,9 @@ pub struct LoaderPopup {
     operation_name: String,
     /// The task slot this popup is waiting for
     slot: TaskSlot,
+    /// What the output the operation had to say is to become, or None to
+    /// put it up as a message
+    on_output: Option<Box<dyn FnOnce(String) -> AppAction>>,
     throbber_state: ThrobberState,
     last_animation_update: Instant,
 }
@@ -42,9 +45,18 @@ impl LoaderPopup {
         Self {
             operation_name,
             slot,
+            on_output: None,
             throbber_state: ThrobberState::default(),
             last_animation_update: Instant::now(),
         }
+    }
+
+    /// Hand the output to `on_output` rather than showing it, which an
+    /// operation run to be reported on rather than for its own sake asks
+    /// for.
+    pub fn on_output(mut self, on_output: impl FnOnce(String) -> AppAction + 'static) -> Self {
+        self.on_output = Some(Box::new(on_output));
+        self
     }
 }
 
@@ -69,6 +81,13 @@ impl Component for LoaderPopup {
         }
 
         let action = match result.output {
+            // What the caller makes of the output stands on its own: an
+            // operation reported on rather than run for its own sake has
+            // left the tabs as they were.
+            Ok(output) if self.on_output.is_some() => {
+                let on_output = self.on_output.take().expect("the output is asked for");
+                on_output(output)
+            }
             Ok(output) if !output.is_empty() => AppAction::Multiple(vec![
                 AppAction::SetPopup(Box::new(MessagePopup::new(
                     format!("{} message", self.operation_name),

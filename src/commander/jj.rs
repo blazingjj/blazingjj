@@ -273,10 +273,14 @@ impl Commander {
             .run_void()
     }
 
-    /// Git push. Maps to `jj git push`
+    /// Git push. Maps to `jj git push`, which only says what it would do
+    /// when `dry_run`.
     #[instrument(level = "trace", skip(self))]
-    pub fn git_push(&self, target: &PushTarget) -> Result<String, CommandError> {
+    pub fn git_push(&self, target: &PushTarget, dry_run: bool) -> Result<String, CommandError> {
         let mut args = vec!["git".to_owned(), "push".to_owned()];
+        if dry_run {
+            args.push("--dry-run".to_owned());
+        }
         match target {
             PushTarget::Revision(revset) => {
                 args.push("-r".to_owned());
@@ -294,7 +298,15 @@ impl Commander {
             PushTarget::All => args.push("--all".to_owned()),
         }
 
-        self.jj(args).color().run()
+        let command = self.jj(args).color();
+        if dry_run {
+            // What the push would do is all jj has to say here, and it
+            // says it as it does every report: on stderr, and not at all
+            // when told to be quiet.
+            command.verbose().with_stderr().run()
+        } else {
+            command.run()
+        }
     }
 
     /// Git fetch. Maps to `jj git fetch`

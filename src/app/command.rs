@@ -8,6 +8,7 @@ as an [AppAction].
 
 use std::fmt::Display;
 
+use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::execute;
@@ -32,6 +33,7 @@ use crate::commander::new_commander;
 use crate::commander::operation::Operation;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
+use crate::env::get_env;
 use crate::keybinds::PushScope;
 use crate::ui::AppAction;
 use crate::ui::dialog::BookmarkNameMode;
@@ -100,6 +102,9 @@ pub enum Command {
         target_mode: RebaseTarget,
     },
     Push(PushTarget),
+    /// Ask what the push would do, and put the answer as the question
+    /// whether to go ahead with it.
+    PreviewPush(PushTarget),
     Fetch {
         all_remotes: bool,
     },
@@ -260,8 +265,20 @@ impl Command {
                 background_tasks,
                 "Pushing",
                 TaskSlot::GitPush,
-                move || Ok(new_commander().git_push(&target)?),
+                move || Ok(new_commander().git_push(&target, false)?),
             ))),
+            Command::PreviewPush(target) => {
+                let asked = target.clone();
+                let popup = loader(
+                    background_tasks,
+                    "Previewing the push",
+                    TaskSlot::GitPushDryRun,
+                    move || Ok(new_commander().git_push(&target, true)?),
+                )
+                .on_output(move |output| ask_push(asked, output));
+
+                Ok(Some(AppAction::SetPopup(Box::new(popup))))
+            }
             Command::Fetch { all_remotes } => Ok(Some(with_loader(
                 background_tasks,
                 "Fetching",
@@ -442,6 +459,46 @@ pub fn rebase(destination: &Head) -> Result<AppAction> {
     ))))
 }
 
+/// Asking whether to send the push `preview` describes, that being what
+/// jj answered when asked what it would do.
+fn ask_push(target: PushTarget, preview: String) -> AppAction {
+    // That the push has not happened is what the question is about, so
+    // jj saying so as well only makes the answer harder to find.
+    let preview: String = preview
+        .lines()
+        .filter(|line| !line.contains("Dry-run requested"))
+        .fold(String::new(), |text, line| text + line + "\n");
+    if preview.trim().is_empty() {
+        return message("Push", "jj said nothing about what this push would do");
+    }
+    // A push with nothing to send is nothing to answer for, so it is
+    // reported rather than asked about. Whatever jj had to say about why
+    // stands as the report.
+    if preview.contains("Nothing changed") {
+        return AppAction::SetPopup(Box::new(
+            MessagePopup::new("Push", preview).text_align(Alignment::Left),
+        ));
+    }
+
+    // The preview is laid out as jj wrote it, colors and indentation
+    // included.
+    let text = preview.into_text().ok();
+    let preview = text.unwrap_or_else(|| Text::raw(preview));
+
+    let mut question = Text::from("The push would perform the following actions:");
+    question.push_line("");
+    question.extend(preview.lines);
+    question.push_line("");
+    question.push_line("Do you want to push?");
+
+    AppAction::SetPopup(Box::new(ConfirmPopup::new(
+        get_env().jj_config.clone(),
+        "Push Preview",
+        question,
+        AppAction::Run(Command::Push(target)),
+    )))
+}
+
 /// Pushing what `scope` says of `selected`. Pushing the new bookmarks of
 /// a change means naming them, as jj only tracks a bookmark the remote
 /// does not have yet when it is asked for by name.
@@ -469,7 +526,11 @@ pub fn push(selected: &Head, scope: PushScope) -> AppAction {
         PushScope::All => PushTarget::All,
     };
 
-    AppAction::Run(Command::Push(target))
+    if get_env().jj_config.confirm_push() {
+        AppAction::Run(Command::PreviewPush(target))
+    } else {
+        AppAction::Run(Command::Push(target))
+    }
 }
 
 /// Asking to put a bookmark on `head`.
@@ -760,9 +821,28 @@ fn with_loader<F>(
 where
     F: FnOnce() -> TaskOutput + Send + 'static,
 {
+    AppAction::SetPopup(Box::new(loader(
+        background_tasks,
+        operation_name,
+        slot,
+        operation,
+    )))
+}
+
+/// The loader popup [with_loader] puts up, for a caller that has more to
+/// say about what becomes of the output.
+fn loader<F>(
+    background_tasks: &BackgroundTasks,
+    operation_name: &str,
+    slot: TaskSlot,
+    operation: F,
+) -> LoaderPopup
+where
+    F: FnOnce() -> TaskOutput + Send + 'static,
+{
     background_tasks.submit_uninterruptible(slot.clone(), operation);
 
-    AppAction::SetPopup(Box::new(LoaderPopup::new(operation_name.to_owned(), slot)))
+    LoaderPopup::new(operation_name.to_owned(), slot)
 }
 
 #[cfg(test)]
@@ -772,6 +852,7 @@ mod tests {
 
     use super::*;
     use crate::commander::ids::ChangeId;
+    use crate::env::set_test_env;
 
     fn head(change_id: &str, immutable: bool) -> Head {
         Head {
@@ -804,7 +885,61 @@ mod tests {
     }
 
     fn says(action: AppAction, text: &str) -> bool {
-        rows(action).iter().any(|row| row.contains(text))
+        says_where(&rows(action), text)
+    }
+
+    fn says_where(rows: &[String], text: &str) -> bool {
+        rows.iter().any(|row| row.contains(text))
+    }
+
+    /// What jj answers when asked what a push would do
+    const PREVIEW: &str = "Changes to push to origin:\n  Add bookmark here to 0123abcd\nDry-run requested, not pushing.\n";
+
+    #[test]
+    fn the_push_question_holds_what_jj_said_the_push_would_do() {
+        set_test_env();
+
+        let rows = rows(ask_push(PushTarget::Tracked, PREVIEW.to_owned()));
+
+        assert!(says_where(&rows, "Push Preview"), "{rows:?}");
+        assert!(
+            says_where(&rows, "would perform the following actions"),
+            "{rows:?}"
+        );
+        assert!(says_where(&rows, "Changes to push to origin:"), "{rows:?}");
+        assert!(says_where(&rows, "Do you want to push?"), "{rows:?}");
+        // The lines jj indents stay indented, past the blank column the
+        // popup pads them with.
+        assert!(says_where(&rows, "│   Add bookmark here"), "{rows:?}");
+        // That the push has not happened is what is being asked about.
+        assert!(!says_where(&rows, "Dry-run requested"), "{rows:?}");
+    }
+
+    #[test]
+    fn a_push_with_nothing_to_send_is_reported_rather_than_asked_about() {
+        set_test_env();
+
+        let rows = rows(ask_push(
+            PushTarget::Tracked,
+            "Warning: No bookmarks point to the specified revisions: @\nNothing changed.\n"
+                .to_owned(),
+        ));
+
+        assert!(says_where(&rows, "No bookmarks point to"), "{rows:?}");
+        assert!(!says_where(&rows, "Do you want to push?"), "{rows:?}");
+    }
+
+    #[test]
+    fn a_push_jj_says_nothing_about_is_not_asked_about() {
+        set_test_env();
+
+        assert!(says(
+            ask_push(
+                PushTarget::Tracked,
+                "Dry-run requested, not pushing.\n".to_owned()
+            ),
+            "jj said nothing"
+        ));
     }
 
     #[test]

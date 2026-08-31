@@ -6,6 +6,7 @@ use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyEventKind;
+use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -13,6 +14,7 @@ use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
+use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::text::Text;
 use ratatui::widgets::Block;
@@ -52,6 +54,12 @@ pub struct ConfirmPopup {
     confirmed: Option<AppAction>,
     /// Whether Enter presses yes rather than no
     yes_selected: bool,
+    /// First row of the question on show, for a question too long to fit
+    scroll: usize,
+    /// Rows the question is shown in, updated on every draw
+    question_height: u16,
+    /// Rows the question takes once wrapped, updated on every draw
+    question_rows: usize,
     config: JjConfig,
     keybinds: PopupKeybinds,
     own_keybinds: ConfirmPopupKeybinds,
@@ -70,10 +78,51 @@ impl ConfirmPopup {
             question,
             confirmed: Some(confirmed),
             yes_selected: true,
+            scroll: 0,
+            question_height: 0,
+            question_rows: 0,
             config,
             keybinds: PopupKeybinds::dialog(),
             own_keybinds: ConfirmPopupKeybinds::new(),
         }
+    }
+
+    /// The question, wrapped to whatever width it is given. A question
+    /// that lays its lines out, as command output does, keeps whatever
+    /// indentation they have.
+    fn paragraph(&self) -> Paragraph<'static> {
+        Paragraph::new(self.question.clone()).wrap(Wrap { trim: false })
+    }
+
+    /// Where to put the popup in `area`: centered, and no larger than the
+    /// question needs or the screen holds. A question that outgrows the
+    /// screen is scrolled through.
+    fn popup_rect(&self, area: Rect) -> Rect {
+        let width = self
+            .question
+            .lines
+            .iter()
+            .map(|line| line.width() as u16 + PADDING * 2)
+            .max()
+            .unwrap_or(0)
+            .max(MIN_WIDTH)
+            .min(area.width);
+        let rows = self
+            .paragraph()
+            .line_count(width.saturating_sub(PADDING * 2)) as u16;
+        let height = (rows + PADDING * 2 + BUTTONS_HEIGHT).min(area.height);
+
+        centered_rect_fixed(area, width, height)
+    }
+
+    fn max_scroll(&self) -> usize {
+        self.question_rows
+            .saturating_sub(self.question_height as usize)
+    }
+
+    fn scroll(&mut self, delta: isize) {
+        let max = self.max_scroll() as isize;
+        self.scroll = (self.scroll as isize + delta).clamp(0, max) as usize;
     }
 
     fn close() -> Result<ComponentInputResult> {
@@ -117,6 +166,29 @@ impl ConfirmPopup {
         Paragraph::new(Span::styled(label, style))
     }
 
+    /// Say which way there is more of the question to see, in the blank
+    /// rows the padding leaves either side of it.
+    fn draw_scroll_indicators(&self, f: &mut Frame<'_>, area: Rect) {
+        let style = Style::default().fg(Color::DarkGray);
+        let arrow = |f: &mut Frame<'_>, y: u16, arrow: &'static str| {
+            f.render_widget(
+                Paragraph::new(Line::from(arrow).centered()).style(style),
+                Rect {
+                    y,
+                    height: 1,
+                    ..area
+                },
+            );
+        };
+
+        if self.scroll > 0 {
+            arrow(f, area.y + 1, "▲");
+        }
+        if self.scroll < self.max_scroll() {
+            arrow(f, area.y + area.height.saturating_sub(2), "▼");
+        }
+    }
+
     fn draw_buttons(&self, f: &mut Frame<'_>, area: Rect) {
         let yes = self.label(YES, true);
         let no = self.label(NO, false);
@@ -141,31 +213,30 @@ impl ConfirmPopup {
 
 impl Component for ConfirmPopup {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        let width = self
-            .question
-            .lines
-            .iter()
-            .map(|line| line.width() as u16 + PADDING * 2)
-            .max()
-            .unwrap_or(0)
-            .max(MIN_WIDTH);
-        let height = self.question.lines.len() as u16 + PADDING * 2 + BUTTONS_HEIGHT;
-        let area = centered_rect_fixed(area, width, height);
+        let area = self.popup_rect(area);
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(1), Constraint::Max(BUTTONS_HEIGHT)])
             .split(area);
+        self.question_height = chunks[0].height.saturating_sub(PADDING * 2);
+        self.question_rows = self
+            .paragraph()
+            .line_count(chunks[0].width.saturating_sub(PADDING * 2));
+        // The screen may have shrunk since the last draw, leaving the
+        // scroll past the end of the question.
+        self.scroll(0);
 
         f.render_widget(Clear, area);
         // The question is padded away from the border the block draws
         // over it afterwards.
         f.render_widget(
-            Paragraph::new(self.question.clone())
+            self.paragraph()
                 .block(Block::new().padding(Padding::uniform(PADDING)))
-                .wrap(Wrap { trim: true }),
+                .scroll((self.scroll as u16, 0)),
             chunks[0],
         );
+        self.draw_scroll_indicators(f, chunks[0]);
         f.render_widget(
             Block::bordered()
                 .title(Span::styled(
@@ -183,17 +254,33 @@ impl Component for ConfirmPopup {
     }
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
-        let Event::Key(key) = event else {
-            return Ok(ComponentInputResult::Handled);
+        let key = match event {
+            Event::Key(key) => key,
+            Event::Mouse(mouse) => {
+                match mouse.kind {
+                    MouseEventKind::ScrollDown => self.scroll(3),
+                    MouseEventKind::ScrollUp => self.scroll(-3),
+                    _ => {}
+                }
+                return Ok(ComponentInputResult::Handled);
+            }
+            _ => return Ok(ComponentInputResult::Handled),
         };
         if key.kind != KeyEventKind::Press {
             return Ok(ComponentInputResult::Handled);
         }
 
+        let page = self.question_height as isize;
         match self.keybinds.match_event(key) {
             PopupEvent::Accept => return self.answer(self.yes_selected),
             PopupEvent::Cancel => return Self::close(),
-            _ => {}
+            PopupEvent::ScrollDown => self.scroll(1),
+            PopupEvent::ScrollUp => self.scroll(-1),
+            PopupEvent::ScrollDownHalf => self.scroll(page / 2),
+            PopupEvent::ScrollUpHalf => self.scroll(-page / 2),
+            PopupEvent::ScrollDownPage => self.scroll(page),
+            PopupEvent::ScrollUpPage => self.scroll(-page),
+            PopupEvent::Unbound => {}
         }
 
         // The answers are the buttons the question puts up, so they are
@@ -241,6 +328,21 @@ mod tests {
                 divergent: false,
                 immutable: false,
             }),
+        )
+    }
+
+    /// A question of `lines` numbered lines, which is more than a screen
+    /// of them.
+    fn long_popup(lines: usize) -> ConfirmPopup {
+        ConfirmPopup::new(
+            JjConfig::default(),
+            "Push",
+            Text::from(
+                (0..lines)
+                    .map(|line| Line::from(format!("line {line}")))
+                    .collect::<Vec<_>>(),
+            ),
+            AppAction::ClosePopup,
         )
     }
 
@@ -326,6 +428,44 @@ mod tests {
         let buttons = rows.len() - 2;
         assert!(rows[buttons].contains(MARKED_YES), "{rows:?}");
         assert!(rows[buttons].contains(MARKED_NO), "{rows:?}");
+    }
+
+    #[test]
+    fn a_question_longer_than_the_screen_stops_at_it_and_scrolls() {
+        let mut popup = long_popup(40);
+
+        let rows = dialog_rows(&render(&mut popup));
+
+        // The whole screen, and the first line of the question under the
+        // top border and the blank row below it
+        assert_eq!(rows.len(), 16, "{rows:?}");
+        assert!(rows[2].contains("line 0"), "{rows:?}");
+        assert!(rows.iter().any(|row| row.contains('▼')), "{rows:?}");
+
+        for _ in 0..3 {
+            press(&mut popup, KeyCode::Char('j'));
+        }
+        let rows = dialog_rows(&render(&mut popup));
+
+        assert!(rows[2].contains("line 3"), "{rows:?}");
+        assert!(rows[1].contains('▲'), "{rows:?}");
+    }
+
+    #[test]
+    fn scrolling_stops_at_the_end_of_the_question() {
+        let mut popup = long_popup(40);
+        // The popup only knows how much of the question it shows once it
+        // has been drawn.
+        render(&mut popup);
+
+        for _ in 0..100 {
+            press(&mut popup, KeyCode::Char('j'));
+        }
+        let rows = dialog_rows(&render(&mut popup));
+
+        // The last of the ten rows the question is shown in
+        assert!(rows[11].contains("line 39"), "{rows:?}");
+        assert!(!rows.iter().any(|row| row.contains('▼')), "{rows:?}");
     }
 
     #[test]
