@@ -34,10 +34,10 @@ use crate::ui::dialog::BookmarkNameMode;
 use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::BookmarkSetPopup;
 use crate::ui::dialog::ConfirmPopup;
-use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
+use crate::ui::dialog::describe_action;
 use crate::ui::dialog::new_insert;
 
 /// What a new change is created from, which decides whether the log is
@@ -144,10 +144,7 @@ impl Command {
                     actions.push(AppAction::ClearLogMarks);
                 }
                 if describe {
-                    actions.push(AppAction::SetPopup(Box::new(DescribePopup::new(
-                        head,
-                        vec![],
-                    ))));
+                    actions.push(describe_action(&head, || Ok(vec![]))?);
                 }
 
                 Ok(Some(AppAction::Multiple(actions)))
@@ -358,16 +355,13 @@ pub fn describe(head: &Head) -> Result<AppAction> {
         ));
     }
 
-    let lines = new_commander()
-        .get_commit_description(&head.commit_id)?
-        .split('\n')
-        .map(str::to_owned)
-        .collect();
-
-    Ok(AppAction::SetPopup(Box::new(DescribePopup::new(
-        head.clone(),
-        lines,
-    ))))
+    describe_action(head, || {
+        Ok(new_commander()
+            .get_commit_description(&head.commit_id)?
+            .split('\n')
+            .map(str::to_owned)
+            .collect())
+    })
 }
 
 /// Asking to rebase the working copy commit onto `destination`.

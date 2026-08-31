@@ -23,21 +23,44 @@ use ratatui_textarea::TextArea;
 
 use crate::app::command::Command;
 use crate::commander::log::Head;
+use crate::commander::new_commander;
+use crate::env::DescribeMode;
+use crate::env::get_env;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::Interactive;
 use crate::ui::utils::centered_rect_fixed;
 
-pub struct DescribePopup<'a> {
+/// Put the user in front of an editor for `head`'s description, in whichever
+/// way `blazingjj.describe-mode` asks for. `seed` gives the text the in-app
+/// editor starts out with, and is only asked for when that is the editor in
+/// use.
+pub fn describe_action(
+    head: &Head,
+    seed: impl FnOnce() -> Result<Vec<String>>,
+) -> Result<AppAction> {
+    Ok(match get_env().jj_config.describe_mode() {
+        DescribeMode::Popup => {
+            AppAction::SetPopup(Box::new(DescribePopup::new(head.clone(), seed()?)))
+        }
+        DescribeMode::Jj => AppAction::RunInteractive(Interactive {
+            command: new_commander().jj(["describe", head.commit_id.as_str()]),
+            hold_screen: false,
+        }),
+    })
+}
+
+struct DescribePopup<'a> {
     head: Head,
     textarea: TextArea<'a>,
     keybinds: PopupKeybinds,
 }
 
 impl DescribePopup<'_> {
-    pub fn new(head: Head, lines: Vec<String>) -> DescribePopup<'static> {
+    fn new(head: Head, lines: Vec<String>) -> DescribePopup<'static> {
         let mut textarea = TextArea::new(lines);
         textarea.move_cursor(CursorMove::End);
         DescribePopup {

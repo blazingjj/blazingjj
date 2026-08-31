@@ -43,9 +43,11 @@ use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::Interactive;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::bookmarks_tab::BookmarksTab;
+use crate::ui::dialog::CommandMode;
 use crate::ui::dialog::CommandPopup;
 use crate::ui::dialog::HelpPopup;
 use crate::ui::evolog_tab::EvologTab;
@@ -109,6 +111,10 @@ pub struct App<'a> {
 
     repo_watch: RepoWatch,
 
+    /// Interactive command queued by a component for the main loop to run
+    /// after restoring the terminal.
+    pending_interactive: Option<Interactive>,
+
     // event handling
     running: Arc<AtomicBool>,
     event_source: EventSource,
@@ -142,6 +148,7 @@ impl<'a> App<'a> {
             popup_keybinds: PopupKeybinds::dialog(),
 
             repo_watch: RepoWatch::new(get_env().jj_config.poll_interval(), Instant::now()),
+            pending_interactive: None,
 
             running,
             event_source,
@@ -275,6 +282,16 @@ impl<'a> App<'a> {
         }
     }
 
+    /// Take the interactive command a component has asked for, if any.
+    pub fn take_pending_interactive(&mut self) -> Option<Interactive> {
+        self.pending_interactive.take()
+    }
+
+    /// Have every tab read the repo again.
+    pub fn catch_up_with_repo(&mut self) -> Result<()> {
+        self.handle_action(AppAction::MarkTabsStale)
+    }
+
     /// When a component wants the app to do something,
     /// it sends a AppAction which the App handles.
     pub fn handle_action(&mut self, app_action: AppAction) -> Result<()> {
@@ -331,6 +348,9 @@ impl<'a> App<'a> {
                     snapshot: false,
                     ours: true,
                 });
+            }
+            AppAction::RunInteractive(interactive) => {
+                self.pending_interactive = Some(interactive);
             }
         }
 
@@ -498,6 +518,17 @@ impl<'a> App<'a> {
         self.event_source.launch_user_input();
     }
 
+    /// Stop reading user input, handing the terminal over to a foreground
+    /// process
+    pub fn pause_input(&mut self) {
+        self.event_source.pause_user_input();
+    }
+
+    /// Read user input again after a foreground process is done
+    pub fn resume_input(&mut self) {
+        self.event_source.resume_user_input();
+    }
+
     /// Recieve an AppEvent if one is waiting
     pub fn try_recv_app_event(&self, timeout: Duration) -> Option<AppEvent> {
         self.event_source.try_recv(timeout)
@@ -655,7 +686,12 @@ impl<'a> App<'a> {
                             GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks),
                             GlobalEvent::EvologTab => self.set_tab(TabId::Evolog),
                             GlobalEvent::CommandPopup => {
-                                self.popup = Some(Box::new(CommandPopup::new()));
+                                self.popup =
+                                    Some(Box::new(CommandPopup::new(CommandMode::Capture)));
+                            }
+                            GlobalEvent::InteractiveCommandPopup => {
+                                self.popup =
+                                    Some(Box::new(CommandPopup::new(CommandMode::Interactive)));
                             }
                             GlobalEvent::OpenHelp => self.open_help()?,
                             GlobalEvent::Quit => {
