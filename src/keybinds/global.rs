@@ -2,6 +2,8 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
+use super::HelpItem;
+use super::Section;
 use super::Shortcut;
 use super::config::KeybindsConfig;
 use super::keybinds_store::KeybindsStore;
@@ -103,28 +105,29 @@ impl GlobalKeybinds {
         );
     }
 
-    pub fn make_help(&self) -> Vec<(String, String)> {
+    pub fn make_help(&self) -> Vec<HelpItem> {
         make_keybinds_help!(
             self.keys,
-            GlobalEvent::ScrollDown => "scroll down",
-            GlobalEvent::ScrollUp => "scroll up",
-            GlobalEvent::ScrollDownHalf => "scroll down by ½ page",
-            GlobalEvent::ScrollUpHalf => "scroll up by ½ page",
-            GlobalEvent::ScrollToTop => "go to the top of the list",
-            GlobalEvent::ScrollToBottom => "go to the bottom of the list",
-            GlobalEvent::FocusCurrent => "go to current change",
-            GlobalEvent::Refresh => "refresh",
-            GlobalEvent::NextTab => "next tab",
-            GlobalEvent::PrevTab => "previous tab",
-            GlobalEvent::LogTab => "log tab",
-            GlobalEvent::FilesTab => "files tab",
-            GlobalEvent::BookmarksTab => "bookmarks tab",
-            GlobalEvent::EvologTab => "evolog tab",
-            GlobalEvent::OpenContextMenu => "open the context menu",
-            GlobalEvent::CommandPopup => "run jj command",
-            GlobalEvent::InteractiveCommandPopup => "run jj command interactively",
-            GlobalEvent::OpenHelp => "open help",
-            GlobalEvent::Quit => "quit",
+            GlobalEvent::ScrollDown => Section::Navigation, "scroll down",
+            GlobalEvent::ScrollUp => Section::Navigation, "scroll up",
+            GlobalEvent::ScrollDownHalf => Section::Navigation, "scroll down by ½ page",
+            GlobalEvent::ScrollUpHalf => Section::Navigation, "scroll up by ½ page",
+            GlobalEvent::ScrollToTop => Section::Navigation, "go to the top of the list",
+            GlobalEvent::ScrollToBottom => Section::Navigation, "go to the bottom of the list",
+            GlobalEvent::FocusCurrent => Section::Navigation, "go to current change",
+            GlobalEvent::OpenContextMenu => Section::Navigation, "open the context menu",
+
+            GlobalEvent::Refresh => Section::App, "refresh",
+            GlobalEvent::NextTab => Section::App, "next tab",
+            GlobalEvent::PrevTab => Section::App, "previous tab",
+            GlobalEvent::LogTab => Section::App, "log tab",
+            GlobalEvent::FilesTab => Section::App, "files tab",
+            GlobalEvent::BookmarksTab => Section::App, "bookmarks tab",
+            GlobalEvent::EvologTab => Section::App, "evolog tab",
+            GlobalEvent::CommandPopup => Section::App, "run jj command",
+            GlobalEvent::InteractiveCommandPopup => Section::App, "run jj command interactively",
+            GlobalEvent::OpenHelp => Section::App, "open help",
+            GlobalEvent::Quit => Section::App, "quit",
         )
     }
 }
@@ -277,22 +280,22 @@ mod tests {
             keybinds.match_event(key(KeyCode::Char('?'))),
             GlobalEvent::Unbound
         );
-        assert!(
-            keybinds
-                .make_help()
-                .contains(&("[disabled]".to_owned(), "open help".to_owned()))
-        );
+        assert!(keybinds.make_help().contains(&HelpItem {
+            section: Section::App,
+            keys: "[disabled]".to_owned(),
+            description: "open help".to_owned(),
+        }));
     }
 
     #[test]
     fn test_make_help_lists_every_default_binding() {
         let help = GlobalKeybinds::default().make_help();
 
-        assert!(help.iter().all(|(keys, _)| keys != "[disabled]"));
-        let (keys, _) = help
+        assert!(help.iter().all(|item| item.keys != "[disabled]"));
+        let refresh = help
             .iter()
-            .find(|(_, desc)| desc == "refresh")
+            .find(|item| item.description == "refresh")
             .expect("refresh should be listed");
-        assert_eq!(keys, "Shift+r/F5");
+        assert_eq!(refresh.keys, "Shift+r/F5");
     }
 }

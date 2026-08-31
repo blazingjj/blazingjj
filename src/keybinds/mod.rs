@@ -44,20 +44,89 @@ pub struct Keybinds {
     log_tab: LogTabKeybinds,
 }*/
 
-/// A titled run of keybindings, as the help lists them. A panel with
-/// enough of them to be worth sorting through hands the help one per
-/// kind of thing its keys do; one with a handful hands it a single
-/// section titled after the panel.
+/// The kind of thing a keybinding does, under which the help lists it.
+/// Which one a binding belongs to follows from what it does, not from
+/// who binds it, so the keys for moving around in the main panel are one
+/// section whether a tab or the app as a whole binds them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Section {
+    Navigation,
+    Changes,
+    Files,
+    BookmarksAndRemotes,
+    Clipboard,
+    DetailsPanel,
+    /// What the app does, rather than what it does to the repo
+    App,
+}
+
+impl Section {
+    /// Every section, in the order the help lists them
+    const ORDER: [Self; 7] = [
+        Self::Navigation,
+        Self::Changes,
+        Self::Files,
+        Self::BookmarksAndRemotes,
+        Self::Clipboard,
+        Self::DetailsPanel,
+        Self::App,
+    ];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Navigation => "Navigation",
+            Self::Changes => "Changes",
+            Self::Files => "Files",
+            Self::BookmarksAndRemotes => "Bookmarks and remotes",
+            Self::Clipboard => "Clipboard",
+            Self::DetailsPanel => "Details panel",
+            Self::App => "Global",
+        }
+    }
+
+    /// Whether the help lists the section beside what the main panel
+    /// answers to rather than among it.
+    pub fn beside_main_panel(self) -> bool {
+        matches!(self, Self::DetailsPanel | Self::App)
+    }
+}
+
+/// A keybinding as the help lists it
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HelpItem {
+    pub section: Section,
+    /// The keys bound to it, or `[disabled]` where there are none
+    pub keys: String,
+    pub description: String,
+}
+
+/// The keybindings of one section, as the help lists them
 #[derive(Clone, Debug)]
 pub struct HelpSection {
-    pub title: &'static str,
+    pub section: Section,
     /// The keys and what each of them does
     pub items: Vec<(String, String)>,
 }
 
 impl HelpSection {
-    pub fn new(title: &'static str, items: Vec<(String, String)>) -> Self {
-        Self { title, items }
+    /// The `items` gathered into the sections they belong to, in the
+    /// order the help lists those; a section nothing belongs to is left
+    /// out.
+    pub fn gather(items: impl IntoIterator<Item = HelpItem>) -> Vec<Self> {
+        let items: Vec<HelpItem> = items.into_iter().collect();
+
+        Section::ORDER
+            .into_iter()
+            .filter_map(|section| {
+                let items: Vec<(String, String)> = items
+                    .iter()
+                    .filter(|item| item.section == section)
+                    .map(|item| (item.keys.clone(), item.description.clone()))
+                    .collect();
+
+                (!items.is_empty()).then_some(Self { section, items })
+            })
+            .collect()
     }
 }
 
@@ -88,10 +157,12 @@ macro_rules! update_keybinds {
     };
 }
 
+/// The help entry of every listed action: what it does, the section it
+/// belongs to, and the keys it is bound to.
 #[macro_export]
 macro_rules! make_keybinds_help {
     () => {};
-    ($keys:expr, $($action:expr => $desc:literal),* $(,)?) => {
+    ($keys:expr, $($action:expr => $section:expr, $desc:literal),* $(,)?) => {
         #[allow(clippy::vec_init_then_push)]
         {
             let mut res = vec![];
@@ -101,11 +172,15 @@ macro_rules! make_keybinds_help {
                     .map(|s| s.to_string())
                     .collect::<Vec<_>>()
                     .join("/");
-                if shortcuts.is_empty() {
-                    res.push(("[disabled]".to_string(), $desc.to_string()));
-                } else {
-                    res.push((shortcuts, $desc.to_string()));
-                }
+                res.push($crate::keybinds::HelpItem {
+                    section: $section,
+                    keys: if shortcuts.is_empty() {
+                        "[disabled]".to_string()
+                    } else {
+                        shortcuts
+                    },
+                    description: $desc.to_string(),
+                });
             )*
             res
         }
@@ -243,6 +318,47 @@ mod tests {
         pub fn new_key(key: KeyCode) -> Self {
             Self::new_mod_key(KeyModifiers::empty(), key)
         }
+    }
+
+    fn item(section: Section, key: &str) -> HelpItem {
+        HelpItem {
+            section,
+            keys: key.to_owned(),
+            description: format!("do {key}"),
+        }
+    }
+
+    fn listed(key: &str) -> (String, String) {
+        (key.to_owned(), format!("do {key}"))
+    }
+
+    #[test]
+    fn test_gathering_puts_the_sections_in_the_order_the_help_lists_them() {
+        let sections = HelpSection::gather([
+            item(Section::App, "q"),
+            item(Section::Changes, "n"),
+            item(Section::Navigation, "j"),
+        ]);
+
+        let titles: Vec<Section> = sections.iter().map(|section| section.section).collect();
+        assert_eq!(
+            titles,
+            vec![Section::Navigation, Section::Changes, Section::App]
+        );
+    }
+
+    /// The keys of a section come from whoever binds them, so those the
+    /// app binds and those a tab binds end up under the one heading.
+    #[test]
+    fn test_gathering_collects_a_section_from_every_source() {
+        let sections = HelpSection::gather([
+            item(Section::Navigation, "j"),
+            item(Section::Changes, "n"),
+            item(Section::Navigation, "-"),
+        ]);
+
+        assert_eq!(sections.len(), 2);
+        assert_eq!(sections[0].items, vec![listed("j"), listed("-")]);
     }
 
     #[test]

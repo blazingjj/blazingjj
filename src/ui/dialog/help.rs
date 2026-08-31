@@ -118,12 +118,9 @@ fn halve<'a>(sections: &[Section<'a>]) -> Vec<Vec<Section<'a>>> {
 /// take in without scrolling.
 fn columns<'a>(
     main: Vec<Section<'a>>,
-    details: Section<'a>,
-    global: Section<'a>,
+    side: Vec<Section<'a>>,
     width: u16,
 ) -> Vec<Vec<Section<'a>>> {
-    let side = vec![details, global];
-
     let mut spread = halve(&main);
     spread.push(side.clone());
     if spread.len() > 2 && contents_width(&spread) <= width {
@@ -136,6 +133,17 @@ fn columns<'a>(
     }
 
     vec![halves.into_iter().flatten().collect()]
+}
+
+/// The `sections` as the popup lists them, under the title of each
+fn listed(sections: &[HelpSection]) -> Vec<Section<'_>> {
+    sections
+        .iter()
+        .map(|section| Section {
+            title: section.section.title(),
+            items: &section.items,
+        })
+        .collect()
 }
 
 /// Renders the `sections` stacked in `area`, with a rule between them and
@@ -203,11 +211,12 @@ fn place(viewport: Rect, scroll: u16, top: u16, height: u16) -> Option<(Rect, u1
 }
 
 pub struct HelpPopup {
-    /// The main panel's bindings, in a section per kind of thing they
-    /// do where the tab has enough of them to sort
+    /// What the main panel answers to, a section per kind of thing its
+    /// keys do
     pub main_sections: Vec<HelpSection>,
-    pub details_items: Vec<(String, String)>,
-    pub global_items: Vec<(String, String)>,
+    /// The sections listed beside those, for the details panel and the
+    /// app as a whole
+    pub side_sections: Vec<HelpSection>,
     max_scroll: u16,
     scroll: u16,
     /// Height of what the popup shows at once, updated on every draw
@@ -216,15 +225,10 @@ pub struct HelpPopup {
 }
 
 impl HelpPopup {
-    pub fn new(
-        main_sections: Vec<HelpSection>,
-        details_items: Vec<(String, String)>,
-        global_items: Vec<(String, String)>,
-    ) -> Self {
+    pub fn new(main_sections: Vec<HelpSection>, side_sections: Vec<HelpSection>) -> Self {
         Self {
             main_sections,
-            details_items,
-            global_items,
+            side_sections,
             max_scroll: 0,
             // Can't use TableState as it's broken: https://github.com/ratatui-org/ratatui/issues/1179
             scroll: 0,
@@ -249,21 +253,8 @@ impl Component for HelpPopup {
         let [extra_width, extra_height] = chrome(&block, area);
 
         let columns = columns(
-            self.main_sections
-                .iter()
-                .map(|section| Section {
-                    title: section.title,
-                    items: &section.items,
-                })
-                .collect(),
-            Section {
-                title: "Details panel",
-                items: &self.details_items,
-            },
-            Section {
-                title: "Global",
-                items: &self.global_items,
-            },
+            listed(&self.main_sections),
+            listed(&self.side_sections),
             area.width.saturating_sub(extra_width),
         );
 
@@ -410,24 +401,26 @@ mod tests {
             title: "Main panel",
             items: &main,
         }];
-        let details = Section {
-            title: "Details panel",
-            items: &details,
-        };
-        let global = Section {
-            title: "Global",
-            items: &global,
-        };
+        let side = vec![
+            Section {
+                title: "Details panel",
+                items: &details,
+            },
+            Section {
+                title: "Global",
+                items: &global,
+            },
+        ];
 
         // The main panel bindings need 15 columns, the other two 14 together
-        let halves = columns(main.clone(), details, global, 32);
+        let halves = columns(main.clone(), side.clone(), 32);
         assert_eq!(halves.len(), 2);
         assert_eq!(contents_width(&halves), 32);
 
         // A column short of that, everything stacks up in a single column,
         // which only has to hold the widest keys next to the widest
         // description.
-        let stacked = columns(main, details, global, 31);
+        let stacked = columns(main, side, 31);
         assert_eq!(stacked.len(), 1);
         assert_eq!(contents_width(&stacked), 16);
         // Every section spends a row on its title, with a rule between them
@@ -447,21 +440,24 @@ mod tests {
                 items: &items,
             })
             .collect();
-        let side = |title| Section {
-            title,
-            items: &side_items,
-        };
+        let side: Vec<Section> = ["Details panel", "Global"]
+            .into_iter()
+            .map(|title| Section {
+                title,
+                items: &side_items,
+            })
+            .collect();
 
         // Three sections of 5 rows split 2 and 1, so the tallest column
         // holds 11 rows rather than the 17 of all three in one.
-        let spread = columns(main.clone(), side("Details panel"), side("Global"), 48);
+        let spread = columns(main.clone(), side.clone(), 48);
         assert_eq!(spread.len(), 3);
         assert_eq!(stack_height(&spread[0]), 11);
         assert_eq!(stack_height(&spread[1]), 5);
 
         // A column short of that, the main panel takes a single column
         // again, tall as that leaves the popup.
-        let halves = columns(main, side("Details panel"), side("Global"), 47);
+        let halves = columns(main, side, 47);
         assert_eq!(halves.len(), 2);
         assert_eq!(stack_height(&halves[0]), 17);
     }
@@ -488,7 +484,7 @@ mod tests {
 
     #[test]
     fn test_scroll_is_clamped_to_max() {
-        let mut popup = HelpPopup::new(vec![], vec![], vec![]);
+        let mut popup = HelpPopup::new(vec![], vec![]);
         popup.max_scroll = 2;
 
         for _ in 0..5 {
@@ -508,7 +504,7 @@ mod tests {
 
     #[test]
     fn test_the_wheel_scrolls_more_than_a_row_at_a_time() {
-        let mut popup = HelpPopup::new(vec![], vec![], vec![]);
+        let mut popup = HelpPopup::new(vec![], vec![]);
         popup.max_scroll = 10;
 
         popup

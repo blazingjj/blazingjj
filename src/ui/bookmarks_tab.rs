@@ -26,7 +26,7 @@ use crate::keybinds::BookmarksTabEvent;
 use crate::keybinds::BookmarksTabKeybinds;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
-use crate::keybinds::HelpSection;
+use crate::keybinds::HelpItem;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -436,11 +436,11 @@ impl Tab for BookmarksTab {
         ))
     }
 
-    fn make_main_panel_help(&self) -> Vec<HelpSection> {
+    fn make_main_panel_help(&self) -> Vec<HelpItem> {
         self.keybinds.make_help()
     }
 
-    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+    fn make_details_panel_help(&self) -> Vec<HelpItem> {
         self.details_keybinds.make_help()
     }
 }

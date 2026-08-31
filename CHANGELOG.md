@@ -130,6 +130,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The line under a popup naming the keys it answers to now names the keys
   they are bound to, rather than the ones they were bound to when it was
   written
+- The help popup now lists every keybinding under a heading for what it does
+  rather than for who binds it: the keys that move around in the main panel --
+  scrolling, `@`, going to the top or bottom of the list, and the context
+  menu -- join the panel's navigation heading rather than the global
+  keybindings, and the files and evolog tabs get a heading per kind of thing
+  their keys do rather than one holding all of them
 - The help popup now lists a tab's main panel keybindings under a heading per
   kind of thing they do -- navigation, changes, bookmarks and remotes,
   clipboard -- rather than as one run, and spreads those headings over a second

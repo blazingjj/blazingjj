@@ -17,7 +17,7 @@ use crate::app::command::Command;
 use crate::background_tasks::TaskResult;
 use crate::commander::JjCommand;
 use crate::commander::log::Head;
-use crate::keybinds::HelpSection;
+use crate::keybinds::HelpItem;
 
 /// Action commmands from component to application
 pub enum AppAction {
@@ -162,8 +162,8 @@ pub trait Tab: Component {
     fn open_context_menu(&self) -> Result<Option<AppAction>>;
 
     /// Keybindings of the main panel, for the help popup.
-    fn make_main_panel_help(&self) -> Vec<HelpSection>;
+    fn make_main_panel_help(&self) -> Vec<HelpItem>;
 
     /// Keybindings of the details panel, for the help popup.
-    fn make_details_panel_help(&self) -> Vec<(String, String)>;
+    fn make_details_panel_help(&self) -> Vec<HelpItem>;
 }

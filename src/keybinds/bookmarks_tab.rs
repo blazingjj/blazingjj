@@ -2,7 +2,8 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
-use super::HelpSection;
+use super::HelpItem;
+use super::Section;
 use super::Shortcut;
 use super::config::BookmarksTabKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
@@ -97,40 +98,25 @@ impl BookmarksTabKeybinds {
             .unwrap_or(BookmarksTabEvent::Unbound)
     }
 
-    pub fn make_help(&self) -> Vec<HelpSection> {
-        vec![
-            HelpSection::new(
-                "Navigation",
-                make_keybinds_help!(
-                    self.keys,
-                    BookmarksTabEvent::ViewInLog => "view in log",
-                    BookmarksTabEvent::ToggleShowAll => "show all remotes",
-                ),
-            ),
-            HelpSection::new(
-                "Bookmarks and remotes",
-                make_keybinds_help!(
-                    self.keys,
-                    BookmarksTabEvent::CreateBookmark => "create bookmark",
-                    BookmarksTabEvent::RenameBookmark => "rename bookmark",
-                    BookmarksTabEvent::DeleteBookmark => "delete bookmark",
-                    BookmarksTabEvent::ForgetBookmark => "forget bookmark",
-                    BookmarksTabEvent::TrackBookmark => "track bookmark",
-                    BookmarksTabEvent::UntrackBookmark => "untrack bookmark",
-                    BookmarksTabEvent::SetBookmark => "set bookmark here",
-                ),
-            ),
-            HelpSection::new(
-                "Changes",
-                make_keybinds_help!(
-                    self.keys,
-                    BookmarksTabEvent::NewChange { describe: false } => "new from bookmark",
-                    BookmarksTabEvent::NewChange { describe: true } => "new and describe",
-                    BookmarksTabEvent::EditChange { ignore_immutable: false } => "edit bookmark",
-                    BookmarksTabEvent::EditChange { ignore_immutable: true } => "edit bookmark ignoring immutability",
-                ),
-            ),
-        ]
+    pub fn make_help(&self) -> Vec<HelpItem> {
+        make_keybinds_help!(
+            self.keys,
+            BookmarksTabEvent::ViewInLog => Section::Navigation, "view in log",
+            BookmarksTabEvent::ToggleShowAll => Section::Navigation, "show all remotes",
+
+            BookmarksTabEvent::NewChange { describe: false } => Section::Changes, "new from bookmark",
+            BookmarksTabEvent::NewChange { describe: true } => Section::Changes, "new and describe",
+            BookmarksTabEvent::EditChange { ignore_immutable: false } => Section::Changes, "edit bookmark",
+            BookmarksTabEvent::EditChange { ignore_immutable: true } => Section::Changes, "edit bookmark ignoring immutability",
+
+            BookmarksTabEvent::CreateBookmark => Section::BookmarksAndRemotes, "create bookmark",
+            BookmarksTabEvent::RenameBookmark => Section::BookmarksAndRemotes, "rename bookmark",
+            BookmarksTabEvent::DeleteBookmark => Section::BookmarksAndRemotes, "delete bookmark",
+            BookmarksTabEvent::ForgetBookmark => Section::BookmarksAndRemotes, "forget bookmark",
+            BookmarksTabEvent::TrackBookmark => Section::BookmarksAndRemotes, "track bookmark",
+            BookmarksTabEvent::UntrackBookmark => Section::BookmarksAndRemotes, "untrack bookmark",
+            BookmarksTabEvent::SetBookmark => Section::BookmarksAndRemotes, "set bookmark here",
+        )
     }
 }
 

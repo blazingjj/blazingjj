@@ -2,6 +2,8 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
+use super::HelpItem;
+use super::Section;
 use super::Shortcut;
 use super::config::DetailsPanelKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
@@ -77,17 +79,17 @@ impl DetailsPanelKeybinds {
         );
     }
 
-    pub fn make_help(&self) -> Vec<(String, String)> {
+    pub fn make_help(&self) -> Vec<HelpItem> {
         make_keybinds_help!(
             self.keys,
-            DetailsPanelEvent::ScrollDown => "scroll down",
-            DetailsPanelEvent::ScrollUp => "scroll up",
-            DetailsPanelEvent::ScrollDownHalfPage => "scroll down by ½ page",
-            DetailsPanelEvent::ScrollUpHalfPage => "scroll up by ½ page",
-            DetailsPanelEvent::ScrollDownPage => "scroll down by page",
-            DetailsPanelEvent::ScrollUpPage => "scroll up by page",
-            DetailsPanelEvent::ToggleDiffFormat => "toggle diff format",
-            DetailsPanelEvent::ToggleWrap => "toggle wrapping",
+            DetailsPanelEvent::ScrollDown => Section::DetailsPanel, "scroll down",
+            DetailsPanelEvent::ScrollUp => Section::DetailsPanel, "scroll up",
+            DetailsPanelEvent::ScrollDownHalfPage => Section::DetailsPanel, "scroll down by ½ page",
+            DetailsPanelEvent::ScrollUpHalfPage => Section::DetailsPanel, "scroll up by ½ page",
+            DetailsPanelEvent::ScrollDownPage => Section::DetailsPanel, "scroll down by page",
+            DetailsPanelEvent::ScrollUpPage => Section::DetailsPanel, "scroll up by page",
+            DetailsPanelEvent::ToggleDiffFormat => Section::DetailsPanel, "toggle diff format",
+            DetailsPanelEvent::ToggleWrap => Section::DetailsPanel, "toggle wrapping",
         )
     }
 }

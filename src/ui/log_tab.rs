@@ -23,7 +23,7 @@ use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
-use crate::keybinds::HelpSection;
+use crate::keybinds::HelpItem;
 use crate::keybinds::LogTabEvent;
 use crate::keybinds::LogTabKeybinds;
 use crate::keybinds::PopupEvent;
@@ -389,11 +389,11 @@ impl Tab for LogTab<'_> {
         self.context_menu(self.log_panel.selected_position())
     }
 
-    fn make_main_panel_help(&self) -> Vec<HelpSection> {
+    fn make_main_panel_help(&self) -> Vec<HelpItem> {
         self.keybinds.make_main_panel_help()
     }
 
-    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+    fn make_details_panel_help(&self) -> Vec<HelpItem> {
         self.details_keybinds.make_help()
     }
 }

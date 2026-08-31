@@ -38,6 +38,7 @@ use crate::event::AppEvent;
 use crate::event::EventSource;
 use crate::keybinds::GlobalEvent;
 use crate::keybinds::GlobalKeybinds;
+use crate::keybinds::HelpSection;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
@@ -174,11 +175,17 @@ impl<'a> App<'a> {
     fn open_help(&mut self) -> Result<()> {
         let global_help = self.global_keybinds.make_help();
         let tab = self.get_current_tab();
-        let popup = HelpPopup::new(
-            tab.make_main_panel_help(),
-            tab.make_details_panel_help(),
-            global_help,
+        let sections = HelpSection::gather(
+            global_help
+                .into_iter()
+                .chain(tab.make_main_panel_help())
+                .chain(tab.make_details_panel_help()),
         );
+
+        let (side, main) = sections
+            .into_iter()
+            .partition(|section| section.section.beside_main_panel());
+        let popup = HelpPopup::new(main, side);
         self.popup = Some(Box::new(popup));
         Ok(())
     }
