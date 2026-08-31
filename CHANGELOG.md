@@ -182,6 +182,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   leaving the tab on the change it was on until the view is refreshed by hand
 - Creating a change from the bookmarks tab now brings the view up to date,
   rather than leaving it to the next poll
+- A bookmark name the set-bookmark dialog cannot put on a change is no longer
+  lost: the dialog comes back with the name and what jj said about it
 - Editing the change a bookmark points at now brings the other tabs up to date,
   as editing one from the log does
 - `d` in the bookmarks tab no longer offers to delete a bookmark that is not
