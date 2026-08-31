@@ -348,81 +348,18 @@ impl JjCommand {
         self.build_command().status()
     }
 
-    /// Configure and run the command in a child process `cancel` can kill,
-    /// blocking until it is done, and return its captured standard output.
-    ///
-    /// `stdout` selects how the child's standard output is handled: piped to
-    /// be captured and returned, or null to be discarded. Standard error is
-    /// always captured so it can be surfaced on failure.
+    /// Configure and run the command as a child process, as described in
+    /// [run_child].
     fn execute(mut self, stdout: Stdio, cancel: &CancelToken) -> Result<Vec<u8>, CommandError> {
-        let input = self.stdin.take();
+        let input = self.stdin.take().map(String::into_bytes);
 
         let mut command = self.build_command();
         command.args(get_output_args(
             !self.force_no_color && self.color,
             self.quiet,
         ));
-        command
-            .stdin(if input.is_some() {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
-            .stdout(stdout)
-            .stderr(Stdio::piped());
-        let mut child = command.spawn().map_err(CommandError::Spawn)?;
 
-        let stdin_writer = input.map(|input| spawn_stdin_writer(&mut child, input));
-        let child_stdout = child.stdout.take();
-        let mut child_stderr = child.stderr.take().expect("stderr was piped");
-        // From here on the child can be killed, so every pipe has to be
-        // drained even when the command is going nowhere.
-        cancel.register(child);
-
-        let stderr_reader = thread::spawn(move || {
-            let mut stderr = Vec::new();
-            if let Err(err) = child_stderr.read_to_end(&mut stderr) {
-                error!("Failed to read stderr of child process: {err}");
-            }
-            stderr
-        });
-
-        let mut output = Vec::new();
-        // Every thread and the child have to be collected below whatever
-        // went wrong, so failures are held back rather than returned here.
-        let read_result = child_stdout
-            .map(|mut pipe| pipe.read_to_end(&mut output))
-            .transpose();
-        let stderr = stderr_reader.join().unwrap_or_default();
-        // The child is done reading its input too, either because it read
-        // everything or because it exited and closed the pipe.
-        let write_result = stdin_writer.map(join_stdin_writer).transpose();
-
-        // Every pipe is closed, so the child has finished and there is
-        // nothing left to wait for.
-        let mut child = cancel
-            .take_child()
-            .expect("the child registered above is only taken here");
-        let status = child.wait()?;
-
-        if !status.success() {
-            return Err(CommandError::Status(
-                String::from_utf8_lossy(&stderr).into_owned(),
-                status.code(),
-            ));
-        }
-        // A pipe that broke along the way only matters for a command that
-        // succeeded; for one that failed, its status and stderr say more.
-        write_result?;
-        read_result?;
-        if !stderr.is_empty() {
-            warn!(
-                "Ignoring stderr of successful command:\n{}",
-                String::from_utf8_lossy(&stderr)
-            );
-        }
-
-        Ok(output)
+        run_child(command, input, stdout, cancel)
     }
 
     /// Construct a Command ready for execution. The caller adds the output
@@ -441,12 +378,88 @@ impl JjCommand {
     }
 }
 
+/// Run `command` in a child process `cancel` can kill, blocking until it is
+/// done, and return its captured standard output.
+///
+/// `input` is fed to the child on standard input, if there is any. `stdout`
+/// selects how the child's standard output is handled: piped to be captured
+/// and returned, or null to be discarded. Standard error is always captured
+/// so it can be surfaced on failure.
+fn run_child(
+    mut command: Command,
+    input: Option<Vec<u8>>,
+    stdout: Stdio,
+    cancel: &CancelToken,
+) -> Result<Vec<u8>, CommandError> {
+    command
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(stdout)
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().map_err(CommandError::Spawn)?;
+
+    let stdin_writer = input.map(|input| spawn_stdin_writer(&mut child, input));
+    let child_stdout = child.stdout.take();
+    let mut child_stderr = child.stderr.take().expect("stderr was piped");
+    // From here on the child can be killed, so every pipe has to be
+    // drained even when the command is going nowhere.
+    cancel.register(child);
+
+    let stderr_reader = thread::spawn(move || {
+        let mut stderr = Vec::new();
+        if let Err(err) = child_stderr.read_to_end(&mut stderr) {
+            error!("Failed to read stderr of child process: {err}");
+        }
+        stderr
+    });
+
+    let mut output = Vec::new();
+    // Every thread and the child have to be collected below whatever
+    // went wrong, so failures are held back rather than returned here.
+    let read_result = child_stdout
+        .map(|mut pipe| pipe.read_to_end(&mut output))
+        .transpose();
+    let stderr = stderr_reader.join().unwrap_or_default();
+    // The child is done reading its input too, either because it read
+    // everything or because it exited and closed the pipe.
+    let write_result = stdin_writer.map(join_stdin_writer).transpose();
+
+    // Every pipe is closed, so the child has finished and there is
+    // nothing left to wait for.
+    let mut child = cancel
+        .take_child()
+        .expect("the child registered above is only taken here");
+    let status = child.wait()?;
+
+    if !status.success() {
+        return Err(CommandError::Status(
+            String::from_utf8_lossy(&stderr).into_owned(),
+            status.code(),
+        ));
+    }
+    // A pipe that broke along the way only matters for a command that
+    // succeeded; for one that failed, its status and stderr say more.
+    write_result?;
+    read_result?;
+    if !stderr.is_empty() {
+        warn!(
+            "Ignoring stderr of successful command:\n{}",
+            String::from_utf8_lossy(&stderr)
+        );
+    }
+
+    Ok(output)
+}
+
 /// Feed `input` to a child's standard input from a thread of its own, so
 /// neither side deadlocks on a full pipe buffer. Dropping the handle closes
 /// the pipe, signalling EOF to the child.
-fn spawn_stdin_writer(child: &mut Child, input: String) -> JoinHandle<io::Result<()>> {
+fn spawn_stdin_writer(child: &mut Child, input: Vec<u8>) -> JoinHandle<io::Result<()>> {
     let mut stdin = child.stdin.take().expect("stdin was piped");
-    thread::spawn(move || stdin.write_all(input.as_bytes()))
+    thread::spawn(move || stdin.write_all(&input))
 }
 
 /// Collect the outcome of a [spawn_stdin_writer] thread. A broken pipe means
