@@ -184,6 +184,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as editing one from the log does
 - `d` in the bookmarks tab no longer offers to delete a bookmark that is not
   there to be deleted
+- What jj said about a bookmark name it turned down now wraps in the popup that
+  puts the question back, rather than being cut off at the edge
 - The help popup no longer drops the global keybindings when the terminal is too
   short to hold them next to the details panel ones
 - The help popup now scrolls its three keybinding lists as a whole rather than
