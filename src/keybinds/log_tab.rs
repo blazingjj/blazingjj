@@ -43,8 +43,6 @@ pub enum LogTabEvent {
     Push(PushScope),
     Fetch { all_remotes: bool },
 
-    OpenContextMenu,
-
     Unbound,
 }
 
@@ -93,7 +91,6 @@ impl Default for LogTabKeybinds {
             LogTabEvent::Push(PushScope::All) => "ctrl+shift+p",
             LogTabEvent::Fetch { all_remotes: false } => "f",
             LogTabEvent::Fetch { all_remotes: true } => "shift+f",
-            LogTabEvent::OpenContextMenu => "menu",
         );
 
         Self { keys }
@@ -141,7 +138,6 @@ impl LogTabKeybinds {
             LogTabEvent::Push(PushScope::All) => config.push_all_new,
             LogTabEvent::Fetch { all_remotes: false } => config.fetch,
             LogTabEvent::Fetch { all_remotes: true } => config.fetch_all,
-            LogTabEvent::OpenContextMenu => config.open_context_menu,
         );
     }
     pub fn make_main_panel_help(&self) -> Vec<(String, String)> {
@@ -171,7 +167,6 @@ impl LogTabKeybinds {
             LogTabEvent::Push(PushScope::SelectedWithNew) => "git push, tracking new bookmarks",
             LogTabEvent::Push(PushScope::Tracked) => "git push all tracked bookmarks",
             LogTabEvent::Push(PushScope::All) => "git push all bookmarks, new ones included",
-            LogTabEvent::OpenContextMenu => "open the context menu",
         )
     }
 }

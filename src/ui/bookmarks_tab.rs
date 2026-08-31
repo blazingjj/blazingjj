@@ -263,7 +263,7 @@ impl BookmarksTab {
 
     /// The menu of what can be done to the selected bookmark, put at
     /// `anchor` or centered when there is nowhere to point at.
-    fn open_context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
+    fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(bookmarks_context_menu(
             self.config.clone(),
             anchor,
@@ -356,12 +356,6 @@ impl BookmarksTab {
                     return Ok(Some(AppAction::ViewLog(head.clone())));
                 }
             }
-            BookmarksTabEvent::OpenContextMenu => {
-                return Ok(self.open_context_menu(
-                    self.get_current_bookmark_index()
-                        .and_then(|index| self.bookmarks_pane.item_anchor(index, 1)),
-                ));
-            }
             // Not an operation of its own; the key handler deals with it.
             BookmarksTabEvent::Unbound => {}
         }
@@ -399,6 +393,13 @@ impl Tab for BookmarksTab {
             Scroll::UpHalfPage => half_page.saturating_neg(),
         });
         Ok(())
+    }
+
+    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+        Ok(self.context_menu(
+            self.get_current_bookmark_index()
+                .and_then(|index| self.bookmarks_pane.item_anchor(index, 1)),
+        ))
     }
 
     fn make_main_panel_help(&self) -> Vec<(String, String)> {
@@ -568,7 +569,7 @@ impl Component for BookmarksTab {
                         self.bookmark = Some(bookmark);
                         self.show_bookmark();
                         let anchor = Position::new(mouse.column, mouse.row);
-                        return Ok(self.open_context_menu(Some(anchor)).into());
+                        return Ok(self.context_menu(Some(anchor)).into());
                     }
                 }
                 MouseInput::Handled => {}

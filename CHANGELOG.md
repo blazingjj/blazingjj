@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The keybinds config section is now kebab-cased: `[blazingjj.keybinds.log_tab]` must be
   changed to `[blazingjj.keybinds.log-tab]`
 - The keybindings shared by all tabs are now configured under `[blazingjj.keybinds]`:
-  `focus-current`, `refresh` and `open-help` move there from
-  `[blazingjj.keybinds.log-tab]`, which also loses its `scroll-*` overrides
+  `focus-current`, `refresh`, `open-help` and `open-context-menu` move there
+  from `[blazingjj.keybinds.log-tab]`, which also loses its `scroll-*` overrides
 - jj 0.42.0 or newer is now required
 - The confirmation dialogs are now popups of the app and go away on `q` or
   Escape, like the other popups, rather than on the log tab's `close-popup`
@@ -64,8 +64,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keybinding for jj absorb (`A`)
 - Global keybindings under `[blazingjj.keybinds]` (`scroll-down`, `scroll-up`,
   `scroll-down-half`, `scroll-up-half`, `focus-current`, `refresh`, `open-help`,
-  `next-tab`, `prev-tab`, `command-popup`, `quit`) that work the same in every
-  tab; `scroll-down` and `scroll-up` scroll the popups as well
+  `next-tab`, `prev-tab`, `open-context-menu`, `command-popup`,
+  `interactive-command-popup`, `quit`) that work the same in every tab;
+  `scroll-down` and `scroll-up` scroll the popups as well
 - The help popup now lists the global keybindings alongside the main and details panel ones
 - Message popup now supports scrolling with a scrollbar
 - Command popup output now preserves ANSI color
@@ -128,6 +129,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The help popup now lists the key that opens the context menu in every tab,
+  the bookmarks tab included
 - An operation jj turns down no longer takes the app down with it: the reason
   goes up in a popup, as it already did for the operations refused before they
   were run

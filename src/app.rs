@@ -685,6 +685,11 @@ impl<'a> App<'a> {
                             GlobalEvent::FilesTab => self.set_tab(TabId::Files),
                             GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks),
                             GlobalEvent::EvologTab => self.set_tab(TabId::Evolog),
+                            GlobalEvent::OpenContextMenu => {
+                                if let Some(action) = self.get_current_tab().open_context_menu()? {
+                                    self.handle_action(action)?;
+                                }
+                            }
                             GlobalEvent::CommandPopup => {
                                 self.popup =
                                     Some(Box::new(CommandPopup::new(CommandMode::Capture)));

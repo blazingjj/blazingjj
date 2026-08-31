@@ -33,6 +33,7 @@ pub enum GlobalEvent {
     BookmarksTab,
     EvologTab,
 
+    OpenContextMenu,
     CommandPopup,
     InteractiveCommandPopup,
     OpenHelp,
@@ -61,6 +62,7 @@ impl Default for GlobalKeybinds {
             GlobalEvent::FilesTab => "2",
             GlobalEvent::BookmarksTab => "3",
             GlobalEvent::EvologTab => "4",
+            GlobalEvent::OpenContextMenu => "menu",
             GlobalEvent::CommandPopup => ":",
             GlobalEvent::InteractiveCommandPopup => "!",
             GlobalEvent::OpenHelp => "?",
@@ -88,6 +90,7 @@ impl GlobalKeybinds {
             GlobalEvent::OpenHelp => config.open_help,
             GlobalEvent::NextTab => config.next_tab,
             GlobalEvent::PrevTab => config.prev_tab,
+            GlobalEvent::OpenContextMenu => config.open_context_menu,
             GlobalEvent::CommandPopup => config.command_popup,
             GlobalEvent::InteractiveCommandPopup => config.interactive_command_popup,
             GlobalEvent::Quit => config.quit,
@@ -109,6 +112,7 @@ impl GlobalKeybinds {
             GlobalEvent::FilesTab => "files tab",
             GlobalEvent::BookmarksTab => "bookmarks tab",
             GlobalEvent::EvologTab => "evolog tab",
+            GlobalEvent::OpenContextMenu => "open the context menu",
             GlobalEvent::CommandPopup => "run jj command",
             GlobalEvent::InteractiveCommandPopup => "run jj command interactively",
             GlobalEvent::OpenHelp => "open help",
@@ -160,6 +164,10 @@ mod tests {
         assert_eq!(
             keybinds.match_event(key(KeyCode::Char('2'))),
             GlobalEvent::FilesTab
+        );
+        assert_eq!(
+            keybinds.match_event(key(KeyCode::Menu)),
+            GlobalEvent::OpenContextMenu
         );
         assert_eq!(
             keybinds.match_event(key(KeyCode::Char(':'))),

@@ -168,7 +168,7 @@ impl<'a> LogTab<'a> {
 
     /// The menu of what can be done to the selected change, put at
     /// `anchor` or centered when there is nowhere to point at.
-    fn open_context_menu(&self, anchor: Option<Position>) -> Result<Option<AppAction>> {
+    fn context_menu(&self, anchor: Option<Position>) -> Result<Option<AppAction>> {
         Ok(Some(AppAction::SetPopup(Box::new(log_context_menu(
             self.config.clone(),
             anchor,
@@ -350,10 +350,6 @@ impl<'a> LogTab<'a> {
                 return self.handle_goto_parent();
             }
 
-            LogTabEvent::OpenContextMenu => {
-                return self.open_context_menu(self.log_panel.selected_position());
-            }
-
             LogTabEvent::Unbound => {}
         };
         Ok(None)
@@ -402,6 +398,10 @@ impl Tab for LogTab<'_> {
     fn focus_current(&mut self) -> Result<()> {
         self.set_head(new_commander().get_current_head()?);
         Ok(())
+    }
+
+    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+        self.context_menu(self.log_panel.selected_position())
     }
 
     fn make_main_panel_help(&self) -> Vec<(String, String)> {
@@ -552,7 +552,7 @@ impl Component for LogTab<'_> {
                         self.log_panel.set_head_in_place(head);
                         self.sync_head_output();
                         let anchor = Position::new(mouse_event.column, mouse_event.row);
-                        return Ok(self.open_context_menu(Some(anchor))?.into());
+                        return Ok(self.context_menu(Some(anchor))?.into());
                     }
                 }
                 MouseInput::Handled => {}

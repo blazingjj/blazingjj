@@ -31,6 +31,7 @@ open-help = "?"
 next-tab = "l"
 prev-tab = "h"
 
+open-context-menu = "menu"
 command-popup = ":"
 interactive-command-popup = "!"
 quit = ["q", "ctrl+c"]
@@ -112,6 +113,4 @@ push-all = "shift+p"
 push-all-new = "ctrl+shift+p"
 fetch = "f"
 fetch-all = "shift+f"
-
-open-context-menu = "menu"
 ```

@@ -139,6 +139,10 @@ pub trait Tab: Component {
         Ok(())
     }
 
+    /// The menu of what can be done to what the tab has selected, put
+    /// where the selection is.
+    fn open_context_menu(&self) -> Result<Option<AppAction>>;
+
     /// Keybindings of the main panel, for the help popup.
     fn make_main_panel_help(&self) -> Vec<(String, String)>;
 

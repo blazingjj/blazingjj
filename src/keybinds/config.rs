@@ -15,6 +15,7 @@ pub struct KeybindsConfig {
     pub next_tab: Option<Keybind>,
     pub prev_tab: Option<Keybind>,
 
+    pub open_context_menu: Option<Keybind>,
     pub command_popup: Option<Keybind>,
     pub interactive_command_popup: Option<Keybind>,
     pub quit: Option<Keybind>,
@@ -95,6 +96,4 @@ pub struct LogTabKeybindsConfig {
     pub push_all_new: Option<Keybind>,
     pub fetch: Option<Keybind>,
     pub fetch_all: Option<Keybind>,
-
-    pub open_context_menu: Option<Keybind>,
 }

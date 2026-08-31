@@ -118,7 +118,7 @@ impl<'a> EvologTab<'a> {
 
     /// The menu of what can be done to the selected version, put at
     /// `anchor` or centered when there is nowhere to point at.
-    fn open_context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
+    fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(evolog_context_menu(
             self.config.clone(),
             anchor,
@@ -145,9 +145,6 @@ impl<'a> EvologTab<'a> {
                 return Ok(Some(AppAction::Run(Command::Copy(
                     entry.commit_id.as_str().to_owned(),
                 ))));
-            }
-            EvologTabEvent::OpenContextMenu => {
-                return Ok(self.open_context_menu(self.entry_panel.selected_position()));
             }
             // Not an operation of its own; the key handler deals with it.
             EvologTabEvent::Unbound => {}
@@ -197,6 +194,10 @@ impl Tab for EvologTab<'_> {
     fn focus_current(&mut self) -> Result<()> {
         self.set_head(&new_commander().get_current_head()?);
         Ok(())
+    }
+
+    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+        Ok(self.context_menu(self.entry_panel.selected_position()))
     }
 
     fn make_main_panel_help(&self) -> Vec<(String, String)> {
@@ -276,7 +277,7 @@ impl Component for EvologTab<'_> {
                         self.entry_panel.set_head_in_place(entry);
                         self.sync_entry_output();
                         let anchor = Position::new(mouse.column, mouse.row);
-                        return Ok(self.open_context_menu(Some(anchor)).into());
+                        return Ok(self.context_menu(Some(anchor)).into());
                     }
                 }
                 MouseInput::Handled => {}

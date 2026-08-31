@@ -233,7 +233,7 @@ impl FilesTab {
 
     /// The menu of what can be done to the selected file, put at
     /// `anchor` or centered when there is nowhere to point at.
-    fn open_context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
+    fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         let file = self.file.as_ref()?;
 
         Some(AppAction::SetPopup(Box::new(files_context_menu(
@@ -253,10 +253,6 @@ impl FilesTab {
                 .file
                 .clone()
                 .map(|file| AppAction::Run(Command::RestoreFile(file)))),
-            FilesTabEvent::OpenContextMenu => Ok(self.open_context_menu(
-                self.get_current_file_index()
-                    .and_then(|index| self.files_pane.item_anchor(index, 1)),
-            )),
             // Not an operation of its own; the key handler deals with it.
             FilesTabEvent::Unbound => Ok(None),
         }
@@ -324,6 +320,13 @@ impl Tab for FilesTab {
     fn focus_current(&mut self) -> Result<()> {
         self.set_head(&new_commander().get_current_head()?);
         Ok(())
+    }
+
+    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+        Ok(self.context_menu(
+            self.get_current_file_index()
+                .and_then(|index| self.files_pane.item_anchor(index, 1)),
+        ))
     }
 
     fn make_main_panel_help(&self) -> Vec<(String, String)> {
@@ -495,7 +498,7 @@ impl Component for FilesTab {
                         self.file = Some(file);
                         self.show_diff();
                         let anchor = Position::new(mouse.column, mouse.row);
-                        return Ok(self.open_context_menu(Some(anchor)).into());
+                        return Ok(self.context_menu(Some(anchor)).into());
                     }
                 }
                 MouseInput::Handled => {}
