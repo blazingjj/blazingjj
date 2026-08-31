@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Diff format rendering the Git format with a pager like
+  [delta](https://github.com/dandavison/delta), configured as
+  `blazingjj.diff-pager` and toggled through with `w` like the others
 - The details panel now names the diff format it renders in, in its top
   right corner
 - Keybinding in the bookmarks tab to point a bookmark at the change the
