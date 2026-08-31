@@ -13,6 +13,8 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+pub use mouse::CLICK_PAUSE;
+pub use mouse::Clicks;
 pub use mouse::Mouse;
 use ratatui::crossterm;
 use tracing::error;

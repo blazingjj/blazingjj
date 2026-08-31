@@ -343,7 +343,7 @@ pub(super) mod tests {
         row: u16,
     ) -> ComponentInputResult {
         popup
-            .input_mouse(Mouse::new(kind, Position::new(column, row)))
+            .input_mouse(Mouse::new(kind, Position::new(column, row), 1))
             .expect("the popup handles mouse events")
     }
 

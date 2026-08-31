@@ -387,7 +387,7 @@ mod tests {
     }
 
     fn wheel(kind: MouseEventKind) -> Mouse {
-        Mouse::new(kind, Position::ORIGIN)
+        Mouse::new(kind, Position::ORIGIN, 0)
     }
 
     #[test]

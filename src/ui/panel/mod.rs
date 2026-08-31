@@ -19,7 +19,10 @@ pub use output_cache::OutputKey;
 pub use output_cache::OutputRequest;
 pub use output_panel::OutputPanel;
 
+use crate::app::command::Command;
 use crate::event::Mouse;
+use crate::ui::AppAction;
+use crate::ui::ComponentInputResult;
 
 /// What a panel did with a mouse event.
 pub(crate) enum MouseInput {
@@ -35,6 +38,14 @@ pub(crate) enum MouseInput {
     /// The item at this index was right-clicked, asking for whatever the
     /// caller offers as a context menu.
     Context(usize),
+    /// This text was marked with the mouse, to be copied.
+    Copy(String),
+}
+
+/// What a tab is to do about text a panel of it had marked, which is the
+/// same wherever the panel sits.
+pub(crate) fn copy_marked(text: String) -> ComponentInputResult {
+    ComponentInputResult::HandledAction(AppAction::Run(Command::Copy(text)))
 }
 
 pub(crate) trait PanelMouseInput {

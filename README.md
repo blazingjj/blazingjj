@@ -53,7 +53,8 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Render the git diff with a pager like delta by configuring
     `blazingjj.diff-pager`
 - Mouse: scroll the panels, click to select, drag the divider to resize, right
-  click for the context menu
+  click for the context menu, drag over the details panel (or double click a
+  word, triple click a line) to copy its text
 - Config: Configure blazingjj with your jj config
 - Command box: Run jj commands directly in blazingjj with `:`
 - Help: See all key mappings with `?`

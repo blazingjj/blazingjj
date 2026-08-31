@@ -21,26 +21,37 @@ pub struct LargeString {
 
 /// The characters `line` puts on screen, leaving out its terminator and
 /// any ANSI escape sequences.
-fn line_width(line: &str) -> usize {
-    let mut width = 0;
+fn visible(line: &str) -> impl Iterator<Item = char> {
     let mut chars = line.chars();
-    while let Some(c) = chars.next() {
-        match c {
-            '\x1b' => {
-                // Past the introducer, everything up to and including the
-                // first character in 0x40..=0x7e belongs to the sequence.
-                chars.next();
-                for c in chars.by_ref() {
-                    if ('\x40'..='\x7e').contains(&c) {
-                        break;
+    std::iter::from_fn(move || {
+        loop {
+            match chars.next()? {
+                '\x1b' => {
+                    // Past the introducer, everything up to and including
+                    // the first character in 0x40..=0x7e belongs to the
+                    // sequence.
+                    chars.next();
+                    for c in chars.by_ref() {
+                        if ('\x40'..='\x7e').contains(&c) {
+                            break;
+                        }
                     }
                 }
+                '\n' | '\r' => {}
+                c => return Some(c),
             }
-            '\n' | '\r' => {}
-            _ => width += 1,
         }
-    }
-    width
+    })
+}
+
+/// What `line` puts on screen.
+fn plain(line: &str) -> String {
+    visible(line).collect()
+}
+
+/// How many characters `line` puts on screen.
+fn line_width(line: &str) -> usize {
+    visible(line).count()
 }
 
 impl LargeString {
@@ -92,13 +103,28 @@ impl LargeString {
         self.width
     }
 
+    /// Where the line at `index` begins, the end of the content standing
+    /// in for every line past the last one.
+    fn line_start(&self, index: usize) -> usize {
+        self.line_start
+            .get(index)
+            .copied()
+            .unwrap_or(self.content.len())
+    }
+
+    /// A range of lines of the content as the plain text they read as,
+    /// leaving out the terminators and any ANSI escape sequences.
+    pub fn plain_lines(&self, top_line: usize, line_count: usize) -> Vec<String> {
+        (top_line..top_line + line_count)
+            .take_while(|&line| line < self.lines())
+            .map(|line| plain(&self.content[self.line_start(line)..self.line_start(line + 1)]))
+            .collect()
+    }
+
     /// Render a range of lines of the content as Text
     pub fn render(&self, top_line: usize, line_count: usize) -> Text<'_> {
-        let end_of_content = self.content.len();
-        let get_line_start = |line| self.line_start.get(line).copied().unwrap_or(end_of_content);
-        let start = get_line_start(top_line);
-        let end = get_line_start(top_line + line_count);
-        let content_str: &str = &self.content[start..end];
+        let content_str: &str =
+            &self.content[self.line_start(top_line)..self.line_start(top_line + line_count)];
         match content_str.into_text() {
             Ok(text) => text,
             Err(err) => {

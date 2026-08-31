@@ -229,9 +229,11 @@ impl<K: OutputKey> OutputPanel<K> {
         self.cache.insert_document(request.into_value(output));
     }
 
-    /// Whether the panel is still waiting for output it wants.
-    pub fn is_waiting(&self) -> bool {
-        self.wait.is_waiting()
+    /// Whether what the panel shows changes without anything happening,
+    /// because it is waiting for output it wants or is saying something
+    /// that goes away on its own.
+    pub fn needs_periodic_redraw(&self) -> bool {
+        self.wait.is_waiting() || self.panel.is_flashing()
     }
 
     /// Declare what is worth keeping in the cache. Whatever the panel may

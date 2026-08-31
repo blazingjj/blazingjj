@@ -41,6 +41,7 @@ use crate::ui::dialog::parent_select;
 use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::LogPanel;
 use crate::ui::panel::MouseInput;
+use crate::ui::panel::copy_marked;
 use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::centered_rect_line_height;
@@ -413,8 +414,8 @@ impl Component for LogTab<'_> {
         Ok(None)
     }
 
-    fn is_waiting(&self) -> bool {
-        self.head_panel.is_waiting()
+    fn needs_periodic_redraw(&self) -> bool {
+        self.head_panel.needs_periodic_redraw()
     }
 
     fn draw(
@@ -537,6 +538,7 @@ impl Component for LogTab<'_> {
                     return Ok(self.context_menu(Some(mouse.position()))?.into());
                 }
             }
+            MouseInput::Copy(text) => return Ok(copy_marked(text)),
             MouseInput::Handled => {}
             MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
         }

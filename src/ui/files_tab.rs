@@ -41,6 +41,7 @@ use crate::ui::panel::MouseInput;
 use crate::ui::panel::OutputKey;
 use crate::ui::panel::OutputPanel;
 use crate::ui::panel::OutputRequest;
+use crate::ui::panel::copy_marked;
 use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::error_text;
@@ -348,8 +349,8 @@ impl Component for FilesTab {
         Ok(None)
     }
 
-    fn is_waiting(&self) -> bool {
-        self.diff_panel.is_waiting()
+    fn needs_periodic_redraw(&self) -> bool {
+        self.diff_panel.needs_periodic_redraw()
     }
 
     fn draw(
@@ -499,6 +500,7 @@ impl Component for FilesTab {
                     return Ok(self.context_menu(Some(mouse.position())).into());
                 }
             }
+            MouseInput::Copy(text) => return Ok(copy_marked(text)),
             MouseInput::Handled => {}
             MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
         }

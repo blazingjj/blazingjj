@@ -38,6 +38,7 @@ use crate::ui::dialog::bookmarks_context_menu;
 use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::ListPane;
 use crate::ui::panel::MouseInput;
+use crate::ui::panel::copy_marked;
 use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 
@@ -460,8 +461,8 @@ impl Component for BookmarksTab {
         Ok(None)
     }
 
-    fn is_waiting(&self) -> bool {
-        self.bookmark_panel.is_waiting()
+    fn needs_periodic_redraw(&self) -> bool {
+        self.bookmark_panel.needs_periodic_redraw()
     }
 
     fn draw(
@@ -609,6 +610,7 @@ impl Component for BookmarksTab {
                     return Ok(self.context_menu(Some(mouse.position())).into());
                 }
             }
+            MouseInput::Copy(text) => return Ok(copy_marked(text)),
             MouseInput::Handled => {}
             MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
         }

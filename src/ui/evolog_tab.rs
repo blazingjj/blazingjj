@@ -36,6 +36,7 @@ use crate::ui::dialog::evolog_context_menu;
 use crate::ui::panel::EvologShowPanel;
 use crate::ui::panel::LogPanel;
 use crate::ui::panel::MouseInput;
+use crate::ui::panel::copy_marked;
 use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 
@@ -219,8 +220,8 @@ impl Component for EvologTab<'_> {
         Ok(None)
     }
 
-    fn is_waiting(&self) -> bool {
-        self.patch_panel.is_waiting()
+    fn needs_periodic_redraw(&self) -> bool {
+        self.patch_panel.needs_periodic_redraw()
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
@@ -278,6 +279,7 @@ impl Component for EvologTab<'_> {
                     return Ok(self.context_menu(Some(mouse.position())).into());
                 }
             }
+            MouseInput::Copy(text) => return Ok(copy_marked(text)),
             MouseInput::Handled => {}
             MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
         }

@@ -121,9 +121,10 @@ pub trait Component {
         Ok(None)
     }
 
-    /// Whether the component is still waiting for a task result it wants.
-    /// While it is, the main loop keeps calling [Self::update].
-    fn is_waiting(&self) -> bool {
+    /// Whether what the component shows changes without anything
+    /// happening. While it does, the main loop draws on a timer rather
+    /// than only on an event.
+    fn needs_periodic_redraw(&self) -> bool {
         false
     }
 

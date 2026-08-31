@@ -35,6 +35,7 @@ use crate::commander::ids::OperationId;
 use crate::commander::new_commander;
 use crate::env::get_env;
 use crate::event::AppEvent;
+use crate::event::Clicks;
 use crate::event::EventSource;
 use crate::event::Mouse;
 use crate::keybinds::GlobalEvent;
@@ -119,6 +120,9 @@ pub struct App<'a> {
 
     // event handling
     running: Arc<AtomicBool>,
+    /// Counts the clicks of the mouse events on their way to the
+    /// components
+    clicks: Clicks,
     event_source: EventSource,
     background_tasks: BackgroundTasks,
 }
@@ -153,6 +157,7 @@ impl<'a> App<'a> {
             pending_interactive: None,
 
             running,
+            clicks: Clicks::default(),
             event_source,
             background_tasks,
         })
@@ -545,7 +550,7 @@ impl<'a> App<'a> {
     /// Whether something on screen counts up on its own, so that the main
     /// loop has to come back on a timer rather than only on an event.
     pub fn needs_periodic_redraw(&mut self) -> bool {
-        self.popup.is_some() || self.get_current_tab().is_waiting()
+        self.popup.is_some() || self.get_current_tab().needs_periodic_redraw()
     }
 
     /// Hand the output of a finished task to whoever asked for it
@@ -630,8 +635,8 @@ impl<'a> App<'a> {
         trace!("Processing user input");
 
         if let TermEvent::Mouse(mouse) = event {
-            let position = Position::new(mouse.column, mouse.row);
-            return self.input_mouse(Mouse::new(mouse.kind, position));
+            let mouse = self.clicks.count(mouse);
+            return self.input_mouse(mouse);
         }
 
         match event {
