@@ -38,6 +38,10 @@ impl OutputKey for EvologShowKey {
         }
     }
 
+    fn format(&self) -> &DiffFormat {
+        &self.format
+    }
+
     /// An entry records a version the change has had, which no later
     /// rewrite alters, so the only output that stands in for it is the
     /// same entry rendered in another format.

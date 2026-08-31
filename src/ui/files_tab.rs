@@ -92,6 +92,10 @@ impl OutputKey for FileDiffKey {
         Self { head, file, format }
     }
 
+    fn format(&self) -> &DiffFormat {
+        &self.format
+    }
+
     /// A change that has been rewritten still shows the diff it had,
     /// since what the panel shows of it is the file the user selected.
     fn identity(&self) -> Option<(ChangeId, File)> {

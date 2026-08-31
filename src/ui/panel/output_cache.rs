@@ -39,6 +39,9 @@ pub trait OutputKey: Clone + Eq + Hash + Debug + Send + 'static {
 
     fn new(subject: Self::Subject, format: DiffFormat) -> Self;
 
+    /// The format the output is rendered in.
+    fn format(&self) -> &DiffFormat;
+
     /// What this output may stand in for, if anything. A divergent change
     /// has nothing: its change id names more than one commit, and the
     /// output of the wrong one is not worth showing.
