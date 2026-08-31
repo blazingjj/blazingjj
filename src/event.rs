@@ -3,6 +3,8 @@
 //! for file system notifications in case somebody used jj on this
 //! repository.
 
+mod mouse;
+
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -11,6 +13,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+pub use mouse::Mouse;
 use ratatui::crossterm;
 use tracing::error;
 use tracing::trace;

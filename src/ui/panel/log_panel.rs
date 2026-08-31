@@ -4,7 +4,6 @@ use std::collections::HashSet;
 
 use ansi_to_tui::IntoText;
 use anyhow::Result;
-use ratatui::crossterm::event::MouseEvent;
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -18,6 +17,7 @@ use crate::commander::log::Head;
 use crate::commander::log::LogOutput;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::event::Mouse;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::utils::error_text;
@@ -342,7 +342,7 @@ impl Component for LogPanel<'_> {
 }
 
 impl PanelMouseInput for LogPanel<'_> {
-    fn input_mouse(&mut self, mouse: MouseEvent) -> MouseInput {
+    fn input_mouse(&mut self, mouse: Mouse) -> MouseInput {
         self.list_pane.input_mouse(mouse)
     }
 }

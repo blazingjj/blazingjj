@@ -18,6 +18,7 @@ use ratatui::widgets::ScrollbarOrientation;
 use ratatui::widgets::ScrollbarState;
 use ratatui::widgets::Table;
 
+use crate::event::Mouse;
 use crate::keybinds::HelpSection;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
@@ -346,17 +347,20 @@ impl Component for HelpPopup {
                 self.do_scroll(delta);
                 Ok(ComponentInputResult::Handled)
             }
-            Event::Mouse(mouse) => match mouse.kind {
-                MouseEventKind::ScrollDown => {
-                    self.do_scroll(3);
-                    Ok(ComponentInputResult::Handled)
-                }
-                MouseEventKind::ScrollUp => {
-                    self.do_scroll(-3);
-                    Ok(ComponentInputResult::Handled)
-                }
-                _ => Ok(ComponentInputResult::NotHandled),
-            },
+            _ => Ok(ComponentInputResult::NotHandled),
+        }
+    }
+
+    fn input_mouse(&mut self, mouse: Mouse) -> anyhow::Result<ComponentInputResult> {
+        match mouse.kind() {
+            MouseEventKind::ScrollDown => {
+                self.do_scroll(3);
+                Ok(ComponentInputResult::Handled)
+            }
+            MouseEventKind::ScrollUp => {
+                self.do_scroll(-3);
+                Ok(ComponentInputResult::Handled)
+            }
             _ => Ok(ComponentInputResult::NotHandled),
         }
     }
@@ -365,8 +369,7 @@ impl Component for HelpPopup {
 #[cfg(test)]
 mod tests {
     use ratatui::crossterm::event::KeyCode;
-    use ratatui::crossterm::event::KeyModifiers;
-    use ratatui::crossterm::event::MouseEvent;
+    use ratatui::layout::Position;
 
     use super::*;
 
@@ -383,13 +386,8 @@ mod tests {
         vec![("k".repeat(key_width), "d".repeat(description_width)); items]
     }
 
-    fn wheel(kind: MouseEventKind) -> Event {
-        Event::Mouse(MouseEvent {
-            kind,
-            column: 0,
-            row: 0,
-            modifiers: KeyModifiers::empty(),
-        })
+    fn wheel(kind: MouseEventKind) -> Mouse {
+        Mouse::new(kind, Position::ORIGIN)
     }
 
     #[test]
@@ -508,12 +506,12 @@ mod tests {
         popup.max_scroll = 10;
 
         popup
-            .input(wheel(MouseEventKind::ScrollDown))
+            .input_mouse(wheel(MouseEventKind::ScrollDown))
             .expect("scrolling down should be handled");
         assert_eq!(popup.scroll, 3);
 
         popup
-            .input(wheel(MouseEventKind::ScrollUp))
+            .input_mouse(wheel(MouseEventKind::ScrollUp))
             .expect("scrolling up should be handled");
         assert_eq!(popup.scroll, 0);
     }

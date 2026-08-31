@@ -22,6 +22,7 @@ use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::event::Mouse;
 use crate::keybinds::BookmarksTabEvent;
 use crate::keybinds::BookmarksTabKeybinds;
 use crate::keybinds::DetailsPanelEvent;
@@ -579,39 +580,38 @@ impl Component for BookmarksTab {
             };
         }
 
-        if let Event::Mouse(mouse) = event {
-            if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
-                return Ok(ComponentInputResult::Handled);
-            }
-            match route_mouse(
-                mouse,
-                &mut [&mut self.bookmarks_pane, &mut self.bookmark_panel],
-            ) {
-                MouseInput::Scroll(delta) => self.scroll_bookmarks(delta),
-                MouseInput::Select(index) => {
-                    let bookmarks = self.bookmarks_output.as_deref().unwrap_or_default();
-                    if let Some(bookmark) = bookmarks.get(index).cloned() {
-                        self.bookmark = Some(bookmark);
-                        self.show_bookmark();
-                    }
-                }
-                // The bookmarks that cannot be parsed are listed as they
-                // are, and name none for a menu to act on.
-                MouseInput::Context(index) => {
-                    let bookmarks = self.bookmarks_output.as_deref().unwrap_or_default();
-                    if let Some(bookmark) = bookmarks.get(index).cloned() {
-                        self.bookmark = Some(bookmark);
-                        self.show_bookmark();
-                        let anchor = Position::new(mouse.column, mouse.row);
-                        return Ok(self.context_menu(Some(anchor)).into());
-                    }
-                }
-                MouseInput::Handled => {}
-                MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
-            }
+        Ok(ComponentInputResult::Handled)
+    }
+
+    fn input_mouse(&mut self, mouse: Mouse) -> Result<ComponentInputResult> {
+        if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
             return Ok(ComponentInputResult::Handled);
         }
-
+        match route_mouse(
+            mouse,
+            &mut [&mut self.bookmarks_pane, &mut self.bookmark_panel],
+        ) {
+            MouseInput::Scroll(delta) => self.scroll_bookmarks(delta),
+            MouseInput::Select(index) => {
+                let bookmarks = self.bookmarks_output.as_deref().unwrap_or_default();
+                if let Some(bookmark) = bookmarks.get(index).cloned() {
+                    self.bookmark = Some(bookmark);
+                    self.show_bookmark();
+                }
+            }
+            // The bookmarks that cannot be parsed are listed as they
+            // are, and name none for a menu to act on.
+            MouseInput::Context(index) => {
+                let bookmarks = self.bookmarks_output.as_deref().unwrap_or_default();
+                if let Some(bookmark) = bookmarks.get(index).cloned() {
+                    self.bookmark = Some(bookmark);
+                    self.show_bookmark();
+                    return Ok(self.context_menu(Some(mouse.position())).into());
+                }
+            }
+            MouseInput::Handled => {}
+            MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
+        }
         Ok(ComponentInputResult::Handled)
     }
 }

@@ -17,6 +17,7 @@ use crate::app::command::Command;
 use crate::background_tasks::TaskResult;
 use crate::commander::JjCommand;
 use crate::commander::log::Head;
+use crate::event::Mouse;
 use crate::keybinds::HelpItem;
 
 /// Action commmands from component to application
@@ -129,6 +130,12 @@ pub trait Component {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()>;
 
     fn input(&mut self, _event: Event) -> Result<ComponentInputResult> {
+        Ok(ComponentInputResult::NotHandled)
+    }
+
+    /// Called with what the mouse did, in z-order from the top down,
+    /// until a component takes it.
+    fn input_mouse(&mut self, _mouse: Mouse) -> Result<ComponentInputResult> {
         Ok(ComponentInputResult::NotHandled)
     }
 }

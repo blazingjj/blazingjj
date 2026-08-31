@@ -6,7 +6,6 @@ UI responsive. What it has rendered goes into a
 [cache](super::output_cache), so that coming back to it is instant.
 */
 
-use ratatui::crossterm::event::MouseEvent;
 use ratatui::layout::Rect;
 use ratatui::prelude::Frame;
 use ratatui::style::Color;
@@ -28,6 +27,7 @@ use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskOutput;
 use crate::env::DiffFormat;
 use crate::env::get_env;
+use crate::event::Mouse;
 use crate::keybinds::DetailsPanelEvent;
 use crate::ui::utils::PanelWait;
 use crate::ui::utils::error_text;
@@ -350,7 +350,7 @@ fn stands_in_for<K: OutputKey>(on_screen: Option<&K>, wanted: &K) -> bool {
 }
 
 impl<K: OutputKey> PanelMouseInput for OutputPanel<K> {
-    fn input_mouse(&mut self, mouse: MouseEvent) -> MouseInput {
+    fn input_mouse(&mut self, mouse: Mouse) -> MouseInput {
         self.panel.input_mouse(mouse)
     }
 }

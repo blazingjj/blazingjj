@@ -12,10 +12,8 @@ To make this efficient there are two implementations of DetailContent.
 
 */
 
-use ratatui::crossterm::event::MouseEvent;
 use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Margin;
-use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
 use ratatui::text::Text;
@@ -31,6 +29,7 @@ use tracing::trace;
 
 use super::MouseInput;
 use super::PanelMouseInput;
+use crate::event::Mouse;
 use crate::keybinds::DetailsPanelEvent;
 use crate::ui::utils::LargeString;
 
@@ -272,16 +271,13 @@ impl DetailsPanel {
 }
 
 impl PanelMouseInput for DetailsPanel {
-    fn input_mouse(&mut self, mouse: MouseEvent) -> MouseInput {
-        if !self
-            .panel_rect
-            .contains(Position::new(mouse.column, mouse.row))
-        {
+    fn input_mouse(&mut self, mouse: Mouse) -> MouseInput {
+        if !self.panel_rect.contains(mouse.position()) {
             trace!("mouse {:?} not in rect {:?}", &mouse, &self.panel_rect);
             return MouseInput::NotHandled;
         }
         trace!("mouse {:?} inside  rect {:?}", &mouse, &self.panel_rect);
-        match mouse.kind {
+        match mouse.kind() {
             MouseEventKind::ScrollUp => {
                 self.handle_event(DetailsPanelEvent::ScrollUp);
                 self.handle_event(DetailsPanelEvent::ScrollUp);

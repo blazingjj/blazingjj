@@ -21,6 +21,7 @@ use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::event::Mouse;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::EvologTabEvent;
@@ -253,34 +254,33 @@ impl Component for EvologTab<'_> {
             };
         }
 
-        if let Event::Mouse(mouse) = event {
-            if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
-                return Ok(ComponentInputResult::Handled);
-            }
-            match route_mouse(mouse, &mut [&mut self.entry_panel, &mut self.patch_panel]) {
-                MouseInput::Scroll(delta) => self.scroll_entries(delta),
-                MouseInput::Select(index) => {
-                    if let Some(entry) = self.entry_panel.head_at_log_line(index) {
-                        self.entry_panel.set_head(entry);
-                        self.sync_entry_output();
-                    }
-                }
-                // The graph takes lines of its own, which name no version
-                // for a menu to act on.
-                MouseInput::Context(index) => {
-                    if let Some(entry) = self.entry_panel.head_at_log_line(index) {
-                        self.entry_panel.set_head_in_place(entry);
-                        self.sync_entry_output();
-                        let anchor = Position::new(mouse.column, mouse.row);
-                        return Ok(self.context_menu(Some(anchor)).into());
-                    }
-                }
-                MouseInput::Handled => {}
-                MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
-            }
+        Ok(ComponentInputResult::Handled)
+    }
+
+    fn input_mouse(&mut self, mouse: Mouse) -> Result<ComponentInputResult> {
+        if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
             return Ok(ComponentInputResult::Handled);
         }
-
+        match route_mouse(mouse, &mut [&mut self.entry_panel, &mut self.patch_panel]) {
+            MouseInput::Scroll(delta) => self.scroll_entries(delta),
+            MouseInput::Select(index) => {
+                if let Some(entry) = self.entry_panel.head_at_log_line(index) {
+                    self.entry_panel.set_head(entry);
+                    self.sync_entry_output();
+                }
+            }
+            // The graph takes lines of its own, which name no version
+            // for a menu to act on.
+            MouseInput::Context(index) => {
+                if let Some(entry) = self.entry_panel.head_at_log_line(index) {
+                    self.entry_panel.set_head_in_place(entry);
+                    self.sync_entry_output();
+                    return Ok(self.context_menu(Some(mouse.position())).into());
+                }
+            }
+            MouseInput::Handled => {}
+            MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
+        }
         Ok(ComponentInputResult::Handled)
     }
 }

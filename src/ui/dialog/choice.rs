@@ -26,6 +26,7 @@ use ratatui::widgets::ListState;
 use ratatui::widgets::Paragraph;
 
 use crate::env::JjConfig;
+use crate::event::Mouse;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
@@ -198,8 +199,8 @@ impl Component for ChoicePopup {
     }
 
     fn input(&mut self, event: Event) -> Result<ComponentInputResult> {
-        match event {
-            Event::Key(key) => match self.keybinds.match_event(key) {
+        if let Event::Key(key) = event {
+            match self.keybinds.match_event(key) {
                 PopupEvent::ScrollDown => self.scroll(1),
                 PopupEvent::ScrollUp => self.scroll(-1),
                 PopupEvent::ScrollDownHalf => self.scroll(self.list_area.height as isize / 2),
@@ -213,35 +214,39 @@ impl Component for ChoicePopup {
                 PopupEvent::Accept => return self.confirm(),
                 PopupEvent::Cancel => return Self::close(),
                 PopupEvent::Unbound => {}
-            },
-            // Where the popup sits is only known once it has been drawn,
-            // and events are handled in batches without a draw between
-            // them, so the one that opened us may be in this very batch.
-            Event::Mouse(mouse) if !self.popup_area.is_empty() => {
-                let pos = Position::new(mouse.column, mouse.row);
-                match mouse.kind {
-                    MouseEventKind::ScrollUp => self.scroll(-1),
-                    MouseEventKind::ScrollDown => self.scroll(1),
-                    MouseEventKind::Down(MouseButton::Left) => {
-                        if !self.popup_area.contains(pos) {
-                            return Self::close();
-                        }
-                        if let Some(index) = self.item_at(pos) {
-                            self.list_state.select(Some(index));
-                            return self.confirm();
-                        }
-                    }
-                    // A right click outside still names what it hit, so
-                    // we let it through rather than only taking it as a
-                    // dismissal.
-                    MouseEventKind::Down(MouseButton::Right) => {
-                        if self.popup_area.contains(pos) {
-                            return Self::close();
-                        }
-                        return Ok(ComponentInputResult::Dismissed);
-                    }
-                    _ => {}
+            }
+        }
+        Ok(ComponentInputResult::Handled)
+    }
+
+    fn input_mouse(&mut self, mouse: Mouse) -> Result<ComponentInputResult> {
+        // Where the popup sits is only known once it has been drawn, and
+        // events are handled in batches without a draw between them, so
+        // the one that opened us may be in this very batch.
+        if self.popup_area.is_empty() {
+            return Ok(ComponentInputResult::Handled);
+        }
+
+        let pos = mouse.position();
+        match mouse.kind() {
+            MouseEventKind::ScrollUp => self.scroll(-1),
+            MouseEventKind::ScrollDown => self.scroll(1),
+            MouseEventKind::Down(MouseButton::Left) => {
+                if !self.popup_area.contains(pos) {
+                    return Self::close();
                 }
+                if let Some(index) = self.item_at(pos) {
+                    self.list_state.select(Some(index));
+                    return self.confirm();
+                }
+            }
+            // A right click outside still names what it hit, so we let
+            // it through rather than only taking it as a dismissal.
+            MouseEventKind::Down(MouseButton::Right) => {
+                if self.popup_area.contains(pos) {
+                    return Self::close();
+                }
+                return Ok(ComponentInputResult::Dismissed);
             }
             _ => {}
         }
@@ -254,8 +259,6 @@ pub(super) mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::crossterm::event::KeyCode;
-    use ratatui::crossterm::event::KeyModifiers;
-    use ratatui::crossterm::event::MouseEvent;
 
     use super::*;
     use crate::commander::ids::ChangeId;
@@ -340,12 +343,7 @@ pub(super) mod tests {
         row: u16,
     ) -> ComponentInputResult {
         popup
-            .input(Event::Mouse(MouseEvent {
-                kind,
-                column,
-                row,
-                modifiers: KeyModifiers::NONE,
-            }))
+            .input_mouse(Mouse::new(kind, Position::new(column, row)))
             .expect("the popup handles mouse events")
     }
 
