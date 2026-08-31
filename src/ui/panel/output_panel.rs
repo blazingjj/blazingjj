@@ -252,7 +252,7 @@ impl<K: OutputKey> OutputPanel<K> {
         match event {
             // The next update asks for the output in the new format
             DetailsPanelEvent::ToggleDiffFormat => {
-                self.diff_format = self.diff_format.get_next(get_env().jj_config.diff_tool())
+                self.diff_format = self.diff_format.get_next(&get_env().jj_config)
             }
             event => self.panel.handle_event(event),
         }

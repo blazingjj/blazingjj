@@ -68,8 +68,9 @@ pub struct JjConfig {
 pub struct JjConfigBlazingjj {
     highlight_color: Color,
     describe_mode: DescribeMode,
-    diff_format: Option<DiffFormat>,
+    diff_format: Option<ConfiguredDiffFormat>,
     diff_tool: Option<String>,
+    diff_pager: Option<DiffPager>,
     bookmark_template: Option<String>,
     layout: JJLayout,
     layout_percent: u16,
@@ -90,6 +91,7 @@ impl Default for JjConfigBlazingjj {
             describe_mode: DescribeMode::default(),
             diff_format: None,
             diff_tool: None,
+            diff_pager: None,
             bookmark_template: None,
             layout: JJLayout::default(),
             keybinds: None,
@@ -116,7 +118,7 @@ pub struct JjConfigUi {
 #[derive(Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "kebab-case", default)]
 pub struct JjConfigUiDiff {
-    format: Option<DiffFormat>,
+    format: Option<ConfiguredDiffFormat>,
     tool: Option<toml::Value>,
 }
 
@@ -129,10 +131,27 @@ impl JjConfig {
     pub fn diff_format(&self) -> DiffFormat {
         self.blazingjj
             .diff_format
-            .clone()
-            .or_else(|| self.ui.diff.format.clone())
+            .or(self.ui.diff.format)
+            .and_then(|configured| self.resolve_diff_format(configured))
+            .or_else(|| self.diff_pager().map(DiffFormat::Pager))
             .or_else(|| self.diff_tool().map(DiffFormat::DiffTool))
             .unwrap_or(DiffFormat::ColorWords)
+    }
+
+    /// The format a configured one names, which for the pager format is
+    /// nothing unless a pager is configured to render it.
+    fn resolve_diff_format(&self, configured: ConfiguredDiffFormat) -> Option<DiffFormat> {
+        Some(match configured {
+            ConfiguredDiffFormat::ColorWords => DiffFormat::ColorWords,
+            ConfiguredDiffFormat::Git => DiffFormat::Git,
+            ConfiguredDiffFormat::Summary => DiffFormat::Summary,
+            ConfiguredDiffFormat::Stat => DiffFormat::Stat,
+            ConfiguredDiffFormat::Pager => DiffFormat::Pager(self.diff_pager()?),
+        })
+    }
+
+    pub fn diff_pager(&self) -> Option<DiffPager> {
+        self.blazingjj.diff_pager.clone()
     }
 
     pub fn diff_tool(&self) -> Option<Option<String>> {
@@ -225,12 +244,86 @@ pub enum DescribeMode {
     Jj,
 }
 
-#[derive(Clone, Debug, Deserialize, Default, PartialEq, Eq, Hash)]
+/// A diff format as `blazingjj.diff-format` and `ui.diff.format` name it.
+/// What a name stands for depends on the rest of the configuration, so it
+/// is resolved into a [DiffFormat] by
+/// [diff_format](JjConfig::diff_format).
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-pub enum DiffFormat {
-    #[default]
+enum ConfiguredDiffFormat {
     ColorWords,
     Git,
+    Pager,
+    Summary,
+    Stat,
+}
+
+/// What a pager argument says to have the render width substituted into it
+const WIDTH_PLACEHOLDER: &str = "$width";
+
+/// The command a diff in the [pager](DiffFormat::Pager) format is piped
+/// through, like `delta`. It reads a Git format diff on standard input and
+/// writes the rendering to standard output; `$width` in an argument stands
+/// for the number of columns it has to render into.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
+#[serde(try_from = "ConfiguredDiffPager")]
+pub struct DiffPager {
+    program: String,
+    args: Vec<String>,
+}
+
+/// A pager as it is configured: the program on its own, or a command line
+/// of the program and its arguments.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ConfiguredDiffPager {
+    Program(String),
+    CommandLine(Vec<String>),
+}
+
+impl TryFrom<ConfiguredDiffPager> for DiffPager {
+    type Error = &'static str;
+
+    fn try_from(configured: ConfiguredDiffPager) -> Result<Self, Self::Error> {
+        let (program, args) = match configured {
+            ConfiguredDiffPager::Program(program) => (program, Vec::new()),
+            ConfiguredDiffPager::CommandLine(mut command_line) => {
+                if command_line.is_empty() {
+                    return Err("a diff pager needs a program to run");
+                }
+                let args = command_line.split_off(1);
+                (command_line.remove(0), args)
+            }
+        };
+
+        Ok(Self { program, args })
+    }
+}
+
+impl DiffPager {
+    pub fn program(&self) -> &str {
+        &self.program
+    }
+
+    /// The arguments to run the pager with, rendering into `width`
+    /// columns. An argument asking for a width is left out when there is
+    /// none to give, so the pager falls back to whatever it uses by
+    /// default.
+    pub fn args(&self, width: usize) -> Vec<String> {
+        self.args
+            .iter()
+            .filter(|arg| width > 0 || !arg.contains(WIDTH_PLACEHOLDER))
+            .map(|arg| arg.replace(WIDTH_PLACEHOLDER, &width.to_string()))
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum DiffFormat {
+    ColorWords,
+    Git,
+    /// The Git format, rendered by an external pager
+    Pager(DiffPager),
     DiffTool(Option<String>),
     // Configuration only, [DiffFormat::get_next] does not cycle through these
     Summary,
@@ -238,31 +331,43 @@ pub enum DiffFormat {
 }
 
 impl DiffFormat {
-    pub fn get_next(&self, diff_tool: Option<Option<String>>) -> DiffFormat {
+    /// The format the user gets by toggling this one, which skips whatever
+    /// the configuration has no program for.
+    pub fn get_next(&self, config: &JjConfig) -> DiffFormat {
+        let pager = || config.diff_pager().map(DiffFormat::Pager);
+        let diff_tool = || config.diff_tool().map(DiffFormat::DiffTool);
+
         match self {
-            DiffFormat::ColorWords => DiffFormat::Git,
-            DiffFormat::Git => {
-                if let Some(diff_tool) = diff_tool {
-                    DiffFormat::DiffTool(diff_tool)
-                } else {
-                    DiffFormat::ColorWords
-                }
-            }
-            _ => DiffFormat::ColorWords,
+            DiffFormat::ColorWords => Some(DiffFormat::Git),
+            DiffFormat::Git => pager().or_else(diff_tool),
+            DiffFormat::Pager(_) => diff_tool(),
+            _ => None,
+        }
+        .unwrap_or(DiffFormat::ColorWords)
+    }
+
+    /// The pager the output of this format is piped through, if any.
+    pub fn pager(&self) -> Option<&DiffPager> {
+        match self {
+            DiffFormat::Pager(pager) => Some(pager),
+            _ => None,
         }
     }
 
     /// How wide output in this format is rendered, given the width of the
-    /// panel showing it. The width reaches an external diff tool through the
-    /// COLUMNS environment variable, and `--stat` scales its histogram to
-    /// it; the other formats produce the same output whatever the width,
-    /// and the panel wraps or scrolls it.
+    /// panel showing it. The width reaches an external program through the
+    /// COLUMNS environment variable, a pager through
+    /// [its arguments](DiffPager::args) as well, and `--stat` scales its
+    /// histogram to it; the other formats produce the same output whatever
+    /// the width, and the panel wraps or scrolls it.
     ///
     /// A width too narrow to be passed on makes no difference either, so it
     /// comes out as no width at all rather than as a value of its own.
     pub fn render_width(&self, panel_width: usize) -> usize {
         match self {
-            DiffFormat::DiffTool(_) | DiffFormat::Stat if panel_width >= MIN_SETTABLE_WIDTH => {
+            DiffFormat::DiffTool(_) | DiffFormat::Pager(_) | DiffFormat::Stat
+                if panel_width >= MIN_SETTABLE_WIDTH =>
+            {
                 panel_width
             }
             _ => 0,
@@ -270,13 +375,14 @@ impl DiffFormat {
     }
 }
 
-/// How the format is named in the UI, which for an external tool is the
-/// tool itself, as that is what tells the formats it renders apart.
+/// How the format is named in the UI, which for an external program is
+/// that program, as it is what tells the formats it renders apart.
 impl fmt::Display for DiffFormat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DiffFormat::ColorWords => write!(f, "color-words"),
             DiffFormat::Git => write!(f, "git"),
+            DiffFormat::Pager(pager) => write!(f, "{}", pager.program()),
             DiffFormat::DiffTool(Some(tool)) => write!(f, "{tool}"),
             DiffFormat::DiffTool(None) => write!(f, "diff tool"),
             DiffFormat::Summary => write!(f, "summary"),
@@ -309,11 +415,25 @@ mod tests {
 
     const PANEL_WIDTH: usize = 80;
 
+    /// The configuration `jj config list` would print for the given
+    /// settings
+    fn config(settings: &str) -> JjConfig {
+        toml::from_str(settings).expect("the settings are a valid configuration")
+    }
+
+    /// The pager the given `blazingjj.diff-pager` value configures
+    fn pager(setting: &str) -> DiffPager {
+        config(&format!("blazingjj.diff-pager = {setting}\n"))
+            .diff_pager()
+            .expect("the setting configures a pager")
+    }
+
     #[test]
     fn only_formats_that_scale_are_told_the_panel_width() {
         for format in [
             DiffFormat::DiffTool(Some("difft".to_owned())),
             DiffFormat::DiffTool(None),
+            DiffFormat::Pager(pager(r#""delta""#)),
             DiffFormat::Stat,
         ] {
             assert_eq!(format.render_width(PANEL_WIDTH), PANEL_WIDTH, "{format:?}");
@@ -334,6 +454,91 @@ mod tests {
         );
         assert_eq!(diff_tool.render_width(MIN_SETTABLE_WIDTH - 1), 0);
         assert_eq!(diff_tool.render_width(0), 0);
+    }
+
+    #[test]
+    fn a_pager_is_configured_as_a_program_or_as_a_command_line() {
+        let program = pager(r#""delta""#);
+        assert_eq!(program.program(), "delta");
+        assert!(program.args(PANEL_WIDTH).is_empty());
+
+        let command_line = pager(r#"["delta", "--line-numbers"]"#);
+        assert_eq!(command_line.program(), "delta");
+        assert_eq!(command_line.args(PANEL_WIDTH), ["--line-numbers"]);
+
+        // A command line without a program to run is a config error, as a
+        // bad value is for every other setting.
+        let error = toml::from_str::<JjConfig>("blazingjj.diff-pager = []\n")
+            .expect_err("a pager without a program is an error");
+        assert!(
+            error.to_string().contains("a diff pager needs a program"),
+            "the error does not say what is wrong: {error}"
+        );
+    }
+
+    #[test]
+    fn an_argument_asking_for_the_render_width_is_given_it() {
+        let pager = pager(r#"["delta", "--width=$width", "--line-numbers"]"#);
+
+        assert_eq!(
+            pager.args(PANEL_WIDTH),
+            ["--width=80", "--line-numbers"],
+            "the width goes where it is asked for"
+        );
+        assert_eq!(
+            pager.args(0),
+            ["--line-numbers"],
+            "an argument asking for a width there is none of is left out"
+        );
+    }
+
+    #[test]
+    fn a_configured_pager_is_the_format_until_another_one_is_configured() {
+        assert_eq!(
+            config(r#"blazingjj.diff-pager = "delta""#).diff_format(),
+            DiffFormat::Pager(pager(r#""delta""#))
+        );
+        assert_eq!(
+            config("blazingjj.diff-pager = \"delta\"\nblazingjj.diff-format = \"git\"\n")
+                .diff_format(),
+            DiffFormat::Git
+        );
+    }
+
+    #[test]
+    fn the_pager_format_falls_back_to_the_default_without_a_pager_to_run() {
+        assert_eq!(
+            config("blazingjj.diff-format = \"pager\"\nblazingjj.diff-pager = \"delta\"\n")
+                .diff_format(),
+            DiffFormat::Pager(pager(r#""delta""#))
+        );
+        assert_eq!(
+            config("blazingjj.diff-format = \"pager\"\n").diff_format(),
+            DiffFormat::ColorWords
+        );
+    }
+
+    #[test]
+    fn toggling_the_format_leaves_out_what_is_not_configured() {
+        let delta = DiffFormat::Pager(pager(r#""delta""#));
+        let difft = DiffFormat::DiffTool(Some("difft".to_owned()));
+
+        let plain = config("");
+        assert_eq!(DiffFormat::ColorWords.get_next(&plain), DiffFormat::Git);
+        assert_eq!(DiffFormat::Git.get_next(&plain), DiffFormat::ColorWords);
+
+        let with_pager = config(r#"blazingjj.diff-pager = "delta""#);
+        assert_eq!(DiffFormat::Git.get_next(&with_pager), delta);
+        assert_eq!(delta.get_next(&with_pager), DiffFormat::ColorWords);
+
+        let with_both =
+            config("blazingjj.diff-pager = \"delta\"\nblazingjj.diff-tool = \"difft\"\n");
+        assert_eq!(DiffFormat::Git.get_next(&with_both), delta);
+        assert_eq!(delta.get_next(&with_both), difft);
+        assert_eq!(difft.get_next(&with_both), DiffFormat::ColorWords);
+
+        let with_tool = config(r#"blazingjj.diff-tool = "difft""#);
+        assert_eq!(DiffFormat::Git.get_next(&with_tool), difft);
     }
 
     #[test]

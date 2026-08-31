@@ -50,6 +50,8 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Yank a version's revision to the system clipboard with `Y`
 - Details panel: toggle between color words and git diff with `w`, wrapping
   with `W`
+  - Render the git diff with a pager like delta by configuring
+    `blazingjj.diff-pager`
 - Mouse: scroll the panels, click to select, drag the divider to resize, right
   click for the context menu
 - Config: Configure blazingjj with your jj config
@@ -71,10 +73,14 @@ To build and install a pre-release version: `cargo install --git https://github.
 You can optionally configure the following options through your jj config:
 
 - `blazingjj.highlight-color`: Changes the highlight color. Can use named colors. Defaults to `#323264`
-- `blazingjj.diff-format`: Change the default diff format. Can be `color-words` or `git`. Defaults to `color_words`
+- `blazingjj.diff-format`: Change the default diff format. Can be `color-words`, `git`, `pager`, `summary` or `stat`. Defaults to `color_words`
   - If `blazingjj.diff-format` is not set but `ui.diff.format` is, the latter will be used
 - `blazingjj.diff-tool`: Specify which diff tool to use by default
   - If `blazingjj.diff-tool` is not set but `ui.diff.tool` is, the latter will be used
+- `blazingjj.diff-pager`: Specify a pager rendering the Git format diff, like [delta](https://github.com/dandavison/delta): `jj config set --user blazingjj.diff-pager '["delta", "--width=$width", "--line-numbers"]'`
+  - The pager reads the diff on standard input and writes its rendering to standard output; it must not page, since blazingjj shows the output itself
+  - `$width` in an argument stands for the columns the details panel has, which a pager that cannot find out for itself needs to be told
+  - Setting it makes `pager` the default format, unless `blazingjj.diff-format` says otherwise, and adds it to what `w` toggles through
 - `blazingjj.bookmark-template`: Change the bookmark name template for generated bookmark names. Defaults to `'push-' ++ change_id.short()`
   - If `blazingjj.bookmark-template` is not set but `templates.git_push_bookmark` is, the latter will be used
 - `blazingjj.describe-mode`: What describing a change puts up. Can be `popup` (default) for the built-in editor, or `jj` to hand the terminal to `jj describe` and your own editor
@@ -115,7 +121,7 @@ See all key mappings for the current tab with `?`.
   - Scroll down/up by one line with `Ctrl+e`/`Ctrl+y`
   - Scroll down/up by a half page with `Ctrl+d`/`Ctrl+u`
   - Scroll down/up by a full page with `Ctrl+f`/`Ctrl+b`
-- Change details panel diff format between color words (default) and Git (and diff tool if set) with `w`
+- Change details panel diff format between color words (default) and Git (and a diff pager and diff tool if set) with `w`
 - Toggle details panel wrapping with `W`
 - Open the context menu for what the tab has selected with `Menu` or a right click
 - Open a command popup to run jj commands using `:` (jj prefix not required, e.g. write `new main` instead of `jj new main`)

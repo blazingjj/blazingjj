@@ -187,10 +187,9 @@ impl Commander {
         let path = current_file.path.as_deref()?;
 
         let fileset = Self::get_file_revset(path);
-        let mut args = vec!["diff", "-r", head.commit_id.as_str(), &fileset];
-        args.append(&mut diff_format.get_args());
+        let args = vec!["diff", "-r", head.commit_id.as_str(), &fileset];
 
-        let mut command = self.jj(args).color();
+        let mut command = self.jj_diff(args, diff_format).color();
         if ignore_working_copy {
             command = command.ignore_working_copy();
         }
@@ -237,6 +236,7 @@ mod tests {
     use crate::commander::cancel::CancelToken;
     use crate::commander::revset::Revset;
     use crate::commander::tests::TestRepo;
+    use crate::commander::tests::pager;
 
     /// Run the diff of a file to completion, the way a task does
     fn run_file_diff(
@@ -530,6 +530,35 @@ mod tests {
                 true
             )?);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn the_pager_format_renders_the_git_diff_of_a_file() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        fs::write(test_repo.directory.path().join("README"), b"AAA")?;
+        let file = File {
+            path: Some("README".to_string()),
+            diff_type: Some(DiffType::Added),
+            line: "A README".to_string(),
+        };
+
+        let head = test_repo.commander.get_current_head()?;
+        let output = run_file_diff(
+            &test_repo.commander,
+            &head,
+            &file,
+            &DiffFormat::Pager(pager(r#"["sed", "s/^/rendered: /"]"#)),
+            false,
+        )?
+        .expect("the file has a path to diff");
+
+        assert!(
+            output.contains("rendered: diff --git a/README b/README"),
+            "the git diff did not go through the pager: {output}"
+        );
 
         Ok(())
     }

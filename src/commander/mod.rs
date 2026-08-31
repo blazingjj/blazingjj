@@ -59,6 +59,7 @@ use version_compare::compare;
 
 use crate::commander::cancel::CancelToken;
 use crate::env::DiffFormat;
+use crate::env::DiffPager;
 use crate::env::Env;
 use crate::env::get_env;
 
@@ -79,10 +80,11 @@ pub const MIN_SETTABLE_WIDTH: usize = 20;
 pub const NO_EDITOR: &str = "blazingjj-no-editor";
 
 impl DiffFormat {
-    pub fn get_args(&self) -> Vec<&str> {
+    fn get_args(&self) -> Vec<&str> {
         match self {
             DiffFormat::ColorWords => vec!["--color-words"],
-            DiffFormat::Git => vec!["--git"],
+            // The pager renders the Git format, so that is what it is fed
+            DiffFormat::Git | DiffFormat::Pager(_) => vec!["--git"],
             DiffFormat::Summary => vec!["--summary"],
             DiffFormat::Stat => vec!["--stat"],
             DiffFormat::DiffTool(Some(tool)) => vec!["--tool", tool],
@@ -192,8 +194,19 @@ impl Commander {
             quiet: true,
             ignore_working_copy: self.ignore_working_copy,
             stdin: None,
+            pager: None,
+            columns: self.columns,
             env_var,
         }
+    }
+
+    /// Start building a single jj invocation showing a diff in the given
+    /// format, which adds the arguments selecting that format and has the
+    /// output rendered by its pager, if it has one.
+    pub fn jj_diff<'a>(&self, mut args: Vec<&'a str>, diff_format: &'a DiffFormat) -> JjCommand {
+        args.extend(diff_format.get_args());
+
+        self.jj(args).pipe_to(diff_format.pager())
     }
 
     /// Check that the version of jj is recent enough to work with blazingjj
@@ -258,6 +271,10 @@ pub struct JjCommand {
     ignore_working_copy: bool,
     /// Data to feed the command on standard input, if any.
     stdin: Option<String>,
+    /// The pager the output of the command is piped through, if any.
+    pager: Option<DiffPager>,
+    /// The width the output is rendered at, as far as it can be set.
+    columns: Option<usize>,
     /// Environment variables for this command.
     env_var: Vec<(String, String)>,
 }
@@ -311,6 +328,13 @@ impl JjCommand {
         self
     }
 
+    /// Pipe the output of the command through `pager`, and take that as the
+    /// output.
+    pub fn pipe_to(mut self, pager: Option<&DiffPager>) -> Self {
+        self.pager = pager.cloned();
+        self
+    }
+
     /// Execute the command and return its standard output.
     pub fn run(self) -> Result<String, CommandError> {
         let stdout = self.execute(Stdio::piped(), &CancelToken::new())?;
@@ -359,7 +383,20 @@ impl JjCommand {
             self.quiet,
         ));
 
-        run_child(command, input, stdout, cancel)
+        let Some(pager) = self.pager.take() else {
+            return run_child(command, input, stdout, cancel);
+        };
+
+        // The pager is what produces the output, so what jj writes is
+        // captured whatever the caller asked for.
+        let piped = run_child(command, input, Stdio::piped(), cancel)?;
+
+        run_child(
+            self.build_pager_command(&pager),
+            Some(piped),
+            stdout,
+            cancel,
+        )
     }
 
     /// Construct a Command ready for execution. The caller adds the output
@@ -372,6 +409,15 @@ impl JjCommand {
             command.arg("--ignore-working-copy");
         }
 
+        command.current_dir(&self.root);
+        command.envs(self.env_var.iter().cloned());
+        command
+    }
+
+    /// Construct a Command running the pager the output goes through
+    fn build_pager_command(&self, pager: &DiffPager) -> Command {
+        let mut command = Command::new(pager.program());
+        command.args(pager.args(self.columns.unwrap_or(0)));
         command.current_dir(&self.root);
         command.envs(self.env_var.iter().cloned());
         command
@@ -665,6 +711,51 @@ pub mod tests {
             .jj(["log", "-r", "@", "--no-graph", "-T", "description"])
             .run()?;
         assert_eq!(description.remove_end_line(), "message from stdin");
+
+        Ok(())
+    }
+
+    /// The pager the given `blazingjj.diff-pager` value configures
+    pub fn pager(setting: &str) -> DiffPager {
+        toml::from_str::<JjConfig>(&format!("blazingjj.diff-pager = {setting}\n"))
+            .expect("the setting is a valid configuration")
+            .diff_pager()
+            .expect("the setting configures a pager")
+    }
+
+    #[test]
+    fn a_pager_renders_what_the_command_wrote() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        let output = test_repo
+            .commander
+            .jj(["status"])
+            .pipe_to(Some(&pager(r#"["sed", "s/^/rendered: /"]"#)))
+            .run()?;
+
+        assert!(
+            output.lines().all(|line| line.starts_with("rendered: ")),
+            "the output did not go through the pager: {output}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_pager_that_fails_fails_the_command() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        let error = test_repo
+            .commander
+            .jj(["status"])
+            .pipe_to(Some(&pager(r#"["sed", "-e", "s/"]"#)))
+            .run()
+            .expect_err("an incomplete script is an error");
+
+        let CommandError::Status(stderr, _) = error else {
+            panic!("expected a non-zero exit status");
+        };
+        assert!(stderr.contains("sed"), "stderr is not reported: {stderr}");
 
         Ok(())
     }

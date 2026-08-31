@@ -268,7 +268,7 @@ impl Commander {
         diff_format: &DiffFormat,
         ignore_working_copy: bool,
     ) -> JjCommand {
-        let mut args = vec![
+        let args = vec![
             "evolog",
             "-r",
             commit_id.as_str(),
@@ -277,9 +277,8 @@ impl Commander {
             "--no-graph",
             "--patch",
         ];
-        args.append(&mut diff_format.get_args());
 
-        let mut command = self.jj(args);
+        let mut command = self.jj_diff(args, diff_format);
         if ignore_working_copy {
             command = command.ignore_working_copy();
         }
@@ -295,10 +294,9 @@ impl Commander {
         diff_format: &DiffFormat,
         ignore_working_copy: bool,
     ) -> JjCommand {
-        let mut args = vec!["show", commit_id.as_str()];
-        args.append(&mut diff_format.get_args());
+        let args = vec!["show", commit_id.as_str()];
 
-        let mut command = self.jj(args);
+        let mut command = self.jj_diff(args, diff_format);
         if ignore_working_copy {
             command = command.ignore_working_copy();
         }
