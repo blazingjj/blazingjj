@@ -41,6 +41,7 @@ pub enum LogTabEvent {
     CopyChangeId,
     CopyRev,
 
+    PushMenu,
     Push(PushScope),
     Fetch { all_remotes: bool },
 
@@ -84,10 +85,7 @@ impl Default for LogTabKeybinds {
             LogTabEvent::OpenEvolog => "v",
             LogTabEvent::CopyChangeId => "y",
             LogTabEvent::CopyRev => "shift+y",
-            LogTabEvent::Push(PushScope::Selected) => "p",
-            LogTabEvent::Push(PushScope::SelectedWithNew) => "ctrl+p",
-            LogTabEvent::Push(PushScope::Tracked) => "shift+p",
-            LogTabEvent::Push(PushScope::All) => "ctrl+shift+p",
+            LogTabEvent::PushMenu => "p",
             LogTabEvent::Fetch { all_remotes: false } => "f",
             LogTabEvent::Fetch { all_remotes: true } => "shift+f",
         );
@@ -141,6 +139,7 @@ impl LogTabKeybinds {
             LogTabEvent::CopyChangeId => config.copy_change_id,
             LogTabEvent::CopyRev => config.copy_rev,
             LogTabEvent::Rebase => config.rebase,
+            LogTabEvent::PushMenu => config.push_menu,
             LogTabEvent::Push(PushScope::Selected) => config.push,
             LogTabEvent::Push(PushScope::SelectedWithNew) => config.push_new,
             LogTabEvent::Push(PushScope::Tracked) => config.push_all,
@@ -174,6 +173,7 @@ impl LogTabKeybinds {
             LogTabEvent::SetBookmark => "set-bookmark", Some(Section::BookmarksAndRemotes), "set bookmark",
             LogTabEvent::Fetch { all_remotes: false } => "fetch", Some(Section::BookmarksAndRemotes), "git fetch",
             LogTabEvent::Fetch { all_remotes: true } => "fetch-all", Some(Section::BookmarksAndRemotes), "git fetch all remotes",
+            LogTabEvent::PushMenu => "push-menu", Some(Section::BookmarksAndRemotes), "open the push menu",
             LogTabEvent::Push(PushScope::Selected) => "push", Some(Section::BookmarksAndRemotes), "git push",
             LogTabEvent::Push(PushScope::SelectedWithNew) => "push-new", Some(Section::BookmarksAndRemotes), "git push, tracking new bookmarks",
             LogTabEvent::Push(PushScope::Tracked) => "push-all", Some(Section::BookmarksAndRemotes), "git push all tracked bookmarks",

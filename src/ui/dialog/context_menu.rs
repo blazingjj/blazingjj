@@ -20,6 +20,7 @@ use crate::env::JjConfig;
 use crate::ui::AppAction;
 use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::ChoicePopup;
+use crate::ui::dialog::push_menu;
 
 /// The context menu for `selected`, put where it was opened. Squashing
 /// the change the working copy is on goes to its parent, and rebasing it
@@ -77,6 +78,10 @@ pub fn log_context_menu(
         items.push((Line::raw("Rebase @ to this"), command::rebase(selected)?));
     }
     items.extend([
+        (
+            Line::raw("Push"),
+            AppAction::SetPopup(Box::new(push_menu(config.clone(), anchor, selected))),
+        ),
         (
             Line::raw("Set bookmark"),
             command::set_bookmark(config.clone(), selected),

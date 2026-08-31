@@ -35,15 +35,12 @@ fn parent_line(parent: &Parent, dimmed: bool) -> Line<'static> {
 /// listed underneath so that the merge is shown in full, but cannot be
 /// picked.
 pub fn parent_select(config: JjConfig, parents: &[Parent], out_of_view: &[Parent]) -> ChoicePopup {
-    let items = parents
-        .iter()
-        .map(|parent| {
-            (
-                parent_line(parent, false),
-                AppAction::ViewLog(parent.head.clone()),
-            )
-        })
-        .collect();
+    let items = parents.iter().map(|parent| {
+        (
+            parent_line(parent, false),
+            AppAction::ViewLog(parent.head.clone()),
+        )
+    });
     let popup = ChoicePopup::new(config, None, "Select parent", items);
 
     if out_of_view.is_empty() {

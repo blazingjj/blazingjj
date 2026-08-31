@@ -32,6 +32,7 @@ use crate::commander::new_commander;
 use crate::commander::operation::Operation;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
+use crate::keybinds::PushScope;
 use crate::ui::AppAction;
 use crate::ui::dialog::BookmarkNameMode;
 use crate::ui::dialog::BookmarkNamePopup;
@@ -439,6 +440,36 @@ pub fn rebase(destination: &Head) -> Result<AppAction> {
         new_commander().get_current_head()?,
         destination.clone(),
     ))))
+}
+
+/// Pushing what `scope` says of `selected`. Pushing the new bookmarks of
+/// a change means naming them, as jj only tracks a bookmark the remote
+/// does not have yet when it is asked for by name.
+pub fn push(selected: &Head, scope: PushScope) -> AppAction {
+    let revset = Revset::from(&selected.commit_id);
+    let target = match scope {
+        // Both of these send the bookmarks the change has, so neither
+        // has anything to send when it has none.
+        PushScope::Selected | PushScope::SelectedWithNew => {
+            let bookmarks = match new_commander().get_local_bookmarks(&revset) {
+                Ok(bookmarks) => bookmarks,
+                Err(err) => return refused("Push", err),
+            };
+            if bookmarks.is_empty() {
+                return message("Push", "This change has no bookmark to push");
+            }
+
+            if scope == PushScope::Selected {
+                PushTarget::Revision(revset)
+            } else {
+                PushTarget::Bookmarks(bookmarks.into_iter().map(|it| it.name).collect())
+            }
+        }
+        PushScope::Tracked => PushTarget::Tracked,
+        PushScope::All => PushTarget::All,
+    };
+
+    AppAction::Run(Command::Push(target))
 }
 
 /// Asking to put a bookmark on `head`.

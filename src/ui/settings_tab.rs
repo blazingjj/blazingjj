@@ -129,7 +129,7 @@ impl SettingsTab {
             ))));
         };
 
-        let items = choices
+        let items: Vec<_> = choices
             .iter()
             .filter_map(|choice| {
                 let value = setting.value_of(choice).ok()?;
