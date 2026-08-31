@@ -61,6 +61,9 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
     an editor
   - Change the selected setting with `Enter`, take it back out of your config
     with `x`
+  - Rebind any key from the `blazingjj.keybinds` row: `Enter` on an action
+    takes the next key you press for it, `a` takes one more key beside the
+    keys it has, `X` leaves it bound to nothing
 - Config: Configure blazingjj with your jj config
 - Command box: Run jj commands directly in blazingjj with `:`
 - Help: See all key mappings with `?`
@@ -102,6 +105,9 @@ Example: `jj config set --user blazingjj.diff-format "color-words"` (for storing
 The settings tab (`0`) does the same from within blazingjj. It shows what your
 configuration says now, whichever file it comes from, and writes to the user
 config file; a setting that comes from anywhere else has to be changed there.
+Its `blazingjj.keybinds` row opens the keybindings, which are changed there one
+action at a time; [docs/keybindings.md](docs/keybindings.md) says what they are
+and how to write them out yourself.
 
 ## Usage
 

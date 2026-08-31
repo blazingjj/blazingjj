@@ -14,16 +14,18 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use tracing::instrument;
 
+use crate::app::TabId;
 use crate::app::command::Command;
 use crate::commander::config::config_value;
 use crate::commander::new_commander;
 use crate::env::get_env;
 use crate::event::Mouse;
-use crate::keybinds::HelpItem;
+use crate::keybinds::Binding;
 use crate::keybinds::SettingsTabEvent;
 use crate::keybinds::SettingsTabKeybinds;
 use crate::settings::SETTINGS;
 use crate::settings::Setting;
+use crate::settings::SettingKind;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -115,8 +117,11 @@ impl SettingsTab {
     /// it takes, when it only takes one of a few, or what it is to be.
     fn change_selected(&self) -> Option<AppAction> {
         let setting = self.selected()?;
-        let values = self.values.as_ref().ok()?;
+        if matches!(setting.kind, SettingKind::Keybindings) {
+            return Some(AppAction::ViewTab(TabId::Keybindings));
+        }
 
+        let values = self.values.as_ref().ok()?;
         let Some(choices) = setting.choices() else {
             return Some(AppAction::SetPopup(Box::new(SettingValuePopup::new(
                 setting,
@@ -161,6 +166,11 @@ impl SettingsTab {
     /// whatever the rest of the configuration says.
     fn unset_selected(&self) -> Option<AppAction> {
         let setting = self.selected()?;
+        // Taking the keybindings out would be taking out every binding
+        // at once, which is the keybindings tab's to do one at a time.
+        if matches!(setting.kind, SettingKind::Keybindings) {
+            return None;
+        }
 
         self.values
             .as_ref()
@@ -293,6 +303,7 @@ impl Tab for SettingsTab {
 
     fn config_changed(&mut self) {
         self.stale = true;
+        self.keybinds = SettingsTabKeybinds::new();
     }
 
     fn is_stale(&self) -> bool {
@@ -313,13 +324,13 @@ impl Tab for SettingsTab {
         ))
     }
 
-    fn make_main_panel_help(&self) -> Vec<HelpItem> {
-        self.keybinds.make_help()
+    fn main_panel_bindings(&self) -> Vec<Binding> {
+        self.keybinds.bindings()
     }
 
     /// The details panel only says what the selected option is, so there
     /// is nothing to do to it.
-    fn make_details_panel_help(&self) -> Vec<HelpItem> {
+    fn details_panel_bindings(&self) -> Vec<Binding> {
         Vec::new()
     }
 }

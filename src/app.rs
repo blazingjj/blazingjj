@@ -56,6 +56,7 @@ use crate::ui::dialog::CommandPopup;
 use crate::ui::dialog::HelpPopup;
 use crate::ui::evolog_tab::EvologTab;
 use crate::ui::files_tab::FilesTab;
+use crate::ui::keybindings_tab::KeybindingsTab;
 use crate::ui::log_tab::LogTab;
 use crate::ui::settings_tab::SettingsTab;
 
@@ -66,6 +67,9 @@ pub enum TabId {
     Bookmarks,
     Evolog,
     Settings,
+    /// The keybindings, which the settings tab opens and which has no
+    /// place of its own in the tab bar.
+    Keybindings,
 }
 
 impl fmt::Display for TabId {
@@ -76,11 +80,23 @@ impl fmt::Display for TabId {
             TabId::Bookmarks => write!(f, "Bookmarks"),
             TabId::Evolog => write!(f, "Evolog"),
             TabId::Settings => write!(f, "Settings"),
+            TabId::Keybindings => write!(f, "Keybindings"),
         }
     }
 }
 
 impl TabId {
+    /// Every tab there is, the transient one included
+    pub const ALL: [Self; 6] = [
+        TabId::Log,
+        TabId::Files,
+        TabId::Bookmarks,
+        TabId::Evolog,
+        TabId::Settings,
+        TabId::Keybindings,
+    ];
+
+    /// The tabs the tab bar lists, in the order it lists them
     pub const VALUES: [Self; 5] = [
         TabId::Log,
         TabId::Files,
@@ -89,12 +105,21 @@ impl TabId {
         TabId::Settings,
     ];
 
+    /// Where in the tab bar the tab shows, which for a tab that has no
+    /// place of its own is the place of the tab that opens it.
+    pub fn in_tab_bar(self) -> Self {
+        match self {
+            TabId::Keybindings => TabId::Settings,
+            tab => tab,
+        }
+    }
+
     /// The number the tab is picked by, which is where it sits in the
-    /// tab bar except for the settings tab, which comes first by its
-    /// number and last in the bar.
+    /// tab bar except for the settings tab and the one it opens: those
+    /// come first by their number and last in the bar.
     pub fn number(self) -> usize {
         match self {
-            TabId::Settings => 0,
+            TabId::Settings | TabId::Keybindings => 0,
             TabId::Log => 1,
             TabId::Files => 2,
             TabId::Bookmarks => 3,
@@ -143,6 +168,7 @@ pub struct App<'a> {
     pub bookmarks: BookmarksTab,
     pub evolog: EvologTab<'a>,
     pub settings: SettingsTab,
+    pub keybindings: KeybindingsTab,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     /// Where the tabs overview was last drawn, for mouse input.
@@ -174,10 +200,6 @@ impl<'a> App<'a> {
         let running = Arc::from(AtomicBool::new(true));
         let event_source = EventSource::new(running.clone());
         let background_tasks = BackgroundTasks::new(event_source.clone_event_sender());
-        let mut global_keybinds = GlobalKeybinds::default();
-        if let Some(keybinds_config) = get_env().jj_config.keybinds() {
-            global_keybinds.extend_from_config(keybinds_config);
-        }
         let current_head = new_commander().get_current_head()?;
 
         Ok(App {
@@ -187,13 +209,14 @@ impl<'a> App<'a> {
             bookmarks: BookmarksTab::new(background_tasks.clone()),
             evolog: EvologTab::new(&current_head, background_tasks.clone()),
             settings: SettingsTab::new(),
+            keybindings: KeybindingsTab::new(),
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
             },
             tabs_rect: Rect::ZERO,
             tab_hits: Vec::new(),
-            global_keybinds,
+            global_keybinds: GlobalKeybinds::new(),
             popup_keybinds: PopupKeybinds::dialog(),
 
             repo_watch: RepoWatch::new(get_env().jj_config.poll_interval(), Instant::now()),
@@ -213,7 +236,7 @@ impl<'a> App<'a> {
     pub fn set_next_tab_with_offset(&mut self, offset: i64) {
         let current_index = TabId::VALUES
             .iter()
-            .position(|&t| t == self.current_tab)
+            .position(|&t| t == self.current_tab.in_tab_bar())
             .unwrap();
         let new_index = (current_index as i64 + TabId::VALUES.len() as i64 + offset) as usize
             % TabId::VALUES.len();
@@ -222,13 +245,13 @@ impl<'a> App<'a> {
     }
 
     fn open_help(&mut self) -> Result<()> {
-        let global_help = self.global_keybinds.make_help();
+        let global_bindings = self.global_keybinds.bindings();
         let tab = self.get_current_tab();
         let sections = HelpSection::gather(
-            global_help
+            global_bindings
                 .into_iter()
-                .chain(tab.make_main_panel_help())
-                .chain(tab.make_details_panel_help()),
+                .chain(tab.main_panel_bindings())
+                .chain(tab.details_panel_bindings()),
         );
 
         let (side, main) = sections
@@ -322,9 +345,19 @@ impl<'a> App<'a> {
         }
     }
 
+    /// Take up the configuration as it now reads, which every tab and
+    /// the app itself hold what they go by of.
+    fn config_changed(&mut self) {
+        self.global_keybinds = GlobalKeybinds::new();
+        self.popup_keybinds = PopupKeybinds::dialog();
+        for tab in TabId::ALL {
+            self.get_tab(tab).config_changed();
+        }
+    }
+
     /// Every tab is behind on what it shows, whoever moved the repo.
     fn mark_all_stale(&mut self) {
-        for tab in TabId::VALUES {
+        for tab in TabId::ALL {
             self.get_tab(tab).mark_stale();
         }
     }
@@ -336,6 +369,7 @@ impl<'a> App<'a> {
             TabId::Bookmarks => &mut self.bookmarks,
             TabId::Evolog => &mut self.evolog,
             TabId::Settings => &mut self.settings,
+            TabId::Keybindings => &mut self.keybindings,
         }
     }
 
@@ -368,6 +402,9 @@ impl<'a> App<'a> {
             AppAction::ViewLog(head) => {
                 self.log.set_head(head);
                 self.set_tab(TabId::Log);
+            }
+            AppAction::ViewTab(tab) => {
+                self.set_tab(tab);
             }
             AppAction::ViewBookmark(name) => {
                 self.set_tab(TabId::Bookmarks);
@@ -418,13 +455,11 @@ impl<'a> App<'a> {
 
                 self.repo_watch
                     .set_interval(get_env().jj_config.poll_interval());
-                for tab in TabId::VALUES {
-                    self.get_tab(tab).config_changed();
-                }
                 // The change is ours, so the tabs are caught up with it
                 // rather than left stale for the user to ask: nothing
                 // moves under them that they did not just ask for.
                 self.repo_watch.catching_up();
+                self.config_changed();
                 self.mark_all_stale();
             }
         }
@@ -482,7 +517,7 @@ impl<'a> App<'a> {
                 .select(
                     TabId::VALUES
                         .iter()
-                        .position(|tab| tab == &self.current_tab)
+                        .position(|tab| *tab == self.current_tab.in_tab_bar())
                         .unwrap_or(0),
                 )
                 .divider(symbols::line::VERTICAL);

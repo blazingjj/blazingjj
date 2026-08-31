@@ -2,13 +2,15 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
-use super::HelpItem;
+use super::Binding;
+use super::Context;
 use super::Section;
 use super::Shortcut;
+use super::config::KeybindsConfig;
 use super::config::LogTabKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
 use crate::env::keybinds_config;
-use crate::make_keybinds_help;
+use crate::make_bindings;
 use crate::set_keybinds;
 use crate::update_keybinds;
 
@@ -97,8 +99,13 @@ impl Default for LogTabKeybinds {
 impl LogTabKeybinds {
     /// The bindings as the configuration has them.
     pub fn new() -> Self {
+        Self::from_config(keybinds_config())
+    }
+
+    /// The bindings as `config` has them.
+    pub(super) fn from_config(config: Option<&KeybindsConfig>) -> Self {
         let mut keybinds = Self::default();
-        if let Some(config) = keybinds_config().and_then(|config| config.log_tab.as_ref()) {
+        if let Some(config) = config.and_then(|config| config.log_tab.as_ref()) {
             keybinds.extend_from_config(config);
         }
         keybinds
@@ -143,37 +150,37 @@ impl LogTabKeybinds {
         );
     }
 
-    pub fn make_main_panel_help(&self) -> Vec<HelpItem> {
-        make_keybinds_help!(
-            self.keys,
-            LogTabEvent::GotoParent => Section::Navigation, "go to parent commit",
-            LogTabEvent::OpenFiles => Section::Navigation, "see files",
-            LogTabEvent::OpenEvolog => Section::Navigation, "see how the change evolved",
-            LogTabEvent::EditRevset => Section::Navigation, "set revset",
+    pub fn bindings(&self) -> Vec<Binding> {
+        make_bindings!(
+            self.keys, Self::default().keys, Context::LogTab,
+            LogTabEvent::GotoParent => "goto-parent", Some(Section::Navigation), "go to parent commit",
+            LogTabEvent::OpenFiles => "open-files", Some(Section::Navigation), "see files",
+            LogTabEvent::OpenEvolog => "open-evolog", Some(Section::Navigation), "see how the change evolved",
+            LogTabEvent::EditRevset => "edit-revset", Some(Section::Navigation), "set revset",
 
-            LogTabEvent::ToggleHeadMark => Section::Changes, "mark change to act on",
-            LogTabEvent::CreateNew { describe: false } => Section::Changes, "new change",
-            LogTabEvent::CreateNew { describe: true } => Section::Changes, "new with message",
-            LogTabEvent::Describe => Section::Changes, "describe change",
-            LogTabEvent::EditChange { ignore_immutable: false } => Section::Changes, "edit change",
-            LogTabEvent::EditChange { ignore_immutable: true } => Section::Changes, "edit change ignoring immutability",
-            LogTabEvent::Duplicate => Section::Changes, "duplicate change",
-            LogTabEvent::Abandon => Section::Changes, "abandon change",
-            LogTabEvent::Rebase => Section::Changes, "rebase @ onto it",
-            LogTabEvent::Squash { ignore_immutable: false } => Section::Changes, "squash @ into it",
-            LogTabEvent::Squash { ignore_immutable: true } => Section::Changes, "squash @ into it, ignoring immutability",
-            LogTabEvent::Absorb => Section::Changes, "absorb into its mutable ancestors",
+            LogTabEvent::ToggleHeadMark => "mark-head", Some(Section::Changes), "mark change to act on",
+            LogTabEvent::CreateNew { describe: false } => "create-new", Some(Section::Changes), "new change",
+            LogTabEvent::CreateNew { describe: true } => "create-new-describe", Some(Section::Changes), "new with message",
+            LogTabEvent::Describe => "describe", Some(Section::Changes), "describe change",
+            LogTabEvent::EditChange { ignore_immutable: false } => "edit-change", Some(Section::Changes), "edit change",
+            LogTabEvent::EditChange { ignore_immutable: true } => "edit-change-ignore-immutable", Some(Section::Changes), "edit change ignoring immutability",
+            LogTabEvent::Duplicate => "duplicate", Some(Section::Changes), "duplicate change",
+            LogTabEvent::Abandon => "abandon", Some(Section::Changes), "abandon change",
+            LogTabEvent::Rebase => "rebase", Some(Section::Changes), "rebase @ onto the selection",
+            LogTabEvent::Squash { ignore_immutable: false } => "squash", Some(Section::Changes), "squash @ into the selection",
+            LogTabEvent::Squash { ignore_immutable: true } => "squash-ignore-immutable", Some(Section::Changes), "squash @ into the selection, ignoring immutability",
+            LogTabEvent::Absorb => "absorb", Some(Section::Changes), "absorb the selection into its mutable ancestors",
 
-            LogTabEvent::SetBookmark => Section::BookmarksAndRemotes, "set bookmark",
-            LogTabEvent::Fetch { all_remotes: false } => Section::BookmarksAndRemotes, "git fetch",
-            LogTabEvent::Fetch { all_remotes: true } => Section::BookmarksAndRemotes, "git fetch all remotes",
-            LogTabEvent::Push(PushScope::Selected) => Section::BookmarksAndRemotes, "git push",
-            LogTabEvent::Push(PushScope::SelectedWithNew) => Section::BookmarksAndRemotes, "git push, tracking new bookmarks",
-            LogTabEvent::Push(PushScope::Tracked) => Section::BookmarksAndRemotes, "git push all tracked bookmarks",
-            LogTabEvent::Push(PushScope::All) => Section::BookmarksAndRemotes, "git push all bookmarks, new ones included",
+            LogTabEvent::SetBookmark => "set-bookmark", Some(Section::BookmarksAndRemotes), "set bookmark",
+            LogTabEvent::Fetch { all_remotes: false } => "fetch", Some(Section::BookmarksAndRemotes), "git fetch",
+            LogTabEvent::Fetch { all_remotes: true } => "fetch-all", Some(Section::BookmarksAndRemotes), "git fetch all remotes",
+            LogTabEvent::Push(PushScope::Selected) => "push", Some(Section::BookmarksAndRemotes), "git push",
+            LogTabEvent::Push(PushScope::SelectedWithNew) => "push-new", Some(Section::BookmarksAndRemotes), "git push, tracking new bookmarks",
+            LogTabEvent::Push(PushScope::Tracked) => "push-all", Some(Section::BookmarksAndRemotes), "git push all tracked bookmarks",
+            LogTabEvent::Push(PushScope::All) => "push-all-new", Some(Section::BookmarksAndRemotes), "git push all bookmarks, new ones included",
 
-            LogTabEvent::CopyChangeId => Section::Clipboard, "yank change id",
-            LogTabEvent::CopyRev => Section::Clipboard, "yank revision",
+            LogTabEvent::CopyChangeId => "copy-change-id", Some(Section::Clipboard), "yank change id",
+            LogTabEvent::CopyRev => "copy-rev", Some(Section::Clipboard), "yank revision",
         )
     }
 }

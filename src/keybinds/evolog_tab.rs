@@ -2,13 +2,15 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
-use super::HelpItem;
+use super::Binding;
+use super::Context;
 use super::Section;
 use super::Shortcut;
 use super::config::EvologTabKeybindsConfig;
+use super::config::KeybindsConfig;
 use super::keybinds_store::KeybindsStore;
 use crate::env::keybinds_config;
-use crate::make_keybinds_help;
+use crate::make_bindings;
 use crate::set_keybinds;
 use crate::update_keybinds;
 
@@ -42,8 +44,13 @@ impl Default for EvologTabKeybinds {
 impl EvologTabKeybinds {
     /// The bindings as the configuration has them.
     pub fn new() -> Self {
+        Self::from_config(keybinds_config())
+    }
+
+    /// The bindings as `config` has them.
+    pub(super) fn from_config(config: Option<&KeybindsConfig>) -> Self {
         let mut keybinds = Self::default();
-        if let Some(config) = keybinds_config().and_then(|config| config.evolog_tab.as_ref()) {
+        if let Some(config) = config.and_then(|config| config.evolog_tab.as_ref()) {
             keybinds.extend_from_config(config);
         }
         keybinds
@@ -64,12 +71,12 @@ impl EvologTabKeybinds {
             .unwrap_or(EvologTabEvent::Unbound)
     }
 
-    pub fn make_help(&self) -> Vec<HelpItem> {
-        make_keybinds_help!(
-            self.keys,
-            EvologTabEvent::OpenFiles => Section::Navigation, "see files of this version",
-            EvologTabEvent::Duplicate => Section::Changes, "duplicate this version as a new change",
-            EvologTabEvent::CopyRev => Section::Clipboard, "yank revision to clipboard",
+    pub fn bindings(&self) -> Vec<Binding> {
+        make_bindings!(
+            self.keys, Self::default().keys, Context::EvologTab,
+            EvologTabEvent::OpenFiles => "open-files", Some(Section::Navigation), "see files of this version",
+            EvologTabEvent::Duplicate => "duplicate", Some(Section::Changes), "duplicate this version as a new change",
+            EvologTabEvent::CopyRev => "copy-rev", Some(Section::Clipboard), "yank revision to clipboard",
         )
     }
 }

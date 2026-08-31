@@ -4,10 +4,14 @@ use std::str::FromStr; // used by set_keybinds macro
 
 use ratatui::crossterm::event::KeyEvent;
 
+use super::Binding;
+use super::Context;
 use super::Shortcut;
+use super::config::KeybindsConfig;
 use super::config::RebasePopupKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
 use crate::env::keybinds_config;
+use crate::make_bindings;
 use crate::set_keybinds;
 use crate::update_keybinds;
 
@@ -65,8 +69,13 @@ impl Default for Keybinds {
 impl Keybinds {
     /// The bindings as the configuration has them.
     pub fn new() -> Self {
+        Self::from_config(keybinds_config())
+    }
+
+    /// The bindings as `config` has them.
+    pub(super) fn from_config(config: Option<&KeybindsConfig>) -> Self {
         let mut keybinds = Self::default();
-        if let Some(config) = keybinds_config().and_then(|config| config.rebase_popup.as_ref()) {
+        if let Some(config) = config.and_then(|config| config.rebase_popup.as_ref()) {
             keybinds.extend_from_config(config);
         }
         keybinds
@@ -78,6 +87,18 @@ impl Keybinds {
         } else {
             PopupAction::None
         }
+    }
+
+    pub fn bindings(&self) -> Vec<Binding> {
+        make_bindings!(
+            self.keys, default_keybinds(), Context::RebasePopup,
+            PopupAction::SetSourceMode(CutOption::IncludeDescendants) => "source-with-descendants", None, "take the change and its descendants",
+            PopupAction::SetSourceMode(CutOption::IncludeBranch) => "source-whole-branch", None, "take the whole branch",
+            PopupAction::SetSourceMode(CutOption::SingleRevision) => "source-single-revision", None, "take the change on its own",
+            PopupAction::SetTargetMode(PasteOption::NewBranch) => "target-new-branch", None, "put the source onto the destination",
+            PopupAction::SetTargetMode(PasteOption::InsertAfter) => "target-insert-after", None, "put the source after the destination",
+            PopupAction::SetTargetMode(PasteOption::InsertBefore) => "target-insert-before", None, "put the source before the destination",
+        )
     }
 
     fn extend_from_config(&mut self, config: &RebasePopupKeybindsConfig) {

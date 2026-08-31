@@ -2,12 +2,14 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
-use super::HelpItem;
+use super::Binding;
+use super::Context;
 use super::Section;
 use super::Shortcut;
 use super::config::KeybindsConfig;
 use super::keybinds_store::KeybindsStore;
-use crate::make_keybinds_help;
+use crate::env::keybinds_config;
+use crate::make_bindings;
 use crate::set_keybinds;
 use crate::update_keybinds;
 
@@ -82,11 +84,25 @@ impl Default for GlobalKeybinds {
 }
 
 impl GlobalKeybinds {
+    /// The bindings as the configuration has them.
+    pub fn new() -> Self {
+        Self::from_config(keybinds_config())
+    }
+
+    /// The bindings as `config` has them.
+    pub(super) fn from_config(config: Option<&KeybindsConfig>) -> Self {
+        let mut keybinds = Self::default();
+        if let Some(config) = config {
+            keybinds.extend_from_config(config);
+        }
+        keybinds
+    }
+
     pub fn match_event(&self, event: KeyEvent) -> GlobalEvent {
         self.keys.match_event(event).unwrap_or(GlobalEvent::Unbound)
     }
 
-    pub fn extend_from_config(&mut self, config: &KeybindsConfig) {
+    fn extend_from_config(&mut self, config: &KeybindsConfig) {
         update_keybinds!(
             self.keys,
             GlobalEvent::ScrollDown => config.scroll_down,
@@ -107,30 +123,30 @@ impl GlobalKeybinds {
         );
     }
 
-    pub fn make_help(&self) -> Vec<HelpItem> {
-        make_keybinds_help!(
-            self.keys,
-            GlobalEvent::ScrollDown => Section::Navigation, "scroll down",
-            GlobalEvent::ScrollUp => Section::Navigation, "scroll up",
-            GlobalEvent::ScrollDownHalf => Section::Navigation, "scroll down by ½ page",
-            GlobalEvent::ScrollUpHalf => Section::Navigation, "scroll up by ½ page",
-            GlobalEvent::ScrollToTop => Section::Navigation, "go to the top of the list",
-            GlobalEvent::ScrollToBottom => Section::Navigation, "go to the bottom of the list",
-            GlobalEvent::FocusCurrent => Section::Navigation, "go to current change",
-            GlobalEvent::OpenContextMenu => Section::Navigation, "open the context menu",
+    pub fn bindings(&self) -> Vec<Binding> {
+        make_bindings!(
+            self.keys, Self::default().keys, Context::Global,
+            GlobalEvent::ScrollDown => "scroll-down", Some(Section::Navigation), "scroll down",
+            GlobalEvent::ScrollUp => "scroll-up", Some(Section::Navigation), "scroll up",
+            GlobalEvent::ScrollDownHalf => "scroll-down-half", Some(Section::Navigation), "scroll down by ½ page",
+            GlobalEvent::ScrollUpHalf => "scroll-up-half", Some(Section::Navigation), "scroll up by ½ page",
+            GlobalEvent::ScrollToTop => "scroll-to-top", Some(Section::Navigation), "go to the top of the list",
+            GlobalEvent::ScrollToBottom => "scroll-to-bottom", Some(Section::Navigation), "go to the bottom of the list",
+            GlobalEvent::FocusCurrent => "focus-current", Some(Section::Navigation), "go to current change",
+            GlobalEvent::OpenContextMenu => "open-context-menu", Some(Section::Navigation), "open the context menu",
 
-            GlobalEvent::Refresh => Section::App, "refresh",
-            GlobalEvent::NextTab => Section::App, "next tab",
-            GlobalEvent::PrevTab => Section::App, "previous tab",
-            GlobalEvent::LogTab => Section::App, "log tab",
-            GlobalEvent::FilesTab => Section::App, "files tab",
-            GlobalEvent::BookmarksTab => Section::App, "bookmarks tab",
-            GlobalEvent::EvologTab => Section::App, "evolog tab",
-            GlobalEvent::SettingsTab => Section::App, "settings tab",
-            GlobalEvent::CommandPopup => Section::App, "run jj command",
-            GlobalEvent::InteractiveCommandPopup => Section::App, "run jj command interactively",
-            GlobalEvent::OpenHelp => Section::App, "open help",
-            GlobalEvent::Quit => Section::App, "quit",
+            GlobalEvent::Refresh => "refresh", Some(Section::App), "refresh",
+            GlobalEvent::NextTab => "next-tab", Some(Section::App), "next tab",
+            GlobalEvent::PrevTab => "prev-tab", Some(Section::App), "previous tab",
+            GlobalEvent::LogTab => _, Some(Section::App), "log tab",
+            GlobalEvent::FilesTab => _, Some(Section::App), "files tab",
+            GlobalEvent::BookmarksTab => _, Some(Section::App), "bookmarks tab",
+            GlobalEvent::EvologTab => _, Some(Section::App), "evolog tab",
+            GlobalEvent::SettingsTab => _, Some(Section::App), "settings tab",
+            GlobalEvent::CommandPopup => "command-popup", Some(Section::App), "run jj command",
+            GlobalEvent::InteractiveCommandPopup => "interactive-command-popup", Some(Section::App), "run jj command interactively",
+            GlobalEvent::OpenHelp => "open-help", Some(Section::App), "open help",
+            GlobalEvent::Quit => "quit", Some(Section::App), "quit",
         )
     }
 }
@@ -283,22 +299,31 @@ mod tests {
             keybinds.match_event(key(KeyCode::Char('?'))),
             GlobalEvent::Unbound
         );
-        assert!(keybinds.make_help().contains(&HelpItem {
-            section: Section::App,
-            keys: "[disabled]".to_owned(),
-            description: "open help".to_owned(),
-        }));
+        let help = binding(&keybinds, "open help");
+        assert_eq!(help.keys_text(), "[disabled]");
+        // What it comes bound to is what taking it back out restores.
+        assert_eq!(help.defaults_text(), "?");
     }
 
     #[test]
-    fn test_make_help_lists_every_default_binding() {
-        let help = GlobalKeybinds::default().make_help();
+    fn test_the_bindings_list_every_default_binding() {
+        let keybinds = GlobalKeybinds::default();
 
-        assert!(help.iter().all(|item| item.keys != "[disabled]"));
-        let refresh = help
-            .iter()
-            .find(|item| item.description == "refresh")
-            .expect("refresh should be listed");
-        assert_eq!(refresh.keys, "Shift+r/F5");
+        assert!(
+            keybinds
+                .bindings()
+                .iter()
+                .all(|binding| binding.keys_text() != "[disabled]")
+        );
+        assert_eq!(binding(&keybinds, "refresh").keys_text(), "Shift+r/F5");
+    }
+
+    /// The binding for the action `description` says it does.
+    fn binding(keybinds: &GlobalKeybinds, description: &str) -> Binding {
+        keybinds
+            .bindings()
+            .into_iter()
+            .find(|binding| binding.description == description)
+            .expect("the action is one the app has")
     }
 }

@@ -14,13 +14,7 @@ use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 use ratatui::prelude::Stylize;
 use ratatui::style::Color;
-use ratatui::style::Style;
-use ratatui::widgets::Block;
-use ratatui::widgets::BorderType;
-use ratatui::widgets::Borders;
 use ratatui::widgets::Clear;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::Wrap;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 
@@ -31,14 +25,12 @@ use crate::settings::Setting;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::POPUP_WIDTH_PERCENT;
 use crate::ui::styles::create_popup_block;
+use crate::ui::styles::popup_footer;
+use crate::ui::styles::popup_text_width;
+use crate::ui::styles::wrapped_height;
 use crate::ui::utils::centered_rect_line_height;
-
-/// How much of the width of the screen the popup takes.
-const WIDTH_PERCENT: u16 = 60;
-
-/// How much of that the border and the padding take.
-const CHROME_WIDTH: u16 = 4;
 
 pub struct SettingValuePopup<'a> {
     setting: &'static Setting,
@@ -76,18 +68,11 @@ impl Component for SettingValuePopup<'_> {
             .map(|text| text.lines);
         // What jj says about a value is a sentence rather than a line,
         // so the popup grows by however many rows it wraps into.
-        let text_width = (area.width * WIDTH_PERCENT / 100)
-            .saturating_sub(CHROME_WIDTH)
-            .max(1);
-        let error_height = error_lines.as_ref().map_or(0, |lines| {
-            lines
-                .iter()
-                .map(|line| (line.width() as u16).div_ceil(text_width).max(1))
-                .sum::<u16>()
-                + 1
-        });
+        let error_height = error_lines
+            .as_ref()
+            .map_or(0, |lines| wrapped_height(lines, popup_text_width(area)) + 1);
 
-        let area = centered_rect_line_height(area, WIDTH_PERCENT, 5 + error_height);
+        let area = centered_rect_line_height(area, POPUP_WIDTH_PERCENT, 5 + error_height);
         f.render_widget(Clear, area);
         f.render_widget(&block, area);
 
@@ -102,21 +87,12 @@ impl Component for SettingValuePopup<'_> {
 
         f.render_widget(&self.textarea, chunks[0]);
 
-        let footer = |lines: Vec<ratatui::text::Line<'static>>| {
-            Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-                Block::default()
-                    .borders(Borders::TOP)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::DarkGray)),
-            )
-        };
-
         if let Some(error_lines) = error_lines {
-            f.render_widget(footer(error_lines), chunks[1]);
+            f.render_widget(popup_footer(error_lines), chunks[1]);
         }
 
         f.render_widget(
-            footer(vec![self.keybinds.hint("accept").into()])
+            popup_footer(vec![self.keybinds.hint("accept").into()])
                 .fg(Color::DarkGray)
                 .alignment(Alignment::Center),
             chunks[2],

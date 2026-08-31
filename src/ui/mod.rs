@@ -4,6 +4,7 @@ pub mod bookmarks_tab;
 pub mod dialog;
 pub mod evolog_tab;
 pub mod files_tab;
+pub mod keybindings_tab;
 pub mod log_tab;
 pub mod panel;
 pub mod settings_tab;
@@ -14,12 +15,13 @@ use ratatui::Frame;
 use ratatui::crossterm::event::Event;
 use ratatui::layout::Rect;
 
+use crate::app::TabId;
 use crate::app::command::Command;
 use crate::background_tasks::TaskResult;
 use crate::commander::JjCommand;
 use crate::commander::log::Head;
 use crate::event::Mouse;
-use crate::keybinds::HelpItem;
+use crate::keybinds::Binding;
 
 /// Action commmands from component to application
 pub enum AppAction {
@@ -32,6 +34,8 @@ pub enum AppAction {
     /// Show the bookmark of this name, which may have just come into
     /// being.
     ViewBookmark(String),
+    /// Show this tab, as it stands.
+    ViewTab(TabId),
     ChangeHead(Head),
     /// Put this popup up, in place of whatever is up now.
     SetPopup(Box<dyn Component>),
@@ -178,8 +182,8 @@ pub trait Tab: Component {
     fn open_context_menu(&self) -> Result<Option<AppAction>>;
 
     /// Keybindings of the main panel, for the help popup.
-    fn make_main_panel_help(&self) -> Vec<HelpItem>;
+    fn main_panel_bindings(&self) -> Vec<Binding>;
 
     /// Keybindings of the details panel, for the help popup.
-    fn make_details_panel_help(&self) -> Vec<HelpItem>;
+    fn details_panel_bindings(&self) -> Vec<Binding>;
 }

@@ -7,10 +7,14 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
+use super::Binding;
+use super::Context;
 use super::Shortcut;
 use super::config::BookmarkSetPopupKeybindsConfig;
+use super::config::KeybindsConfig;
 use super::keybinds_store::KeybindsStore;
 use crate::env::keybinds_config;
+use crate::make_bindings;
 use crate::set_keybinds;
 use crate::update_keybinds;
 
@@ -42,10 +46,13 @@ impl Default for BookmarkSetPopupKeybinds {
 impl BookmarkSetPopupKeybinds {
     /// The bindings as the configuration has them.
     pub fn new() -> Self {
+        Self::from_config(keybinds_config())
+    }
+
+    /// The bindings as `config` has them.
+    pub(super) fn from_config(config: Option<&KeybindsConfig>) -> Self {
         let mut keybinds = Self::default();
-        if let Some(config) =
-            keybinds_config().and_then(|config| config.bookmark_set_popup.as_ref())
-        {
+        if let Some(config) = config.and_then(|config| config.bookmark_set_popup.as_ref()) {
             keybinds.extend_from_config(config);
         }
         keybinds
@@ -55,6 +62,14 @@ impl BookmarkSetPopupKeybinds {
         self.keys
             .match_event(event)
             .unwrap_or(BookmarkSetPopupEvent::Unbound)
+    }
+
+    pub fn bindings(&self) -> Vec<Binding> {
+        make_bindings!(
+            self.keys, Self::default().keys, Context::BookmarkSetPopup,
+            BookmarkSetPopupEvent::UseGeneratedName => "use-generated-name", None, "take the proposed name",
+            BookmarkSetPopupEvent::CreateBookmark => "create-bookmark", None, "create the bookmark",
+        )
     }
 
     /// The shortcut to name `event` by, of those bound to it.

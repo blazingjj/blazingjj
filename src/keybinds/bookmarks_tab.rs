@@ -2,13 +2,15 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
-use super::HelpItem;
+use super::Binding;
+use super::Context;
 use super::Section;
 use super::Shortcut;
 use super::config::BookmarksTabKeybindsConfig;
+use super::config::KeybindsConfig;
 use super::keybinds_store::KeybindsStore;
 use crate::env::keybinds_config;
-use crate::make_keybinds_help;
+use crate::make_bindings;
 use crate::set_keybinds;
 use crate::update_keybinds;
 
@@ -66,8 +68,13 @@ impl Default for BookmarksTabKeybinds {
 impl BookmarksTabKeybinds {
     /// The bindings as the configuration has them.
     pub fn new() -> Self {
+        Self::from_config(keybinds_config())
+    }
+
+    /// The bindings as `config` has them.
+    pub(super) fn from_config(config: Option<&KeybindsConfig>) -> Self {
         let mut keybinds = Self::default();
-        if let Some(config) = keybinds_config().and_then(|config| config.bookmarks_tab.as_ref()) {
+        if let Some(config) = config.and_then(|config| config.bookmarks_tab.as_ref()) {
             keybinds.extend_from_config(config);
         }
         keybinds
@@ -98,24 +105,24 @@ impl BookmarksTabKeybinds {
             .unwrap_or(BookmarksTabEvent::Unbound)
     }
 
-    pub fn make_help(&self) -> Vec<HelpItem> {
-        make_keybinds_help!(
-            self.keys,
-            BookmarksTabEvent::ViewInLog => Section::Navigation, "view in log",
-            BookmarksTabEvent::ToggleShowAll => Section::Navigation, "show all remotes",
+    pub fn bindings(&self) -> Vec<Binding> {
+        make_bindings!(
+            self.keys, Self::default().keys, Context::BookmarksTab,
+            BookmarksTabEvent::ViewInLog => "view-in-log", Some(Section::Navigation), "view in log",
+            BookmarksTabEvent::ToggleShowAll => "toggle-show-all", Some(Section::Navigation), "show all remotes",
 
-            BookmarksTabEvent::NewChange { describe: false } => Section::Changes, "new from bookmark",
-            BookmarksTabEvent::NewChange { describe: true } => Section::Changes, "new and describe",
-            BookmarksTabEvent::EditChange { ignore_immutable: false } => Section::Changes, "edit bookmark",
-            BookmarksTabEvent::EditChange { ignore_immutable: true } => Section::Changes, "edit bookmark ignoring immutability",
+            BookmarksTabEvent::NewChange { describe: false } => "create-new", Some(Section::Changes), "new from bookmark",
+            BookmarksTabEvent::NewChange { describe: true } => "create-new-describe", Some(Section::Changes), "new and describe",
+            BookmarksTabEvent::EditChange { ignore_immutable: false } => "edit-change", Some(Section::Changes), "edit bookmark",
+            BookmarksTabEvent::EditChange { ignore_immutable: true } => "edit-change-ignore-immutable", Some(Section::Changes), "edit bookmark ignoring immutability",
 
-            BookmarksTabEvent::CreateBookmark => Section::BookmarksAndRemotes, "create bookmark",
-            BookmarksTabEvent::RenameBookmark => Section::BookmarksAndRemotes, "rename bookmark",
-            BookmarksTabEvent::DeleteBookmark => Section::BookmarksAndRemotes, "delete bookmark",
-            BookmarksTabEvent::ForgetBookmark => Section::BookmarksAndRemotes, "forget bookmark",
-            BookmarksTabEvent::TrackBookmark => Section::BookmarksAndRemotes, "track bookmark",
-            BookmarksTabEvent::UntrackBookmark => Section::BookmarksAndRemotes, "untrack bookmark",
-            BookmarksTabEvent::SetBookmark => Section::BookmarksAndRemotes, "set bookmark here",
+            BookmarksTabEvent::CreateBookmark => "create-bookmark", Some(Section::BookmarksAndRemotes), "create bookmark",
+            BookmarksTabEvent::RenameBookmark => "rename-bookmark", Some(Section::BookmarksAndRemotes), "rename bookmark",
+            BookmarksTabEvent::DeleteBookmark => "delete-bookmark", Some(Section::BookmarksAndRemotes), "delete bookmark",
+            BookmarksTabEvent::ForgetBookmark => "forget-bookmark", Some(Section::BookmarksAndRemotes), "forget bookmark",
+            BookmarksTabEvent::TrackBookmark => "track-bookmark", Some(Section::BookmarksAndRemotes), "track bookmark",
+            BookmarksTabEvent::UntrackBookmark => "untrack-bookmark", Some(Section::BookmarksAndRemotes), "untrack bookmark",
+            BookmarksTabEvent::SetBookmark => "set-bookmark", Some(Section::BookmarksAndRemotes), "set bookmark to the selection",
         )
     }
 }

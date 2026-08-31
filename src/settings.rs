@@ -8,6 +8,7 @@ is checked against before anything is written.
 */
 
 use anyhow::Result;
+use anyhow::bail;
 
 use crate::env::check_config_value;
 
@@ -24,6 +25,9 @@ pub enum SettingKind {
     /// its arguments. Arguments are taken apart at whitespace, so one
     /// that holds any has to be written in the config file itself.
     CommandLine,
+    /// The keybindings, which are a table rather than a value to type,
+    /// so they are changed one binding at a time in a tab of their own.
+    Keybindings,
 }
 
 /// One option the settings tab shows.
@@ -44,6 +48,7 @@ impl Setting {
     /// cannot be read back from it.
     pub fn value_of(&self, input: &str) -> Result<String> {
         let value = match self.kind {
+            SettingKind::Keybindings => bail!("The keybindings are not an option to type"),
             SettingKind::Number => input.trim().to_owned(),
             SettingKind::Choice(_) | SettingKind::Text => {
                 toml::Value::String(input.to_owned()).to_string()
@@ -66,6 +71,13 @@ impl Setting {
     /// command line as the command, anything else as TOML writes it.
     pub fn text_of(&self, value: &toml::Value) -> String {
         match (&self.kind, value) {
+            // What the keybindings are is the keybindings tab's to say;
+            // what the settings tab says is only how many of them the
+            // configuration has anything to say about.
+            (SettingKind::Keybindings, _) => match bindings_set(value) {
+                1 => "1 binding set".to_owned(),
+                set => format!("{set} bindings set"),
+            },
             (SettingKind::CommandLine, toml::Value::Array(words)) => words
                 .iter()
                 .map(|word| {
@@ -86,6 +98,15 @@ impl Setting {
             SettingKind::Choice(choices) => Some(choices),
             _ => None,
         }
+    }
+}
+
+/// How many bindings `value` holds, counting the ones in the tables of
+/// the contexts they take effect in.
+fn bindings_set(value: &toml::Value) -> usize {
+    match value {
+        toml::Value::Table(table) => table.values().map(bindings_set).sum(),
+        _ => 1,
     }
 }
 
@@ -155,6 +176,13 @@ pub const SETTINGS: &[Setting] = &[
         doc: "Seconds between checks for work done outside the app, or 0 to only check when asked.",
         fallback: "1",
         kind: SettingKind::Number,
+    },
+    Setting {
+        key: "blazingjj.keybinds",
+        section: "Keys",
+        doc: "The keys the app answers to, one binding per action. Opens the list of them.",
+        fallback: "the keys the app comes with",
+        kind: SettingKind::Keybindings,
     },
 ];
 
@@ -229,6 +257,11 @@ mod tests {
             JJLayout::Vertical
         );
         assert_eq!(set("blazingjj.layout-percent", "40").layout_percent(), 40);
+        assert!(
+            set("blazingjj.keybinds", "{ quit = \"x\" }")
+                .keybinds()
+                .is_some()
+        );
         assert_eq!(
             set("blazingjj.poll-interval", "5").poll_interval(),
             Some(Duration::from_secs(5))
@@ -285,6 +318,24 @@ mod tests {
 
         assert!(percent.value_of("100").is_ok());
         assert!(percent.value_of("101").is_err());
+    }
+
+    /// The keybindings are a table of tables, so what the row says is
+    /// how many bindings they come to rather than how many tables.
+    #[test]
+    fn the_keybindings_read_as_how_many_of_them_the_configuration_holds() {
+        let keybinds = setting("blazingjj.keybinds");
+        let read = |config: &str| {
+            let config: toml::Value = toml::from_str(config).expect("the configuration parses");
+
+            keybinds.text_of(&config)
+        };
+
+        assert_eq!(read("scroll-down = \"j\"\n"), "1 binding set");
+        assert_eq!(
+            read("scroll-down = \"j\"\nlog-tab.abandon = \"x\"\nlog-tab.absorb = false\n"),
+            "3 bindings set"
+        );
     }
 
     #[test]

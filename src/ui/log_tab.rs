@@ -21,9 +21,9 @@ use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::get_env;
 use crate::event::Mouse;
+use crate::keybinds::Binding;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
-use crate::keybinds::HelpItem;
 use crate::keybinds::LogTabEvent;
 use crate::keybinds::LogTabKeybinds;
 use crate::keybinds::PopupEvent;
@@ -368,6 +368,9 @@ impl Tab for LogTab<'_> {
 
     fn config_changed(&mut self) {
         self.head_panel.config_changed();
+        self.keybinds = LogTabKeybinds::new();
+        self.revset_keybinds = PopupKeybinds::text();
+        self.details_keybinds = DetailsPanelKeybinds::new();
     }
 
     fn is_stale(&self) -> bool {
@@ -394,12 +397,12 @@ impl Tab for LogTab<'_> {
         self.context_menu(self.log_panel.selected_position())
     }
 
-    fn make_main_panel_help(&self) -> Vec<HelpItem> {
-        self.keybinds.make_main_panel_help()
+    fn main_panel_bindings(&self) -> Vec<Binding> {
+        self.keybinds.bindings()
     }
 
-    fn make_details_panel_help(&self) -> Vec<HelpItem> {
-        self.details_keybinds.make_help()
+    fn details_panel_bindings(&self) -> Vec<Binding> {
+        self.details_keybinds.bindings()
     }
 }
 

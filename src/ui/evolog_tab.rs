@@ -21,11 +21,11 @@ use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::get_env;
 use crate::event::Mouse;
+use crate::keybinds::Binding;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::EvologTabEvent;
 use crate::keybinds::EvologTabKeybinds;
-use crate::keybinds::HelpItem;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -172,6 +172,8 @@ impl Tab for EvologTab<'_> {
 
     fn config_changed(&mut self) {
         self.patch_panel.config_changed();
+        self.keybinds = EvologTabKeybinds::new();
+        self.details_keybinds = DetailsPanelKeybinds::new();
     }
 
     fn is_stale(&self) -> bool {
@@ -196,12 +198,12 @@ impl Tab for EvologTab<'_> {
         Ok(self.context_menu(self.entry_panel.selected_position()))
     }
 
-    fn make_main_panel_help(&self) -> Vec<HelpItem> {
-        self.keybinds.make_help()
+    fn main_panel_bindings(&self) -> Vec<Binding> {
+        self.keybinds.bindings()
     }
 
-    fn make_details_panel_help(&self) -> Vec<HelpItem> {
-        self.details_keybinds.make_help()
+    fn details_panel_bindings(&self) -> Vec<Binding> {
+        self.details_keybinds.bindings()
     }
 }
 

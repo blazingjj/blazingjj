@@ -2,8 +2,10 @@ use std::sync::LazyLock;
 
 use ansi_to_tui::IntoText;
 use ratatui::layout::Alignment;
+use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
+use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
@@ -42,6 +44,39 @@ pub fn create_popup_block(title: &str) -> Block<'_> {
         .clone()
         .title(Span::styled(format!(" {title} "), *POPUP_BLOCK_TITLE_STYLE))
         .title_alignment(Alignment::Center)
+}
+
+/// How much of the width of the screen a popup asking for something
+/// takes.
+pub const POPUP_WIDTH_PERCENT: u16 = 60;
+
+/// How much of that its border and its padding take.
+const POPUP_CHROME_WIDTH: u16 = 4;
+
+/// How wide the text of such a popup is, drawn in `area`.
+pub fn popup_text_width(area: Rect) -> u16 {
+    (area.width * POPUP_WIDTH_PERCENT / 100)
+        .saturating_sub(POPUP_CHROME_WIDTH)
+        .max(1)
+}
+
+/// How many rows `lines` take once wrapped into `width` columns.
+pub fn wrapped_height(lines: &[Line], width: u16) -> u16 {
+    lines
+        .iter()
+        .map(|line| (line.width() as u16).div_ceil(width).max(1))
+        .sum()
+}
+
+/// What a popup says under a rule at the foot of it, such as what it
+/// answers to or what it made of what it was given.
+pub fn popup_footer(lines: Vec<Line<'static>>) -> Paragraph<'static> {
+    Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+        Block::default()
+            .borders(Borders::TOP)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    )
 }
 
 #[cfg(test)]
