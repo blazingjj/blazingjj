@@ -5,6 +5,7 @@ It is a combination of
 - environment variables
 - command line arguments
 */
+use std::fmt;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::OnceLock;
@@ -251,6 +252,21 @@ impl DiffFormat {
                 panel_width
             }
             _ => 0,
+        }
+    }
+}
+
+/// How the format is named in the UI, which for an external tool is the
+/// tool itself, as that is what tells the formats it renders apart.
+impl fmt::Display for DiffFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DiffFormat::ColorWords => write!(f, "color-words"),
+            DiffFormat::Git => write!(f, "git"),
+            DiffFormat::DiffTool(Some(tool)) => write!(f, "{tool}"),
+            DiffFormat::DiffTool(None) => write!(f, "diff tool"),
+            DiffFormat::Summary => write!(f, "summary"),
+            DiffFormat::Stat => write!(f, "stat"),
         }
     }
 }

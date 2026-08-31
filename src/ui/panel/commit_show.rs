@@ -35,6 +35,10 @@ impl OutputKey for CommitShowKey {
         Self { id, format }
     }
 
+    fn format(&self) -> &DiffFormat {
+        &self.format
+    }
+
     fn identity(&self) -> Option<ChangeId> {
         (!self.id.divergent).then(|| self.id.change_id.clone())
     }

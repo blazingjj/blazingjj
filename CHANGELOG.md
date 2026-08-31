@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The details panel now names the diff format it renders in, in its top
+  right corner
 - Keybinding in the bookmarks tab to point a bookmark at the change the
   selected line stands for (`b`, as in the log tab), which settles a bookmark
   torn between several targets on the one selected, and moves a bookmark to

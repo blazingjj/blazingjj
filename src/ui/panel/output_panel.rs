@@ -9,6 +9,9 @@ UI responsive. What it has rendered goes into a
 use ratatui::crossterm::event::MouseEvent;
 use ratatui::layout::Rect;
 use ratatui::prelude::Frame;
+use ratatui::style::Color;
+use ratatui::style::Style;
+use ratatui::text::Line;
 use ratatui::text::Text;
 use tracing::error;
 
@@ -261,6 +264,13 @@ impl<K: OutputKey> OutputPanel<K> {
             Some(shown) => shown.title.clone(),
             None => self.title.clone(),
         };
+        // The format of what is on screen, which while we wait for a
+        // toggle to take effect is still the one it went up in
+        let format = match &shown {
+            Some(shown) => shown.key.format(),
+            None => &self.diff_format,
+        };
+        let format = Line::styled(format!(" {format} "), Style::new().fg(Color::DarkGray));
 
         if let Some(shown) = shown
             && let Some(value) = self.cache.get(&shown.key)
@@ -277,6 +287,7 @@ impl<K: OutputKey> OutputPanel<K> {
                     .panel
                     .render_context::<LargeStringContent>(document)
                     .title(title)
+                    .title_right(format)
                     .draw(f, area),
                 Err(message) => {
                     let failed = format!("'{}' failed", K::COMMAND);
@@ -285,6 +296,7 @@ impl<K: OutputKey> OutputPanel<K> {
                     self.panel
                         .render_context::<TextContent>(text)
                         .title(title)
+                        .title_right(format)
                         .draw(f, area);
                 }
             }
@@ -296,6 +308,7 @@ impl<K: OutputKey> OutputPanel<K> {
         self.panel
             .render_context::<TextContent>(self.wait.message(K::COMMAND))
             .title(title)
+            .title_right(format)
             .draw(f, area);
     }
 

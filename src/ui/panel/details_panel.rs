@@ -72,6 +72,7 @@ where
 {
     panel: &'a mut DetailsPanel,
     title: Option<Line<'a>>,
+    title_right: Option<Line<'a>>,
     content: Content,
 }
 
@@ -130,6 +131,7 @@ where
         Self {
             panel,
             title: None,
+            title_right: None,
             content,
         }
     }
@@ -139,6 +141,15 @@ where
         T: Into<Line<'a>>,
     {
         self.title = Some(title.into());
+        self
+    }
+
+    /// Set a second title, in the top right corner of the frame
+    pub fn title_right<T>(&mut self, title: T) -> &mut Self
+    where
+        T: Into<Line<'a>>,
+    {
+        self.title_right = Some(title.into());
         self
     }
 
@@ -153,6 +164,9 @@ where
         // Apply title if provided
         if let Some(title) = &self.title {
             border = border.title_top(title.clone());
+        }
+        if let Some(title) = &self.title_right {
+            border = border.title_top(title.clone().right_aligned());
         }
 
         // Create content widget that uses border
