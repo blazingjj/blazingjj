@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The tabs overview takes the mouse: a click switches to the tab clicked, and
   the wheel cycles through the tabs
 - The help popup now scrolls with the mouse wheel
+- The help popup now shows a scrollbar when it does not fit on screen
 - Keybinding for jj absorb (`A`)
 - Global keybindings under `[blazingjj.keybinds]` (`scroll-down`, `scroll-up`,
   `scroll-down-half`, `scroll-up-half`, `focus-current`, `refresh`, `open-help`,

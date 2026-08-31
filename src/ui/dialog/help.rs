@@ -13,6 +13,9 @@ use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
 use ratatui::widgets::Clear;
 use ratatui::widgets::Row;
+use ratatui::widgets::Scrollbar;
+use ratatui::widgets::ScrollbarOrientation;
+use ratatui::widgets::ScrollbarState;
 use ratatui::widgets::Table;
 
 use crate::keybinds::PopupEvent;
@@ -272,6 +275,19 @@ impl Component for HelpPopup {
             }
 
             render_stack(f, area, self.scroll, column);
+        }
+
+        if self.max_scroll > 0 {
+            f.render_stateful_widget(
+                Scrollbar::new(ScrollbarOrientation::VerticalRight),
+                Rect {
+                    y: block_inner.y,
+                    height: block_inner.height,
+                    ..area
+                },
+                &mut ScrollbarState::new(self.max_scroll as usize + 1)
+                    .position(self.scroll as usize),
+            );
         }
 
         Ok(())
