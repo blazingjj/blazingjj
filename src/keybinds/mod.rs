@@ -1,10 +1,14 @@
 use std::fmt::Display;
 use std::str::FromStr;
 
+pub use bookmark_set_popup::BookmarkSetPopupEvent;
+pub use bookmark_set_popup::BookmarkSetPopupKeybinds;
 pub use bookmarks_tab::BookmarksTabEvent;
 pub use bookmarks_tab::BookmarksTabKeybinds;
 pub use config::Keybind;
 pub use config::KeybindsConfig;
+pub use confirm_popup::ConfirmPopupEvent;
+pub use confirm_popup::ConfirmPopupKeybinds;
 pub use details_panel::DetailsPanelEvent;
 pub use details_panel::DetailsPanelKeybinds;
 pub use evolog_tab::EvologTabEvent;
@@ -22,8 +26,10 @@ use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyModifiers;
 
+mod bookmark_set_popup;
 mod bookmarks_tab;
 mod config;
+mod confirm_popup;
 mod details_panel;
 mod evolog_tab;
 mod files_tab;
@@ -37,6 +43,92 @@ pub mod rebase_popup;
 pub struct Keybinds {
     log_tab: LogTabKeybinds,
 }*/
+
+/// The kind of thing a keybinding does, under which the help lists it.
+/// Which one a binding belongs to follows from what it does, not from
+/// who binds it, so the keys for moving around in the main panel are one
+/// section whether a tab or the app as a whole binds them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Section {
+    Navigation,
+    Changes,
+    Files,
+    BookmarksAndRemotes,
+    Clipboard,
+    DetailsPanel,
+    /// What the app does, rather than what it does to the repo
+    App,
+}
+
+impl Section {
+    /// Every section, in the order the help lists them
+    const ORDER: [Self; 7] = [
+        Self::Navigation,
+        Self::Changes,
+        Self::Files,
+        Self::BookmarksAndRemotes,
+        Self::Clipboard,
+        Self::DetailsPanel,
+        Self::App,
+    ];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Navigation => "Navigation",
+            Self::Changes => "Changes",
+            Self::Files => "Files",
+            Self::BookmarksAndRemotes => "Bookmarks and remotes",
+            Self::Clipboard => "Clipboard",
+            Self::DetailsPanel => "Details panel",
+            Self::App => "Global",
+        }
+    }
+
+    /// Whether the help lists the section beside what the main panel
+    /// answers to rather than among it.
+    pub fn beside_main_panel(self) -> bool {
+        matches!(self, Self::DetailsPanel | Self::App)
+    }
+}
+
+/// A keybinding as the help lists it
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HelpItem {
+    pub section: Section,
+    /// The keys bound to it, or `[disabled]` where there are none
+    pub keys: String,
+    pub description: String,
+}
+
+/// The keybindings of one section, as the help lists them
+#[derive(Clone, Debug)]
+pub struct HelpSection {
+    pub section: Section,
+    /// The keys and what each of them does
+    pub items: Vec<(String, String)>,
+}
+
+impl HelpSection {
+    /// The `items` gathered into the sections they belong to, in the
+    /// order the help lists those; a section nothing belongs to is left
+    /// out.
+    pub fn gather(items: impl IntoIterator<Item = HelpItem>) -> Vec<Self> {
+        let items: Vec<HelpItem> = items.into_iter().collect();
+
+        Section::ORDER
+            .into_iter()
+            .filter_map(|section| {
+                let items: Vec<(String, String)> = items
+                    .iter()
+                    .filter(|item| item.section == section)
+                    .map(|item| (item.keys.clone(), item.description.clone()))
+                    .collect();
+
+                (!items.is_empty()).then_some(Self { section, items })
+            })
+            .collect()
+    }
+}
 
 /// Add keybindings to [`keybinds_store::KeybindsStore`]. Checks that shortcuts not duplicated
 #[macro_export]
@@ -65,10 +157,12 @@ macro_rules! update_keybinds {
     };
 }
 
+/// The help entry of every listed action: what it does, the section it
+/// belongs to, and the keys it is bound to.
 #[macro_export]
 macro_rules! make_keybinds_help {
     () => {};
-    ($keys:expr, $($action:expr => $desc:literal),* $(,)?) => {
+    ($keys:expr, $($action:expr => $section:expr, $desc:literal),* $(,)?) => {
         #[allow(clippy::vec_init_then_push)]
         {
             let mut res = vec![];
@@ -78,11 +172,15 @@ macro_rules! make_keybinds_help {
                     .map(|s| s.to_string())
                     .collect::<Vec<_>>()
                     .join("/");
-                if shortcuts.is_empty() {
-                    res.push(("[disabled]".to_string(), $desc.to_string()));
-                } else {
-                    res.push((shortcuts, $desc.to_string()));
-                }
+                res.push($crate::keybinds::HelpItem {
+                    section: $section,
+                    keys: if shortcuts.is_empty() {
+                        "[disabled]".to_string()
+                    } else {
+                        shortcuts
+                    },
+                    description: $desc.to_string(),
+                });
             )*
             res
         }
@@ -99,6 +197,15 @@ impl Shortcut {
     pub fn new_mod_key(modifiers: KeyModifiers, key: KeyCode) -> Self {
         Self { key, modifiers }
     }
+    /// The character the shortcut is, where it is a plain one that no
+    /// modifier goes with.
+    pub fn as_char(&self) -> Option<char> {
+        match self.key {
+            KeyCode::Char(c) if self.modifiers.is_empty() => Some(c),
+            _ => None,
+        }
+    }
+
     pub fn from_event(event: KeyEvent) -> Self {
         Self {
             key: match event.code {
@@ -173,7 +280,11 @@ impl Display for Shortcut {
             KeyCode::Down => "Down".to_string(),
             KeyCode::PageDown => "PageDown".to_string(),
             KeyCode::PageUp => "PageUp".to_string(),
+            KeyCode::Home => "Home".to_string(),
+            KeyCode::End => "End".to_string(),
             KeyCode::F(n) => format!("F{n}"),
+            // A space of its own would be read as no key at all.
+            KeyCode::Char(' ') => "Space".to_string(),
             KeyCode::Char(c) => c.to_string(),
             KeyCode::Esc => "Esc".to_string(),
             KeyCode::Menu => "Menu".to_string(),
@@ -207,6 +318,47 @@ mod tests {
         pub fn new_key(key: KeyCode) -> Self {
             Self::new_mod_key(KeyModifiers::empty(), key)
         }
+    }
+
+    fn item(section: Section, key: &str) -> HelpItem {
+        HelpItem {
+            section,
+            keys: key.to_owned(),
+            description: format!("do {key}"),
+        }
+    }
+
+    fn listed(key: &str) -> (String, String) {
+        (key.to_owned(), format!("do {key}"))
+    }
+
+    #[test]
+    fn test_gathering_puts_the_sections_in_the_order_the_help_lists_them() {
+        let sections = HelpSection::gather([
+            item(Section::App, "q"),
+            item(Section::Changes, "n"),
+            item(Section::Navigation, "j"),
+        ]);
+
+        let titles: Vec<Section> = sections.iter().map(|section| section.section).collect();
+        assert_eq!(
+            titles,
+            vec![Section::Navigation, Section::Changes, Section::App]
+        );
+    }
+
+    /// The keys of a section come from whoever binds them, so those the
+    /// app binds and those a tab binds end up under the one heading.
+    #[test]
+    fn test_gathering_collects_a_section_from_every_source() {
+        let sections = HelpSection::gather([
+            item(Section::Navigation, "j"),
+            item(Section::Changes, "n"),
+            item(Section::Navigation, "-"),
+        ]);
+
+        assert_eq!(sections.len(), 2);
+        assert_eq!(sections[0].items, vec![listed("j"), listed("-")]);
     }
 
     #[test]
@@ -254,6 +406,39 @@ mod tests {
         for (s, expected) in table {
             assert_eq!(
                 Shortcut::from_str(s),
+                expected,
+                "Shortcut::from_str(\"{s}\")"
+            );
+        }
+    }
+
+    /// Every key a binding can be given has to have a name to show it
+    /// by, or the help offers a key the user cannot make out.
+    #[test]
+    fn test_shortcut_display() {
+        let table = [
+            ("q", "q"),
+            ("ctrl+shift+q", "Control+Shift+q"),
+            ("space", "Space"),
+            ("enter", "Enter"),
+            ("esc", "Esc"),
+            ("left", "Left"),
+            ("right", "Right"),
+            ("up", "Up"),
+            ("down", "Down"),
+            ("home", "Home"),
+            ("end", "End"),
+            ("ctrl+end", "Control+End"),
+            ("pagedown", "PageDown"),
+            ("pageup", "PageUp"),
+            ("menu", "Menu"),
+            ("f5", "F5"),
+        ];
+
+        for (s, expected) in table {
+            let shortcut = Shortcut::from_str(s).expect("shortcut should parse");
+            assert_eq!(
+                shortcut.to_string(),
                 expected,
                 "Shortcut::from_str(\"{s}\")"
             );

@@ -25,6 +25,7 @@ use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::EvologTabEvent;
 use crate::keybinds::EvologTabKeybinds;
+use crate::keybinds::HelpItem;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -70,8 +71,8 @@ impl<'a> EvologTab<'a> {
 
             pane_divider: PaneDivider::new(config.layout_percent()),
             config,
-            keybinds: EvologTabKeybinds::default(),
-            details_keybinds: DetailsPanelKeybinds::default(),
+            keybinds: EvologTabKeybinds::new(),
+            details_keybinds: DetailsPanelKeybinds::new(),
 
             stale: true,
         }
@@ -118,7 +119,7 @@ impl<'a> EvologTab<'a> {
 
     /// The menu of what can be done to the selected version, put at
     /// `anchor` or centered when there is nowhere to point at.
-    fn open_context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
+    fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(evolog_context_menu(
             self.config.clone(),
             anchor,
@@ -145,9 +146,6 @@ impl<'a> EvologTab<'a> {
                 return Ok(Some(AppAction::Run(Command::Copy(
                     entry.commit_id.as_str().to_owned(),
                 ))));
-            }
-            EvologTabEvent::OpenContextMenu => {
-                return Ok(self.open_context_menu(self.entry_panel.selected_position()));
             }
             // Not an operation of its own; the key handler deals with it.
             EvologTabEvent::Unbound => {}
@@ -184,13 +182,7 @@ impl Tab for EvologTab<'_> {
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
-        let half_page = self.entry_panel.visible_heads() / 2;
-        self.scroll_entries(match scroll {
-            Scroll::Down => 1,
-            Scroll::Up => -1,
-            Scroll::DownHalfPage => half_page,
-            Scroll::UpHalfPage => half_page.saturating_neg(),
-        });
+        self.scroll_entries(scroll.distance(self.entry_panel.visible_heads()));
         Ok(())
     }
 
@@ -199,11 +191,15 @@ impl Tab for EvologTab<'_> {
         Ok(())
     }
 
-    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+        Ok(self.context_menu(self.entry_panel.selected_position()))
+    }
+
+    fn make_main_panel_help(&self) -> Vec<HelpItem> {
         self.keybinds.make_help()
     }
 
-    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+    fn make_details_panel_help(&self) -> Vec<HelpItem> {
         self.details_keybinds.make_help()
     }
 }
@@ -276,7 +272,7 @@ impl Component for EvologTab<'_> {
                         self.entry_panel.set_head_in_place(entry);
                         self.sync_entry_output();
                         let anchor = Position::new(mouse.column, mouse.row);
-                        return Ok(self.open_context_menu(Some(anchor)).into());
+                        return Ok(self.context_menu(Some(anchor)).into());
                     }
                 }
                 MouseInput::Handled => {}

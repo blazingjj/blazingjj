@@ -17,6 +17,7 @@ use crate::app::command::Command;
 use crate::background_tasks::TaskResult;
 use crate::commander::JjCommand;
 use crate::commander::log::Head;
+use crate::keybinds::HelpItem;
 
 /// Action commmands from component to application
 pub enum AppAction {
@@ -90,6 +91,23 @@ pub enum Scroll {
     Up,
     DownHalfPage,
     UpHalfPage,
+    ToTop,
+    ToBottom,
+}
+
+impl Scroll {
+    /// How far to move in a list of `page` entries, as far as there is
+    /// to go for the ends.
+    fn distance(self, page: isize) -> isize {
+        match self {
+            Scroll::Down => 1,
+            Scroll::Up => -1,
+            Scroll::DownHalfPage => page / 2,
+            Scroll::UpHalfPage => (page / 2).saturating_neg(),
+            Scroll::ToBottom => isize::MAX,
+            Scroll::ToTop => -isize::MAX,
+        }
+    }
 }
 
 pub trait Component {
@@ -139,9 +157,13 @@ pub trait Tab: Component {
         Ok(())
     }
 
+    /// The menu of what can be done to what the tab has selected, put
+    /// where the selection is.
+    fn open_context_menu(&self) -> Result<Option<AppAction>>;
+
     /// Keybindings of the main panel, for the help popup.
-    fn make_main_panel_help(&self) -> Vec<(String, String)>;
+    fn make_main_panel_help(&self) -> Vec<HelpItem>;
 
     /// Keybindings of the details panel, for the help popup.
-    fn make_details_panel_help(&self) -> Vec<(String, String)>;
+    fn make_details_panel_help(&self) -> Vec<HelpItem>;
 }

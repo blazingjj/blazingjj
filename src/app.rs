@@ -38,6 +38,7 @@ use crate::event::AppEvent;
 use crate::event::EventSource;
 use crate::keybinds::GlobalEvent;
 use crate::keybinds::GlobalKeybinds;
+use crate::keybinds::HelpSection;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
@@ -174,11 +175,17 @@ impl<'a> App<'a> {
     fn open_help(&mut self) -> Result<()> {
         let global_help = self.global_keybinds.make_help();
         let tab = self.get_current_tab();
-        let popup = HelpPopup::new(
-            tab.make_main_panel_help(),
-            tab.make_details_panel_help(),
-            global_help,
+        let sections = HelpSection::gather(
+            global_help
+                .into_iter()
+                .chain(tab.make_main_panel_help())
+                .chain(tab.make_details_panel_help()),
         );
+
+        let (side, main) = sections
+            .into_iter()
+            .partition(|section| section.section.beside_main_panel());
+        let popup = HelpPopup::new(main, side);
         self.popup = Some(Box::new(popup));
         Ok(())
     }
@@ -661,6 +668,12 @@ impl<'a> App<'a> {
                                 self.get_current_tab()
                                     .scroll_main_panel(Scroll::UpHalfPage)?;
                             }
+                            GlobalEvent::ScrollToTop => {
+                                self.get_current_tab().scroll_main_panel(Scroll::ToTop)?;
+                            }
+                            GlobalEvent::ScrollToBottom => {
+                                self.get_current_tab().scroll_main_panel(Scroll::ToBottom)?;
+                            }
                             GlobalEvent::FocusCurrent => {
                                 self.get_current_tab().focus_current()?;
                                 // The tabs that read what they show when
@@ -685,6 +698,11 @@ impl<'a> App<'a> {
                             GlobalEvent::FilesTab => self.set_tab(TabId::Files),
                             GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks),
                             GlobalEvent::EvologTab => self.set_tab(TabId::Evolog),
+                            GlobalEvent::OpenContextMenu => {
+                                if let Some(action) = self.get_current_tab().open_context_menu()? {
+                                    self.handle_action(action)?;
+                                }
+                            }
                             GlobalEvent::CommandPopup => {
                                 self.popup =
                                     Some(Box::new(CommandPopup::new(CommandMode::Capture)));

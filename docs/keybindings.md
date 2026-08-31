@@ -23,6 +23,8 @@ scroll-down = ["j", "down"]
 scroll-up = ["k", "up"]
 scroll-down-half = "shift+j"
 scroll-up-half = "shift+k"
+scroll-to-top = "ctrl+home"
+scroll-to-bottom = "ctrl+end"
 
 focus-current = "@"
 refresh = ["shift+r", "f5"]
@@ -31,6 +33,7 @@ open-help = "?"
 next-tab = "l"
 prev-tab = "h"
 
+open-context-menu = "menu"
 command-popup = ":"
 interactive-command-popup = "!"
 quit = ["q", "ctrl+c"]
@@ -61,17 +64,55 @@ accept = "ctrl+s"
 cancel = "esc"
 ```
 
-### Log tab
+Three popups have keys of their own besides, for the buttons and options
+they put up. Those are matched after the keys every popup answers to, so
+binding one of them to a key a popup already uses leaves it unreachable.
+The confirmation popup and the set-bookmark popup mark these keys in the
+label of the button or option they press, or name them after it where the
+label has no such letter, so a rebinding shows up there.
 
-Only the log tab has bindings of its own; the other tabs and the keys that
-mark a change (`space`) or jump to the top or bottom of the log
-(`ctrl+home`/`ctrl+end`) are not configurable. `toggle-diff-format` is the
-one details panel key that is, and it applies to the log tab only.
+```toml
+[blazingjj.keybinds.confirm-popup]
+yes = "y"
+no = "n"
+select-yes = "left"
+select-no = "right"
+
+[blazingjj.keybinds.bookmark-set-popup]
+use-generated-name = "g"
+create-bookmark = "c"
+
+[blazingjj.keybinds.rebase-popup]
+source-with-descendants = "s"
+source-whole-branch = "b"
+source-single-revision = "r"
+target-new-branch = "d"
+target-insert-after = "shift+a"
+target-insert-before = "shift+b"
+```
+
+### Details panel
+
+These work in the details panel of every tab.
+
+```toml
+[blazingjj.keybinds.details-panel]
+scroll-down = "ctrl+e"
+scroll-up = "ctrl+y"
+scroll-down-half = "ctrl+d"
+scroll-up-half = "ctrl+u"
+scroll-down-page = "ctrl+f"
+scroll-up-page = "ctrl+b"
+
+toggle-diff-format = "w"
+toggle-wrap = "shift+w"
+```
+
+### Log tab
 
 ```toml
 [blazingjj.keybinds.log-tab]
-toggle-diff-format = "w"
-
+mark-head = "space"
 goto-parent = "-"
 
 create-new = "n"
@@ -98,6 +139,42 @@ push-all = "shift+p"
 push-all-new = "ctrl+shift+p"
 fetch = "f"
 fetch-all = "shift+f"
+```
 
-open-context-menu = "menu"
+### Files tab
+
+```toml
+[blazingjj.keybinds.files-tab]
+untrack = "x"
+restore = "r"
+```
+
+### Bookmarks tab
+
+```toml
+[blazingjj.keybinds.bookmarks-tab]
+toggle-show-all = "a"
+
+create-bookmark = "c"
+rename-bookmark = "r"
+delete-bookmark = "d"
+forget-bookmark = "f"
+track-bookmark = "t"
+untrack-bookmark = "shift+t"
+set-bookmark = "b"
+
+view-in-log = "enter"
+create-new = "n"
+create-new-describe = "shift+n"
+edit-change = "e"
+edit-change-ignore-immutable = "shift+e"
+```
+
+### Evolog tab
+
+```toml
+[blazingjj.keybinds.evolog-tab]
+open-files = "enter"
+duplicate = "shift+d"
+copy-rev = "shift+y"
 ```

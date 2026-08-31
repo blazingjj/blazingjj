@@ -28,6 +28,7 @@ use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::FilesTabEvent;
 use crate::keybinds::FilesTabKeybinds;
+use crate::keybinds::HelpItem;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -144,8 +145,8 @@ impl FilesTab {
     pub fn new(current_head: &Head, background_tasks: BackgroundTasks) -> Self {
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
-        let keybinds = FilesTabKeybinds::default();
-        let details_keybinds = DetailsPanelKeybinds::default();
+        let keybinds = FilesTabKeybinds::new();
+        let details_keybinds = DetailsPanelKeybinds::new();
 
         Self {
             head: current_head.clone(),
@@ -233,7 +234,7 @@ impl FilesTab {
 
     /// The menu of what can be done to the selected file, put at
     /// `anchor` or centered when there is nowhere to point at.
-    fn open_context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
+    fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         let file = self.file.as_ref()?;
 
         Some(AppAction::SetPopup(Box::new(files_context_menu(
@@ -253,10 +254,6 @@ impl FilesTab {
                 .file
                 .clone()
                 .map(|file| AppAction::Run(Command::RestoreFile(file)))),
-            FilesTabEvent::OpenContextMenu => Ok(self.open_context_menu(
-                self.get_current_file_index()
-                    .and_then(|index| self.files_pane.item_anchor(index, 1)),
-            )),
             // Not an operation of its own; the key handler deals with it.
             FilesTabEvent::Unbound => Ok(None),
         }
@@ -311,13 +308,7 @@ impl Tab for FilesTab {
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
-        let half_page = self.files_pane.visible_items() / 2;
-        self.scroll_files(match scroll {
-            Scroll::Down => 1,
-            Scroll::Up => -1,
-            Scroll::DownHalfPage => half_page,
-            Scroll::UpHalfPage => half_page.saturating_neg(),
-        });
+        self.scroll_files(scroll.distance(self.files_pane.visible_items()));
         Ok(())
     }
 
@@ -326,11 +317,18 @@ impl Tab for FilesTab {
         Ok(())
     }
 
-    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+        Ok(self.context_menu(
+            self.get_current_file_index()
+                .and_then(|index| self.files_pane.item_anchor(index, 1)),
+        ))
+    }
+
+    fn make_main_panel_help(&self) -> Vec<HelpItem> {
         self.keybinds.make_help()
     }
 
-    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+    fn make_details_panel_help(&self) -> Vec<HelpItem> {
         self.details_keybinds.make_help()
     }
 }
@@ -495,7 +493,7 @@ impl Component for FilesTab {
                         self.file = Some(file);
                         self.show_diff();
                         let anchor = Position::new(mouse.column, mouse.row);
-                        return Ok(self.open_context_menu(Some(anchor)).into());
+                        return Ok(self.context_menu(Some(anchor)).into());
                     }
                 }
                 MouseInput::Handled => {}

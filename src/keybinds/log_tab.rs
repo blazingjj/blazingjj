@@ -2,10 +2,12 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
+use super::HelpItem;
+use super::Section;
 use super::Shortcut;
-use super::config::KeybindsConfig;
 use super::config::LogTabKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
+use crate::env::keybinds_config;
 use crate::make_keybinds_help;
 use crate::set_keybinds;
 use crate::update_keybinds;
@@ -18,9 +20,6 @@ pub struct LogTabKeybinds {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum LogTabEvent {
-    ScrollToBottom,
-    ScrollToTop,
-
     ToggleHeadMark,
 
     GotoParent,
@@ -43,8 +42,6 @@ pub enum LogTabEvent {
     Push(PushScope),
     Fetch { all_remotes: bool },
 
-    OpenContextMenu,
-
     Unbound,
 }
 
@@ -66,8 +63,6 @@ impl Default for LogTabKeybinds {
         let mut keys = KeybindsStore::<LogTabEvent>::default();
         set_keybinds!(
             keys,
-            LogTabEvent::ScrollToBottom => "ctrl+end",
-            LogTabEvent::ScrollToTop => "ctrl+home",
             LogTabEvent::ToggleHeadMark => "space",
             LogTabEvent::GotoParent => "-",
             LogTabEvent::Duplicate => "shift+d",
@@ -93,7 +88,6 @@ impl Default for LogTabKeybinds {
             LogTabEvent::Push(PushScope::All) => "ctrl+shift+p",
             LogTabEvent::Fetch { all_remotes: false } => "f",
             LogTabEvent::Fetch { all_remotes: true } => "shift+f",
-            LogTabEvent::OpenContextMenu => "menu",
         );
 
         Self { keys }
@@ -101,6 +95,15 @@ impl Default for LogTabKeybinds {
 }
 
 impl LogTabKeybinds {
+    /// The bindings as the configuration has them.
+    pub fn new() -> Self {
+        let mut keybinds = Self::default();
+        if let Some(config) = keybinds_config().and_then(|config| config.log_tab.as_ref()) {
+            keybinds.extend_from_config(config);
+        }
+        keybinds
+    }
+
     pub fn match_event(&self, event: KeyEvent) -> LogTabEvent {
         if let Some(action) = self.keys.match_event(event) {
             action
@@ -108,15 +111,11 @@ impl LogTabKeybinds {
             LogTabEvent::Unbound
         }
     }
-    pub fn extend_from_config(&mut self, config: &KeybindsConfig) {
-        if let Some(ref log_tab) = config.log_tab {
-            self.extend_from_log_tab_config(log_tab);
-        }
-    }
 
-    fn extend_from_log_tab_config(&mut self, config: &LogTabKeybindsConfig) {
+    fn extend_from_config(&mut self, config: &LogTabKeybindsConfig) {
         update_keybinds!(
             self.keys,
+            LogTabEvent::ToggleHeadMark => config.mark_head,
             LogTabEvent::GotoParent => config.goto_parent,
             LogTabEvent::Duplicate => config.duplicate,
             LogTabEvent::CreateNew { describe: false } => config.create_new,
@@ -141,37 +140,40 @@ impl LogTabKeybinds {
             LogTabEvent::Push(PushScope::All) => config.push_all_new,
             LogTabEvent::Fetch { all_remotes: false } => config.fetch,
             LogTabEvent::Fetch { all_remotes: true } => config.fetch_all,
-            LogTabEvent::OpenContextMenu => config.open_context_menu,
         );
     }
-    pub fn make_main_panel_help(&self) -> Vec<(String, String)> {
+
+    pub fn make_main_panel_help(&self) -> Vec<HelpItem> {
         make_keybinds_help!(
             self.keys,
-            LogTabEvent::GotoParent => "go to parent commit",
-            LogTabEvent::OpenFiles => "see files",
-            LogTabEvent::OpenEvolog => "see how the change evolved",
-            LogTabEvent::EditRevset => "set revset",
-            LogTabEvent::Describe => "describe change",
-            LogTabEvent::Duplicate => "duplicate change",
-            LogTabEvent::EditChange { ignore_immutable: false } => "edit change",
-            LogTabEvent::EditChange { ignore_immutable: true } => "edit change ignoring immutability",
-            LogTabEvent::CreateNew { describe: false } => "new change",
-            LogTabEvent::CreateNew { describe: true } => "new with message",
-            LogTabEvent::Abandon => "abandon change",
-            LogTabEvent::Absorb => "absorb selected change into its mutable ancestors",
-            LogTabEvent::Rebase => "rebase @ to the selected change",
-            LogTabEvent::Squash { ignore_immutable: false } => "squash @ into the selected change",
-            LogTabEvent::Squash { ignore_immutable: true } => "squash @ into the selected change ignoring immutability",
-            LogTabEvent::SetBookmark => "set bookmark",
-            LogTabEvent::CopyChangeId => "yank change id to clipboard",
-            LogTabEvent::CopyRev => "yank revision to clipboard",
-            LogTabEvent::Fetch { all_remotes: false } => "git fetch",
-            LogTabEvent::Fetch { all_remotes: true } => "git fetch all remotes",
-            LogTabEvent::Push(PushScope::Selected) => "git push",
-            LogTabEvent::Push(PushScope::SelectedWithNew) => "git push, tracking new bookmarks",
-            LogTabEvent::Push(PushScope::Tracked) => "git push all tracked bookmarks",
-            LogTabEvent::Push(PushScope::All) => "git push all bookmarks, new ones included",
-            LogTabEvent::OpenContextMenu => "open the context menu",
+            LogTabEvent::GotoParent => Section::Navigation, "go to parent commit",
+            LogTabEvent::OpenFiles => Section::Navigation, "see files",
+            LogTabEvent::OpenEvolog => Section::Navigation, "see how the change evolved",
+            LogTabEvent::EditRevset => Section::Navigation, "set revset",
+
+            LogTabEvent::ToggleHeadMark => Section::Changes, "mark change to act on",
+            LogTabEvent::CreateNew { describe: false } => Section::Changes, "new change",
+            LogTabEvent::CreateNew { describe: true } => Section::Changes, "new with message",
+            LogTabEvent::Describe => Section::Changes, "describe change",
+            LogTabEvent::EditChange { ignore_immutable: false } => Section::Changes, "edit change",
+            LogTabEvent::EditChange { ignore_immutable: true } => Section::Changes, "edit change ignoring immutability",
+            LogTabEvent::Duplicate => Section::Changes, "duplicate change",
+            LogTabEvent::Abandon => Section::Changes, "abandon change",
+            LogTabEvent::Rebase => Section::Changes, "rebase @ onto it",
+            LogTabEvent::Squash { ignore_immutable: false } => Section::Changes, "squash @ into it",
+            LogTabEvent::Squash { ignore_immutable: true } => Section::Changes, "squash @ into it, ignoring immutability",
+            LogTabEvent::Absorb => Section::Changes, "absorb into its mutable ancestors",
+
+            LogTabEvent::SetBookmark => Section::BookmarksAndRemotes, "set bookmark",
+            LogTabEvent::Fetch { all_remotes: false } => Section::BookmarksAndRemotes, "git fetch",
+            LogTabEvent::Fetch { all_remotes: true } => Section::BookmarksAndRemotes, "git fetch all remotes",
+            LogTabEvent::Push(PushScope::Selected) => Section::BookmarksAndRemotes, "git push",
+            LogTabEvent::Push(PushScope::SelectedWithNew) => Section::BookmarksAndRemotes, "git push, tracking new bookmarks",
+            LogTabEvent::Push(PushScope::Tracked) => Section::BookmarksAndRemotes, "git push all tracked bookmarks",
+            LogTabEvent::Push(PushScope::All) => Section::BookmarksAndRemotes, "git push all bookmarks, new ones included",
+
+            LogTabEvent::CopyChangeId => Section::Clipboard, "yank change id",
+            LogTabEvent::CopyRev => Section::Clipboard, "yank revision",
         )
     }
 }

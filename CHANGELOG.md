@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The keybinds config section is now kebab-cased: `[blazingjj.keybinds.log_tab]` must be
   changed to `[blazingjj.keybinds.log-tab]`
 - The keybindings shared by all tabs are now configured under `[blazingjj.keybinds]`:
-  `focus-current`, `refresh` and `open-help` move there from
-  `[blazingjj.keybinds.log-tab]`, which also loses its `scroll-*` overrides
+  `focus-current`, `refresh`, `open-help` and `open-context-menu` move there
+  from `[blazingjj.keybinds.log-tab]`, which also loses its `scroll-*` overrides
 - jj 0.42.0 or newer is now required
 - The confirmation dialogs are now popups of the app and go away on `q` or
   Escape, like the other popups, rather than on the log tab's `close-popup`
@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `o`, only on what accepts or cancels a popup
 - Escape no longer quits the app; `q` and `Ctrl+c` still do, and
   `[blazingjj.keybinds] quit` can bind it back
+- The details panel is now configured under `[blazingjj.keybinds.details-panel]`
+  and answers to the same keys in every tab. `[blazingjj.keybinds.log-tab]
+  toggle-diff-format`, which only ever reached the log tab's panel, is gone
 
 ### Added
 
@@ -53,13 +56,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   revision
 - The tabs overview takes the mouse: a click switches to the tab clicked, and
   the wheel cycles through the tabs
+- The keys the confirmation, set-bookmark and rebase popups have of their own
+  are now configurable, under `[blazingjj.keybinds.confirm-popup]`,
+  `[blazingjj.keybinds.bookmark-set-popup]` and
+  `[blazingjj.keybinds.rebase-popup]`. The first two mark the key a button or
+  option is bound to in its label, or name it after the label where the label
+  has no such letter, rather than marking a letter that a rebinding would move
+- `[blazingjj.keybinds.log-tab] mark-head` for marking a change, which had no
+  binding to configure and no line in the help
+- The files, bookmarks and evolog tabs can now have their keybindings
+  configured, under `[blazingjj.keybinds.files-tab]`,
+  `[blazingjj.keybinds.bookmarks-tab]` and `[blazingjj.keybinds.evolog-tab]`
+- The details panel keybindings are now all configurable: `scroll-down`,
+  `scroll-up`, the `scroll-*-half` and `scroll-*-page` bindings, `toggle-wrap`
+  and `toggle-diff-format`
 - The help popup now scrolls with the mouse wheel
 - The help popup now shows a scrollbar when it does not fit on screen
 - Keybinding for jj absorb (`A`)
+- Going to the top or bottom of the list (`Ctrl+Home` and `Ctrl+End`) now works
+  in the files, bookmarks and evolog tabs as well, and is configured under
+  `[blazingjj.keybinds]` as `scroll-to-top` and `scroll-to-bottom` alongside
+  the other ways of scrolling
 - Global keybindings under `[blazingjj.keybinds]` (`scroll-down`, `scroll-up`,
   `scroll-down-half`, `scroll-up-half`, `focus-current`, `refresh`, `open-help`,
-  `next-tab`, `prev-tab`, `command-popup`, `quit`) that work the same in every
-  tab; `scroll-down` and `scroll-up` scroll the popups as well
+  `next-tab`, `prev-tab`, `open-context-menu`, `command-popup`,
+  `interactive-command-popup`, `quit`) that work the same in every tab;
+  `scroll-down` and `scroll-up` scroll the popups as well
 - The help popup now lists the global keybindings alongside the main and details panel ones
 - Message popup now supports scrolling with a scrollbar
 - Command popup output now preserves ANSI color
@@ -102,9 +124,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The popups now all scroll alike, so the lists and the help scroll by half a
   page on `Ctrl+d` and `Ctrl+u` and by a page on `Ctrl+f` and `Ctrl+b` as well,
   as the message popup already did
+- A popup's own keys are now matched after the ones every popup answers to,
+  which is what the set-bookmark and confirmation popups already did and the
+  rebase popup did the other way round
 - The line under a popup naming the keys it answers to now names the keys
   they are bound to, rather than the ones they were bound to when it was
   written
+- The help popup now lists every keybinding under a heading for what it does
+  rather than for who binds it: the keys that move around in the main panel --
+  scrolling, `@`, going to the top or bottom of the list, and the context
+  menu -- join the panel's navigation heading rather than the global
+  keybindings, and the files and evolog tabs get a heading per kind of thing
+  their keys do rather than one holding all of them
+- The help popup now lists a tab's main panel keybindings under a heading per
+  kind of thing they do -- navigation, changes, bookmarks and remotes,
+  clipboard -- rather than as one run, and spreads those headings over a second
+  column where the terminal is wide enough to hold one
 - The help popup is now sized to fit what it lists
 - The message popup is now sized to fit its message, rather than always
   taking up most of the screen
@@ -122,6 +157,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `@` in the bookmarks tab now goes to the bookmark on the working copy, or to
+  the one it is standing on, rather than doing nothing while the help offers it
+- A keybinding on Home, End or the space bar now shows the key's name rather
+  than "Unknown" or a blank
+- The help popup now lists the key that opens the context menu in every tab,
+  the bookmarks tab included
 - An operation jj turns down no longer takes the app down with it: the reason
   goes up in a popup, as it already did for the operations refused before they
   were run

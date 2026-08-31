@@ -26,6 +26,7 @@ use crate::keybinds::BookmarksTabEvent;
 use crate::keybinds::BookmarksTabKeybinds;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
+use crate::keybinds::HelpItem;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -117,8 +118,8 @@ impl BookmarksTab {
     pub fn new(background_tasks: BackgroundTasks) -> Self {
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
-        let keybinds = BookmarksTabKeybinds::default();
-        let details_keybinds = DetailsPanelKeybinds::default();
+        let keybinds = BookmarksTabKeybinds::new();
+        let details_keybinds = DetailsPanelKeybinds::new();
 
         Self {
             bookmarks_output: Ok(Vec::new()),
@@ -194,6 +195,18 @@ impl BookmarksTab {
         self.show_bookmark();
     }
 
+    /// The first listed bookmark `matches` takes.
+    fn find_bookmark(&self, matches: impl Fn(&Bookmark, &Head) -> bool) -> Option<BookmarkLine> {
+        self.bookmarks_output
+            .iter()
+            .flatten()
+            .find(|line| match line {
+                BookmarkLine::Parsed { bookmark, head, .. } => matches(bookmark, head),
+                BookmarkLine::Unparsable(_) => false,
+            })
+            .cloned()
+    }
+
     /// Have the details panel show the change the selected bookmark
     /// points at.
     fn show_bookmark(&mut self) {
@@ -263,7 +276,7 @@ impl BookmarksTab {
 
     /// The menu of what can be done to the selected bookmark, put at
     /// `anchor` or centered when there is nowhere to point at.
-    fn open_context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
+    fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(bookmarks_context_menu(
             self.config.clone(),
             anchor,
@@ -356,12 +369,6 @@ impl BookmarksTab {
                     return Ok(Some(AppAction::ViewLog(head.clone())));
                 }
             }
-            BookmarksTabEvent::OpenContextMenu => {
-                return Ok(self.open_context_menu(
-                    self.get_current_bookmark_index()
-                        .and_then(|index| self.bookmarks_pane.item_anchor(index, 1)),
-                ));
-            }
             // Not an operation of its own; the key handler deals with it.
             BookmarksTabEvent::Unbound => {}
         }
@@ -391,21 +398,49 @@ impl Tab for BookmarksTab {
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
-        let half_page = self.bookmarks_pane.visible_items() / 2;
-        self.scroll_bookmarks(match scroll {
-            Scroll::Down => 1,
-            Scroll::Up => -1,
-            Scroll::DownHalfPage => half_page,
-            Scroll::UpHalfPage => half_page.saturating_neg(),
-        });
+        self.scroll_bookmarks(scroll.distance(self.bookmarks_pane.visible_items()));
         Ok(())
     }
 
-    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+    /// Go to the bookmark on the working copy, or failing that the one
+    /// the working copy is standing on, which is the bookmark the change
+    /// it holds is going to end up under. Stays where it is when there
+    /// is no bookmark behind the working copy at all.
+    fn focus_current(&mut self) -> Result<()> {
+        let current = new_commander().get_current_head()?;
+
+        // A bookmark on the working copy is in the list we already hold,
+        // so finding one there saves asking jj what lies behind it.
+        let mut found = self.find_bookmark(|_, head| *head == current);
+        if found.is_none()
+            && let Some(name) = new_commander().get_nearest_bookmark(&current.commit_id)?
+        {
+            found = self
+                .find_bookmark(|bookmark, _| bookmark.remote.is_none() && bookmark.name == name);
+        }
+
+        let Some(found) = found else {
+            return Ok(());
+        };
+
+        self.bookmark = Some(found);
+        self.show_bookmark();
+
+        Ok(())
+    }
+
+    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+        Ok(self.context_menu(
+            self.get_current_bookmark_index()
+                .and_then(|index| self.bookmarks_pane.item_anchor(index, 1)),
+        ))
+    }
+
+    fn make_main_panel_help(&self) -> Vec<HelpItem> {
         self.keybinds.make_help()
     }
 
-    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+    fn make_details_panel_help(&self) -> Vec<HelpItem> {
         self.details_keybinds.make_help()
     }
 }
@@ -568,7 +603,7 @@ impl Component for BookmarksTab {
                         self.bookmark = Some(bookmark);
                         self.show_bookmark();
                         let anchor = Position::new(mouse.column, mouse.row);
-                        return Ok(self.open_context_menu(Some(anchor)).into());
+                        return Ok(self.context_menu(Some(anchor)).into());
                     }
                 }
                 MouseInput::Handled => {}

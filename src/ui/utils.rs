@@ -20,6 +20,7 @@ use ratatui::text::Text;
 use ratatui::widgets::Block;
 
 use crate::env::JJLayout;
+use crate::keybinds::Shortcut;
 
 /// Tracks the split position between two panes and handles drag-to-resize mouse events.
 pub struct PaneDivider {
@@ -194,6 +195,27 @@ pub fn centered_rect_fixed(area: Rect, width: u16, height: u16) -> Rect {
     }
 }
 
+/// `label` with the key that picks it marked: parens around the first
+/// character of the label the key is, or the key's name after the label
+/// where the label holds no such character.
+pub fn mark_key(label: &str, shortcut: Option<Shortcut>) -> String {
+    let Some(shortcut) = shortcut else {
+        return label.to_owned();
+    };
+
+    if let Some(key) = shortcut.as_char()
+        && let Some((at, marked)) = label
+            .char_indices()
+            .find(|(_, c)| c.eq_ignore_ascii_case(&key))
+    {
+        let (before, rest) = label.split_at(at);
+        let after = &rest[marked.len_utf8()..];
+        return format!("{before}({marked}){after}");
+    }
+
+    format!("{label} ({shortcut})")
+}
+
 /// An error under a red title, with any ANSI escape sequences in its
 /// message honoured.
 pub fn error_text<'a>(
@@ -361,7 +383,27 @@ pub fn tabs_to_spaces(line: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
+
+    /// A label marks the key that picks it in place where the key is one
+    /// of its characters, and names it after the label otherwise.
+    #[test]
+    fn test_mark_key() {
+        let bind = |shortcut| Some(Shortcut::from_str(shortcut).expect("shortcut should parse"));
+
+        assert_eq!(mark_key("Yes", bind("y")), "(Y)es");
+        assert_eq!(mark_key("No", bind("n")), "(N)o");
+        assert_eq!(mark_key("Create bookmark", bind("k")), "Create boo(k)mark");
+        // A key the label does not hold, or one no single character
+        // stands for, goes after it.
+        assert_eq!(mark_key("Yes", bind("q")), "Yes (q)");
+        assert_eq!(mark_key("Yes", bind("ctrl+y")), "Yes (Control+y)");
+        assert_eq!(mark_key("Yes", bind("enter")), "Yes (Enter)");
+        // A binding that has been disabled leaves the label alone.
+        assert_eq!(mark_key("Yes", None), "Yes");
+    }
 
     #[test]
     fn an_error_is_shown_under_its_title() -> Result<(), ansi_to_tui::Error> {

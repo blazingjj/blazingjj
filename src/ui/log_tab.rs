@@ -23,6 +23,7 @@ use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
+use crate::keybinds::HelpItem;
 use crate::keybinds::LogTabEvent;
 use crate::keybinds::LogTabKeybinds;
 use crate::keybinds::PopupEvent;
@@ -92,17 +93,8 @@ The main functions are:
 impl<'a> LogTab<'a> {
     #[instrument(level = "info", name = "Initializing log tab", parent = None, skip(background_tasks))]
     pub fn new(background_tasks: BackgroundTasks, head: Head) -> Self {
-        let mut keybinds = LogTabKeybinds::default();
-        let mut details_keybinds = DetailsPanelKeybinds::default();
-        if let Some(keybinds_config) = get_env().jj_config.keybinds() {
-            keybinds.extend_from_config(keybinds_config);
-            details_keybinds.extend_from_config(
-                keybinds_config
-                    .log_tab
-                    .as_ref()
-                    .and_then(|c| c.toggle_diff_format.as_ref()),
-            );
-        }
+        let keybinds = LogTabKeybinds::new();
+        let details_keybinds = DetailsPanelKeybinds::new();
 
         let config = get_env().jj_config.clone();
         let pane_divider = PaneDivider::new(config.layout_percent());
@@ -174,7 +166,7 @@ impl<'a> LogTab<'a> {
 
     /// The menu of what can be done to the selected change, put at
     /// `anchor` or centered when there is nowhere to point at.
-    fn open_context_menu(&self, anchor: Option<Position>) -> Result<Option<AppAction>> {
+    fn context_menu(&self, anchor: Option<Position>) -> Result<Option<AppAction>> {
         Ok(Some(AppAction::SetPopup(Box::new(log_context_menu(
             self.config.clone(),
             anchor,
@@ -257,14 +249,6 @@ impl<'a> LogTab<'a> {
 
     fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<Option<AppAction>> {
         match log_tab_event {
-            LogTabEvent::ScrollToBottom => {
-                self.log_panel.scroll_relative(isize::MAX);
-                self.sync_head_output();
-            }
-            LogTabEvent::ScrollToTop => {
-                self.log_panel.scroll_relative(-isize::MAX);
-                self.sync_head_output();
-            }
             LogTabEvent::ToggleHeadMark => {
                 self.log_panel.toggle_head_mark();
                 self.sync_head_output();
@@ -356,10 +340,6 @@ impl<'a> LogTab<'a> {
                 return self.handle_goto_parent();
             }
 
-            LogTabEvent::OpenContextMenu => {
-                return self.open_context_menu(self.log_panel.selected_position());
-            }
-
             LogTabEvent::Unbound => {}
         };
         Ok(None)
@@ -394,13 +374,8 @@ impl Tab for LogTab<'_> {
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
-        let half_page = self.log_panel.visible_heads() / 2;
-        self.log_panel.scroll_relative(match scroll {
-            Scroll::Down => 1,
-            Scroll::Up => -1,
-            Scroll::DownHalfPage => half_page,
-            Scroll::UpHalfPage => half_page.saturating_neg(),
-        });
+        self.log_panel
+            .scroll_relative(scroll.distance(self.log_panel.visible_heads()));
         self.sync_head_output();
         Ok(())
     }
@@ -410,11 +385,15 @@ impl Tab for LogTab<'_> {
         Ok(())
     }
 
-    fn make_main_panel_help(&self) -> Vec<(String, String)> {
+    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+        self.context_menu(self.log_panel.selected_position())
+    }
+
+    fn make_main_panel_help(&self) -> Vec<HelpItem> {
         self.keybinds.make_main_panel_help()
     }
 
-    fn make_details_panel_help(&self) -> Vec<(String, String)> {
+    fn make_details_panel_help(&self) -> Vec<HelpItem> {
         self.details_keybinds.make_help()
     }
 }
@@ -558,7 +537,7 @@ impl Component for LogTab<'_> {
                         self.log_panel.set_head_in_place(head);
                         self.sync_head_output();
                         let anchor = Position::new(mouse_event.column, mouse_event.row);
-                        return Ok(self.open_context_menu(Some(anchor))?.into());
+                        return Ok(self.context_menu(Some(anchor))?.into());
                     }
                 }
                 MouseInput::Handled => {}

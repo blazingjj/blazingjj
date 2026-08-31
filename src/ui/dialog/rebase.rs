@@ -14,8 +14,8 @@
 
     Esc: Cancel    Enter: Rebase
 ~~~
-It has keyboard shortcuts s, b, r, d, shift+a, shift+b for selecting
-a radiobutton, and shortcuts Enter, Esc, q for closing the popup.
+A radio button is selected by s, b, r, d, shift+a or shift+b, and the
+popup is closed by Enter, Esc or q, both as configured.
 
 
 */
@@ -71,7 +71,7 @@ pub struct RebasePopup {
 impl RebasePopup {
     pub fn new(source_rev: Head, target_rev: Head) -> Self {
         Self {
-            keybinds: Keybinds::default(),
+            keybinds: Keybinds::new(),
             popup_keybinds: PopupKeybinds::dialog(),
             source_rev,
             target_rev,
@@ -187,27 +187,25 @@ impl Component for RebasePopup {
             return Ok(ComponentInputResult::Handled);
         };
 
-        // What the popup itself binds comes first, so that a key it
-        // needs is not taken by the keys every popup answers to.
+        match self.popup_keybinds.match_event(key) {
+            PopupEvent::Accept => {
+                return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
+                    vec![AppAction::ClosePopup, AppAction::Run(self.command())],
+                )));
+            }
+            PopupEvent::Cancel => {
+                return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
+            }
+            _ => {}
+        }
+
         match self.keybinds.match_event(key) {
-            PopupAction::SetSourceMode(m) => {
-                self.source_mode = m;
-                return Ok(ComponentInputResult::Handled);
-            }
-            PopupAction::SetTargetMode(m) => {
-                self.target_mode = m;
-                return Ok(ComponentInputResult::Handled);
-            }
+            PopupAction::SetSourceMode(m) => self.source_mode = m,
+            PopupAction::SetTargetMode(m) => self.target_mode = m,
             PopupAction::None => {}
         }
 
-        match self.popup_keybinds.match_event(key) {
-            PopupEvent::Accept => Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                vec![AppAction::ClosePopup, AppAction::Run(self.command())],
-            ))),
-            PopupEvent::Cancel => Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup)),
-            _ => Ok(ComponentInputResult::Handled),
-        }
+        Ok(ComponentInputResult::Handled)
     }
 }
 

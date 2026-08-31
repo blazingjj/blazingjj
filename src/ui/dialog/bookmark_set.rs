@@ -1,7 +1,6 @@
 use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
-use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -27,6 +26,8 @@ use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
 use crate::commander::new_commander;
 use crate::env::JjConfig;
+use crate::keybinds::BookmarkSetPopupEvent;
+use crate::keybinds::BookmarkSetPopupKeybinds;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
@@ -35,6 +36,7 @@ use crate::ui::ComponentInputResult;
 use crate::ui::styles::create_popup_block;
 use crate::ui::utils::centered_rect;
 use crate::ui::utils::centered_rect_line_height;
+use crate::ui::utils::mark_key;
 
 enum BookmarkSetOption {
     CreateBookmark,
@@ -54,6 +56,7 @@ pub struct BookmarkSetPopup<'a> {
     creating: Option<TextArea<'a>>,
     keybinds: PopupKeybinds,
     name_keybinds: PopupKeybinds,
+    own_keybinds: BookmarkSetPopupKeybinds,
 }
 
 fn generate_options(change_id: Option<&ChangeId>, commit_id: &CommitId) -> Vec<BookmarkSetOption> {
@@ -110,6 +113,7 @@ impl BookmarkSetPopup<'_> {
             creating: None,
             keybinds: PopupKeybinds::dialog(),
             name_keybinds: PopupKeybinds::text_line(),
+            own_keybinds: BookmarkSetPopupKeybinds::new(),
         }
     }
 
@@ -145,6 +149,11 @@ impl BookmarkSetPopup<'_> {
                 commit_id: self.commit_id.clone(),
             }),
         ]))
+    }
+
+    /// An option's line, marking the key that picks it.
+    fn label(&self, option: &str, event: BookmarkSetPopupEvent) -> String {
+        mark_key(option, self.own_keybinds.shortcut(event))
     }
 
     /// The name generated for the change the popup was opened for, if
@@ -201,12 +210,12 @@ impl Component for BookmarkSetPopup<'_> {
                 .constraints([Constraint::Fill(1), Constraint::Length(2)])
                 .split(block.inner(area));
 
+            let create = self.label("Create bookmark", BookmarkSetPopupEvent::CreateBookmark);
+            let generate = self.label("Generate bookmark", BookmarkSetPopupEvent::UseGeneratedName);
             let list_items = self.options.iter().map(|option| match option {
-                BookmarkSetOption::CreateBookmark => {
-                    Text::raw("(C)reate bookmark").fg(Color::Yellow)
-                }
+                BookmarkSetOption::CreateBookmark => Text::raw(create.clone()).fg(Color::Yellow),
                 BookmarkSetOption::GeneratedName(generated_name, exists) => {
-                    let mut text = format!("(G)enerate bookmark: {generated_name}");
+                    let mut text = format!("{generate}: {generated_name}");
                     if *exists {
                         text.push_str(" (exists)");
                     }
@@ -315,14 +324,16 @@ impl Component for BookmarkSetPopup<'_> {
                 }
                 // The options carry the letter they are picked by, so
                 // those keys are the popup's own.
-                PopupEvent::Unbound => match key.code {
-                    KeyCode::Char('g') => {
+                PopupEvent::Unbound => match self.own_keybinds.match_event(key) {
+                    BookmarkSetPopupEvent::UseGeneratedName => {
                         if let Some(name) = self.generated_name() {
                             return Ok(self.set_bookmark(name));
                         }
                     }
-                    KeyCode::Char('c') => self.on_creating(),
-                    _ => return Ok(ComponentInputResult::NotHandled),
+                    BookmarkSetPopupEvent::CreateBookmark => self.on_creating(),
+                    BookmarkSetPopupEvent::Unbound => {
+                        return Ok(ComponentInputResult::NotHandled);
+                    }
                 },
             }
 

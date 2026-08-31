@@ -5,7 +5,6 @@ yes.
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
-use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
 use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
@@ -24,17 +23,18 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 
 use crate::env::JjConfig;
+use crate::keybinds::ConfirmPopupEvent;
+use crate::keybinds::ConfirmPopupKeybinds;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::utils::centered_rect_fixed;
+use crate::ui::utils::mark_key;
 
-const YES: &str = "(Y)es";
-const YES_KEY: char = 'y';
-const NO: &str = "(N)o";
-const NO_KEY: char = 'n';
+const YES: &str = "Yes";
+const NO: &str = "No";
 
 /// Blank cells around the question, and either side of a button label.
 const PADDING: u16 = 2;
@@ -54,6 +54,7 @@ pub struct ConfirmPopup {
     yes_selected: bool,
     config: JjConfig,
     keybinds: PopupKeybinds,
+    own_keybinds: ConfirmPopupKeybinds,
 }
 
 impl ConfirmPopup {
@@ -71,6 +72,7 @@ impl ConfirmPopup {
             yes_selected: true,
             config,
             keybinds: PopupKeybinds::dialog(),
+            own_keybinds: ConfirmPopupKeybinds::new(),
         }
     }
 
@@ -91,11 +93,19 @@ impl ConfirmPopup {
 
     /// What a button label takes with the padding either side of it.
     fn button_width(label: &str) -> u16 {
-        label.len() as u16 + PADDING * 2
+        label.chars().count() as u16 + PADDING * 2
     }
 
-    /// A button label, marked when Enter is what presses it.
-    fn button(&self, label: &'static str, selected: bool) -> Paragraph<'static> {
+    /// A button label, marking the key that presses it.
+    fn label(&self, answer: &str, yes: bool) -> String {
+        mark_key(
+            answer,
+            self.own_keybinds.shortcut(ConfirmPopupEvent::Answer(yes)),
+        )
+    }
+
+    /// A button, marked when Enter is what presses it.
+    fn button(&self, label: String, selected: bool) -> Paragraph<'static> {
         let style = if selected {
             Style::default()
                 .bg(self.config.highlight_color())
@@ -108,8 +118,10 @@ impl ConfirmPopup {
     }
 
     fn draw_buttons(&self, f: &mut Frame<'_>, area: Rect) {
-        let yes_width = Self::button_width(YES);
-        let no_width = Self::button_width(NO);
+        let yes = self.label(YES, true);
+        let no = self.label(NO, false);
+        let yes_width = Self::button_width(&yes);
+        let no_width = Self::button_width(&no);
         let margin = area.width.saturating_sub(yes_width + no_width) / 2;
 
         let chunks = Layout::default()
@@ -122,8 +134,8 @@ impl ConfirmPopup {
             ])
             .split(area);
 
-        f.render_widget(self.button(YES, self.yes_selected), chunks[1]);
-        f.render_widget(self.button(NO, !self.yes_selected), chunks[2]);
+        f.render_widget(self.button(yes, self.yes_selected), chunks[1]);
+        f.render_widget(self.button(no, !self.yes_selected), chunks[2]);
     }
 }
 
@@ -186,12 +198,10 @@ impl Component for ConfirmPopup {
 
         // The answers are the buttons the question puts up, so they are
         // its own keys rather than any popup's.
-        match key.code {
-            KeyCode::Left => self.yes_selected = true,
-            KeyCode::Right => self.yes_selected = false,
-            KeyCode::Char(YES_KEY) => return self.answer(true),
-            KeyCode::Char(NO_KEY) => return self.answer(false),
-            _ => {}
+        match self.own_keybinds.match_event(key) {
+            ConfirmPopupEvent::Answer(yes) => return self.answer(yes),
+            ConfirmPopupEvent::Select(yes) => self.yes_selected = yes,
+            ConfirmPopupEvent::Unbound => {}
         }
 
         Ok(ComponentInputResult::Handled)
@@ -203,6 +213,7 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
+    use ratatui::crossterm::event::KeyCode;
     use ratatui::crossterm::event::KeyEvent;
     use ratatui::text::Line;
 
@@ -210,6 +221,10 @@ mod tests {
     use crate::commander::ids::ChangeId;
     use crate::commander::ids::CommitId;
     use crate::commander::log::Head;
+
+    /// The buttons as the default bindings mark them
+    const MARKED_YES: &str = "(Y)es";
+    const MARKED_NO: &str = "(N)o";
 
     /// A question raising a recognisable action when answered yes.
     fn popup() -> ConfirmPopup {
@@ -309,25 +324,25 @@ mod tests {
             "{rows:?}"
         );
         let buttons = rows.len() - 2;
-        assert!(rows[buttons].contains(YES), "{rows:?}");
-        assert!(rows[buttons].contains(NO), "{rows:?}");
+        assert!(rows[buttons].contains(MARKED_YES), "{rows:?}");
+        assert!(rows[buttons].contains(MARKED_NO), "{rows:?}");
     }
 
     #[test]
     fn yes_is_the_button_enter_presses_until_the_other_is_picked() {
         let mut popup = popup();
 
-        assert!(is_selected(&render(&mut popup), YES));
-        assert!(!is_selected(&render(&mut popup), NO));
+        assert!(is_selected(&render(&mut popup), MARKED_YES));
+        assert!(!is_selected(&render(&mut popup), MARKED_NO));
 
         press(&mut popup, KeyCode::Right);
 
-        assert!(is_selected(&render(&mut popup), NO));
-        assert!(!is_selected(&render(&mut popup), YES));
+        assert!(is_selected(&render(&mut popup), MARKED_NO));
+        assert!(!is_selected(&render(&mut popup), MARKED_YES));
 
         press(&mut popup, KeyCode::Left);
 
-        assert!(is_selected(&render(&mut popup), YES));
+        assert!(is_selected(&render(&mut popup), MARKED_YES));
     }
 
     #[test]
@@ -354,11 +369,11 @@ mod tests {
     #[test]
     fn a_button_can_be_pressed_by_its_letter_whichever_is_picked() {
         assert_eq!(
-            closed_with(press(&mut popup(), KeyCode::Char(YES_KEY))),
+            closed_with(press(&mut popup(), KeyCode::Char('y'))),
             Some(Some("confirmed".into()))
         );
         assert_eq!(
-            closed_with(press(&mut popup(), KeyCode::Char(NO_KEY))),
+            closed_with(press(&mut popup(), KeyCode::Char('n'))),
             Some(None)
         );
     }

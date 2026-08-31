@@ -230,6 +230,23 @@ impl Commander {
         Ok(bookmarks)
     }
 
+    /// The local bookmark `commit_id` is standing on: the one on it, or
+    /// the nearest one behind it. None when there is none behind it at
+    /// all. Two on the same change are settled by name.
+    #[instrument(level = "trace", skip(self))]
+    pub fn get_nearest_bookmark(
+        &self,
+        commit_id: &CommitId,
+    ) -> Result<Option<String>, CommandError> {
+        Ok(self
+            .get_bookmark_ranks(commit_id)?
+            .into_iter()
+            .min_by(|(left, left_rank), (right, right_rank)| {
+                left_rank.cmp(right_rank).then_with(|| left.cmp(right))
+            })
+            .map(|(name, _)| name))
+    }
+
     /// Where each local bookmark on an ancestor of `commit_id` comes in
     /// walking back from it, nearest first, by name. One with more than
     /// one target is ranked by whichever of them is reached first.
@@ -663,6 +680,59 @@ mod tests {
             .collect();
 
         assert!(mismatched.is_empty(), "{mismatched:?}");
+
+        Ok(())
+    }
+
+    #[test]
+    fn get_nearest_bookmark_takes_the_one_on_the_change_itself() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let commander = &test_repo.commander;
+
+        commander.create_bookmark("behind")?;
+        commander.run_new(&commander.get_current_head()?.commit_id)?;
+        commander.create_bookmark("on")?;
+        let on = commander.get_current_head()?.commit_id;
+
+        assert_eq!(commander.get_nearest_bookmark(&on)?, Some("on".to_owned()));
+
+        Ok(())
+    }
+
+    /// The change the working copy is standing on is the one it is going
+    /// to end up under, so it is the one to go to when the working copy
+    /// carries no bookmark of its own.
+    #[test]
+    fn get_nearest_bookmark_walks_back_to_the_nearest_one_behind() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let commander = &test_repo.commander;
+
+        commander.create_bookmark("far")?;
+        commander.run_new(&commander.get_current_head()?.commit_id)?;
+        commander.create_bookmark("near")?;
+        commander.run_new(&commander.get_current_head()?.commit_id)?;
+
+        assert_eq!(
+            commander.get_nearest_bookmark(&commander.get_current_head()?.commit_id)?,
+            Some("near".to_owned())
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn get_nearest_bookmark_passes_over_one_off_to_the_side() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let commander = &test_repo.commander;
+
+        commander.jj(["new", "root()"]).run_void()?;
+        commander.create_bookmark("aside")?;
+        commander.jj(["new", "root()"]).run_void()?;
+
+        assert_eq!(
+            commander.get_nearest_bookmark(&commander.get_current_head()?.commit_id)?,
+            None
+        );
 
         Ok(())
     }
