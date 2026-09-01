@@ -16,7 +16,7 @@ use crate::background_tasks::TaskSlot;
 use crate::commander::ids::CommitId;
 use crate::commander::jj::PushTarget;
 use crate::commander::log::Head;
-use crate::commander::log::LOG_LINES_PER_HEAD;
+use crate::commander::log::LOG_LINES_PER_ITEM;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::get_env;
@@ -54,12 +54,12 @@ pub struct LogTab<'a> {
     log_revset_textarea: Option<TextArea<'a>>,
 
     /// The list of changes shown to the left
-    log_panel: LogPanel<'a>,
+    log_panel: LogPanel<'a, Head>,
 
     /// The panel showing change content to the right
     head_panel: CommitShowPanel,
 
-    /// The currently selected change. It is a copy of `self.log_panel.head`,
+    /// The currently selected change. It is a copy of `self.log_panel.selected`,
     /// so if these differ, we need to update `self.head`
     head: Head,
 
@@ -102,7 +102,7 @@ impl<'a> LogTab<'a> {
             log_revset: get_env().default_revset.clone(),
             log_revset_textarea: None,
 
-            log_panel: LogPanel::new(head.clone(), LOG_LINES_PER_HEAD),
+            log_panel: LogPanel::new(head.clone(), LOG_LINES_PER_ITEM),
 
             head,
             head_panel: CommitShowPanel::new(TabId::Log, background_tasks),
@@ -119,13 +119,13 @@ impl<'a> LogTab<'a> {
     /// Stop marking the changes that were marked, whatever they were
     /// marked for having been done to them.
     pub fn clear_marks(&mut self) {
-        self.log_panel.marked_heads.clear();
+        self.log_panel.marked.clear();
     }
 
     /// Move the cursor, updating the details panel. The log itself is
     /// left as it was.
     pub fn set_head(&mut self, head: Head) {
-        self.log_panel.set_head(head);
+        self.log_panel.set_selected(head);
         self.sync_head_output();
     }
 
@@ -138,13 +138,13 @@ impl<'a> LogTab<'a> {
         };
         self.log_panel
             .show(new_commander().get_log(&self.log_revset), title);
-        self.head_panel.set_active(self.log_panel.log_heads());
+        self.head_panel.set_active(self.log_panel.items());
         self.sync_head_output();
     }
 
     /// Extract selection from log panel and update change details panel
     fn sync_head_output(&mut self) {
-        self.head = self.log_panel.head.clone();
+        self.head = self.log_panel.selected.clone();
         let title = format!(" Details for {} ", self.head.change_id);
         self.head_panel.show(Some(self.head.clone()), title);
     }
@@ -159,7 +159,7 @@ from there.
 impl<'a> LogTab<'a> {
     /// What the operations in a menu or behind a key would act on.
     fn marked(&self) -> Vec<CommitId> {
-        self.log_panel.marked_heads.iter().cloned().collect()
+        self.log_panel.marked.iter().cloned().collect()
     }
 
     /// The menu of what can be done to the selected change, put at
@@ -197,7 +197,7 @@ impl<'a> LogTab<'a> {
         // first change.
         let (mut parents, out_of_view): (Vec<_>, Vec<_>) = parents
             .into_iter()
-            .partition(|parent| self.log_panel.shows_head(&parent.head));
+            .partition(|parent| self.log_panel.shows_item(&parent.head));
 
         match parents.len() {
             0 => message("The log holds no parent of this change"),
@@ -248,7 +248,7 @@ impl<'a> LogTab<'a> {
     fn handle_event(&mut self, log_tab_event: LogTabEvent) -> Result<Option<AppAction>> {
         match log_tab_event {
             LogTabEvent::ToggleHeadMark => {
-                self.log_panel.toggle_head_mark();
+                self.log_panel.toggle_item_mark();
                 self.sync_head_output();
             }
             LogTabEvent::Duplicate => {
@@ -355,7 +355,7 @@ impl Tab for LogTab<'_> {
         commander.ignore_working_copy();
 
         let latest_head = commander.get_head_latest(&self.head)?;
-        self.log_panel.set_head(latest_head);
+        self.log_panel.set_selected(latest_head);
         self.refresh_log_output();
         self.stale = false;
 
@@ -383,7 +383,7 @@ impl Tab for LogTab<'_> {
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
         self.log_panel
-            .scroll_relative(scroll.distance(self.log_panel.visible_heads()));
+            .scroll_relative(scroll.distance(self.log_panel.visible_items()));
         self.sync_head_output();
         Ok(())
     }
@@ -531,18 +531,18 @@ impl Component for LogTab<'_> {
         match route_mouse(mouse, &mut [&mut self.log_panel, &mut self.head_panel]) {
             MouseInput::Scroll(delta) => self.log_panel.scroll_relative(delta),
             MouseInput::Select(index) => {
-                if let Some(head) = self.log_panel.head_at_log_line(index) {
-                    self.log_panel.set_head_in_place(head);
+                if let Some(head) = self.log_panel.item_at_log_line(index) {
+                    self.log_panel.set_selected_in_place(head);
                 }
             }
             // The press before this one selected the change, so all that
             // is left to do is mark it.
-            MouseInput::Activate => self.log_panel.toggle_head_mark(),
+            MouseInput::Activate => self.log_panel.toggle_item_mark(),
             // The graph takes lines of its own, which name no change
             // for a menu to act on.
             MouseInput::Context(index) => {
-                if let Some(head) = self.log_panel.head_at_log_line(index) {
-                    self.log_panel.set_head_in_place(head);
+                if let Some(head) = self.log_panel.item_at_log_line(index) {
+                    self.log_panel.set_selected_in_place(head);
                     self.sync_head_output();
                     return Ok(self.context_menu(Some(mouse.position()))?.into());
                 }

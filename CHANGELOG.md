@@ -49,6 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `blazingjj.diff-pager` and toggled through with `w` like the others
 - The details panel now names the diff format it renders in, in its top
   right corner
+- Operation log tab, listing what the repo has been through and showing what
+  the selected operation did to it; opened from the tab bar with `5`. It reads
+  the newest 200 operations, `m` reads twice as far back, and `Y` yanks the
+  selected operation's id
+- Keybindings in the operation log tab to restore the repo to the selected
+  operation (`r`, `jj op restore`) and to take that one operation back (`v`,
+  `jj op revert`), both after a confirmation
 - Settings tab, listing the `blazingjj.*` options with what the configuration
   says about them and what the app goes by while it says nothing; opened from the
   tab bar with `0`, where it sits after the tabs that show the repo. `Enter`
@@ -62,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   action and `a` takes one more key beside the keys it has, `X` leaves it bound
   to nothing and `x` takes the binding back out of your config; `Esc` goes back
   to the settings
+%%%%%%% diff from: pnxlykrm 2d7a910b "Merge pull request #195 from blazingjj/ui_log_mark_a_change_with_a_double_click" (rebase destination)
+\\\\\\\        to: upknmpvs 0c38d56b "ui/op-log: Restore and revert operations" (rebased revision)
++- Keybindings in the operation log tab to restore the repo to the selected
++  operation (`r`, `jj op restore`) and to take that one operation back (`v`,
++  `jj op revert`), both after a confirmation
+>>>>>>> conflict 1 of 1 ends
 - Keybinding in the bookmarks tab to point a bookmark at the change the
   selected line stands for (`b`, as in the log tab), which settles a bookmark
   torn between several targets on the one selected, and moves a bookmark to
@@ -134,6 +147,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The tab bar now scrolls the current tab into the middle of what it shows
+  when the window is too narrow for every tab, rather than cutting off the
+  tabs that do not fit. The header no longer says which numbers pick a tab,
+  which the tab bar shows for itself
 - Clicking a change in the log tab no longer scrolls the log to put the
   selection into the middle of the panel; the line clicked stays where it is
 - The set-bookmark dialog now offers the bookmarks the change is standing on

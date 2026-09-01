@@ -15,7 +15,7 @@ use crate::app::command::Command;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
-use crate::commander::log::EVOLOG_LINES_PER_HEAD;
+use crate::commander::log::EVOLOG_LINES_PER_ITEM;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
@@ -45,7 +45,7 @@ pub struct EvologTab<'a> {
     change: Head,
 
     /// The versions of the change, newest first
-    entry_panel: LogPanel<'a>,
+    entry_panel: LogPanel<'a, Head>,
 
     /// The panel showing what the selected version changed
     patch_panel: EvologShowPanel,
@@ -64,7 +64,7 @@ impl<'a> EvologTab<'a> {
         Self {
             change: current_head.clone(),
 
-            entry_panel: LogPanel::new(current_head.clone(), EVOLOG_LINES_PER_HEAD),
+            entry_panel: LogPanel::new(current_head.clone(), EVOLOG_LINES_PER_ITEM),
             patch_panel: EvologShowPanel::new(TabId::Evolog, background_tasks),
 
             pane_divider: PaneDivider::default(),
@@ -78,7 +78,7 @@ impl<'a> EvologTab<'a> {
     /// Show the evolog of `head`, read the next time the tab is shown.
     pub fn set_head(&mut self, head: &Head) {
         self.change = head.clone();
-        self.entry_panel.set_head(head.clone());
+        self.entry_panel.set_selected(head.clone());
         self.stale = true;
     }
 
@@ -91,11 +91,11 @@ impl<'a> EvologTab<'a> {
         // Abandoning the change moves the tab to another one, whose evolog
         // does not list the version that was selected, so the selection
         // falls back to the newest one.
-        let entries = self.entry_panel.log_heads();
-        if !entries.contains(&self.entry_panel.head)
+        let entries = self.entry_panel.items();
+        if !entries.contains(&self.entry_panel.selected)
             && let Some(newest) = entries.first()
         {
-            self.entry_panel.set_head(newest.clone());
+            self.entry_panel.set_selected(newest.clone());
         }
 
         self.patch_panel.set_active(entries);
@@ -104,7 +104,7 @@ impl<'a> EvologTab<'a> {
 
     /// Have the details panel show what the selected version changed.
     fn sync_entry_output(&mut self) {
-        let entry = self.entry_panel.head.clone();
+        let entry = self.entry_panel.selected.clone();
         let title = format!(" Version {} ", entry.commit_id.short());
         self.patch_panel.show(Some(entry), title);
     }
@@ -120,13 +120,13 @@ impl<'a> EvologTab<'a> {
         Some(AppAction::SetPopup(Box::new(evolog_context_menu(
             get_env().jj_config.clone(),
             anchor,
-            &self.entry_panel.head,
+            &self.entry_panel.selected,
             &self.change,
         ))))
     }
 
     fn handle_event(&mut self, event: EvologTabEvent) -> Result<Option<AppAction>> {
-        let entry = &self.entry_panel.head;
+        let entry = &self.entry_panel.selected;
 
         match event {
             EvologTabEvent::OpenFiles => {
@@ -185,7 +185,7 @@ impl Tab for EvologTab<'_> {
     }
 
     fn scroll_main_panel(&mut self, scroll: Scroll) -> Result<()> {
-        self.scroll_entries(scroll.distance(self.entry_panel.visible_heads()));
+        self.scroll_entries(scroll.distance(self.entry_panel.visible_items()));
         Ok(())
     }
 
@@ -266,16 +266,16 @@ impl Component for EvologTab<'_> {
         match route_mouse(mouse, &mut [&mut self.entry_panel, &mut self.patch_panel]) {
             MouseInput::Scroll(delta) => self.scroll_entries(delta),
             MouseInput::Select(index) => {
-                if let Some(entry) = self.entry_panel.head_at_log_line(index) {
-                    self.entry_panel.set_head(entry);
+                if let Some(entry) = self.entry_panel.item_at_log_line(index) {
+                    self.entry_panel.set_selected(entry);
                     self.sync_entry_output();
                 }
             }
             // The graph takes lines of its own, which name no version
             // for a menu to act on.
             MouseInput::Context(index) => {
-                if let Some(entry) = self.entry_panel.head_at_log_line(index) {
-                    self.entry_panel.set_head_in_place(entry);
+                if let Some(entry) = self.entry_panel.item_at_log_line(index) {
+                    self.entry_panel.set_selected_in_place(entry);
                     self.sync_entry_output();
                     return Ok(self.context_menu(Some(mouse.position())).into());
                 }

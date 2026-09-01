@@ -48,6 +48,13 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Duplicate a version as a new change with `D`, to recover what a rewrite
     folded away
   - Yank a version's revision to the system clipboard with `Y`
+- Operation log
+  - View what the repo has been through and what the selected operation did
+    to it
+  - Read further back with `m`
+  - Restore the repo to the selected operation with `r`, or take that one
+    operation back with `v`
+  - Yank an operation's id to the system clipboard with `Y`
 - Details panel: toggle between color words and git diff with `w`, wrapping
   with `W`
   - Render the git diff with a pager like delta by configuring
@@ -128,7 +135,7 @@ See all key mappings for the current tab with `?`.
 ### Basic navigation
 
 - Quit with `q` or `Ctrl+c`
-- Change tab with `1`/`2`/`3`/`4` or with `h`/`l`
+- Change tab with `1` to `5` or with `h`/`l`
 - Go to the current change with `@`
 - Refresh the current tab with `R` or `F5`
 - Scrolling in main panel
@@ -203,6 +210,14 @@ See all key mappings for the current tab with `?`.
   - Create a new change and describe with `N` (`jj new -m`)
 - Edit the highlighted bookmark's change with `e` (`jj edit`)
   - Edit the highlighted bookmark's change ignoring immutability with `E` (`jj edit --ignore-immutable`)
+
+### Operation log tab
+
+- Select the operation the repo is at with `@`
+- Read further back in the operation log with `m` (`jj op log -n`)
+- Restore the repo to the highlighted operation with `r` (`jj op restore`)
+- Revert the highlighted operation, leaving what came after it in place, with `v` (`jj op revert`)
+- Yank the highlighted operation's id to the clipboard with `Y`
 
 ### Evolog tab
 

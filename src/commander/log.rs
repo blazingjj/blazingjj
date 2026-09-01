@@ -6,6 +6,7 @@ It is mostly used in the [log_tab][crate::ui::log_tab] module.
 */
 
 use std::fmt::Display;
+use std::hash::Hash;
 
 use anyhow::Context;
 use anyhow::Result;
@@ -44,24 +45,60 @@ pub struct Parent {
     pub description: String,
 }
 
-/// How many lines `builtin_log_compact` writes per head, which is what
+/// How many lines `builtin_log_compact` writes per item, which is what
 /// [Commander::get_log] renders the graph with.
-pub const LOG_LINES_PER_HEAD: usize = 2;
+pub const LOG_LINES_PER_ITEM: usize = 2;
 
-/// How many lines [EVOLOG_TEMPLATE] writes per head.
-pub const EVOLOG_LINES_PER_HEAD: usize = 3;
+/// How many lines [EVOLOG_TEMPLATE] writes per item.
+pub const EVOLOG_LINES_PER_ITEM: usize = 3;
 
-#[derive(Clone, Debug, Default)]
-pub struct LogOutput {
-    pub graph: String,
-    // Maps graph line -> heads
-    pub graph_heads: Vec<Option<Head>>,
-    pub heads: Vec<Head>,
+/// What a log graph draws a line for, as the template behind it
+/// describes the thing.
+pub trait LogItem: Clone + Eq + Hash + DeserializeOwned {
+    /// What the panel remembers a marked item by.
+    type Mark: Clone + Eq + Hash;
+
+    /// Whether the two are the same thing as the repo has held it at
+    /// different times, so that a selection can follow it across a
+    /// rewrite rather than fall back to the top of the log.
+    fn same_subject(&self, other: &Self) -> bool;
+
+    fn mark(&self) -> Self::Mark;
 }
 
-impl LogOutput {
-    pub fn head_at(&self, line: usize) -> Option<&Head> {
-        self.graph_heads.get(line).and_then(Option::as_ref)
+impl LogItem for Head {
+    type Mark = CommitId;
+
+    fn same_subject(&self, other: &Self) -> bool {
+        self.change_id == other.change_id
+    }
+
+    fn mark(&self) -> CommitId {
+        self.commit_id.clone()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct LogOutput<T> {
+    pub graph: String,
+    // Maps graph line -> items
+    pub graph_items: Vec<Option<T>>,
+    pub items: Vec<T>,
+}
+
+impl<T> Default for LogOutput<T> {
+    fn default() -> Self {
+        Self {
+            graph: String::new(),
+            graph_items: Vec::new(),
+            items: Vec::new(),
+        }
+    }
+}
+
+impl<T> LogOutput<T> {
+    pub fn item_at(&self, line: usize) -> Option<&T> {
+        self.graph_items.get(line).and_then(Option::as_ref)
     }
 }
 
@@ -142,7 +179,7 @@ const EVOLOG_TEMPLATE: &str = r#"
 /// starts at the first brace of the line. A line the graph draws for edges
 /// alone carries no template output, and neither does one for an elided
 /// revision, so those have no brace and no record.
-fn parse_record<T: DeserializeOwned>(text: &str) -> Result<T> {
+pub(super) fn parse_record<T: DeserializeOwned>(text: &str) -> Result<T> {
     text.find('{')
         .and_then(|start| serde_json::from_str(&text[start..]).ok())
         .ok_or_else(|| RecordParseError(text.to_owned()).into())
@@ -183,19 +220,19 @@ impl Commander {
         .run()
     }
 
-    /// A graph of changes and the head behind each of its lines.
+    /// A graph and the item behind each of its lines.
     ///
     /// `command` is the whole invocation except `graph_template`, which
-    /// draws the graph in `lines_per_head` lines per head, and `commit` is
-    /// the template expression naming the commit it renders. Leaves the
-    /// working copy alone.
-    fn get_graph_log(
+    /// draws the graph in `lines_per_item` lines per item, and
+    /// `record_template` writes the item one of those lines belongs to.
+    /// Leaves the working copy alone.
+    pub(super) fn get_graph_log<T: LogItem>(
         &self,
         command: &[&str],
         graph_template: &str,
-        commit: &str,
-        lines_per_head: usize,
-    ) -> Result<LogOutput, CommandError> {
+        record_template: &str,
+        lines_per_item: usize,
+    ) -> Result<LogOutput<T>, CommandError> {
         let graph = self
             .jj([command, &["--template", graph_template]].concat())
             .color()
@@ -203,42 +240,46 @@ impl Commander {
             .run()?;
 
         // Read the graph once more, this time with a template describing
-        // the head behind each of its lines, so that a graph line is an
-        // index into the heads. The root commit breaks that, taking a
+        // the item behind each of its lines, so that a graph line is an
+        // index into the items. The root commit breaks that, taking a
         // single line however many the template writes, but it comes last
-        // and so only leaves heads past the end of the graph.
-        let head = head_template(commit);
-        let heads_template =
-            std::iter::repeat_n(head.as_str(), lines_per_head).join(r#" ++ "\n" ++ "#);
-        let graph_heads: Vec<Option<Head>> = self
-            .jj([command, &["--template", &heads_template]].concat())
+        // and so only leaves items past the end of the graph.
+        let items_template =
+            std::iter::repeat_n(record_template, lines_per_item).join(r#" ++ "\n" ++ "#);
+        let graph_items: Vec<Option<T>> = self
+            .jj([command, &["--template", &items_template]].concat())
             .ignore_working_copy()
             .run()?
             .lines()
             .map(|line| parse_record(line).ok())
             .collect();
 
-        let heads = graph_heads.clone().into_iter().flatten().unique().collect();
+        let items = graph_items.clone().into_iter().flatten().unique().collect();
 
         Ok(LogOutput {
             graph,
-            graph_heads,
-            heads,
+            graph_items,
+            items,
         })
     }
 
-    /// Get log. Returns human readable log and mapping to log line to head.
+    /// Get log. Returns human readable log and mapping to log line to item.
     /// Leaves the working copy alone.
     /// Maps to `jj log --ignore-working-copy`
     #[instrument(level = "trace", skip(self))]
-    pub fn get_log(&self, revset: &Option<String>) -> Result<LogOutput, CommandError> {
+    pub fn get_log(&self, revset: &Option<String>) -> Result<LogOutput<Head>, CommandError> {
         let mut command = vec!["log"];
         if let Some(revset) = revset {
             command.push("-r");
             command.push(revset);
         }
 
-        self.get_graph_log(&command, "builtin_log_compact", "self", LOG_LINES_PER_HEAD)
+        self.get_graph_log(
+            &command,
+            "builtin_log_compact",
+            &head_template("self"),
+            LOG_LINES_PER_ITEM,
+        )
     }
 
     /// Get the evolog of a commit: the versions it came out of, newest
@@ -246,12 +287,12 @@ impl Commander {
     /// of one change. Leaves the working copy alone.
     /// Maps to `jj evolog -r <commit> --ignore-working-copy`
     #[instrument(level = "trace", skip(self))]
-    pub fn get_evolog(&self, commit_id: &CommitId) -> Result<LogOutput, CommandError> {
+    pub fn get_evolog(&self, commit_id: &CommitId) -> Result<LogOutput<Head>, CommandError> {
         self.get_graph_log(
             &["evolog", "-r", commit_id.as_str()],
             EVOLOG_TEMPLATE,
-            "commit",
-            EVOLOG_LINES_PER_HEAD,
+            &head_template("commit"),
+            EVOLOG_LINES_PER_ITEM,
         )
     }
 
@@ -472,10 +513,10 @@ mod tests {
 
         assert_debug_snapshot!(log.graph);
 
-        assert!(log.graph_heads.iter().all(|graph_head| {
-            graph_head
+        assert!(log.graph_items.iter().all(|graph_item| {
+            graph_item
                 .as_ref()
-                .is_none_or(|graph_head| log.heads.contains(graph_head))
+                .is_none_or(|graph_item| log.items.contains(graph_item))
         }));
 
         Ok(())
@@ -516,18 +557,18 @@ mod tests {
         let evolog = test_repo.commander.get_evolog(&head.commit_id)?;
 
         // Every entry is a version of the change, the newest first
-        assert_eq!(evolog.heads.first(), Some(&head));
-        assert!(evolog.heads.len() > 1);
+        assert_eq!(evolog.items.first(), Some(&head));
+        assert!(evolog.items.len() > 1);
         assert!(
             evolog
-                .heads
+                .items
                 .iter()
                 .all(|entry| entry.change_id == head.change_id)
         );
 
-        // The heads line up with the graph they were read alongside
-        assert_eq!(evolog.graph.lines().count(), evolog.graph_heads.len());
-        assert!(evolog.graph_heads.iter().all(Option::is_some));
+        // The items line up with the graph they were read alongside
+        assert_eq!(evolog.graph.lines().count(), evolog.graph_items.len());
+        assert!(evolog.graph_items.iter().all(Option::is_some));
 
         Ok(())
     }
@@ -557,13 +598,13 @@ mod tests {
         // The versions of the change squashed in are entries of their own
         assert!(
             evolog
-                .heads
+                .items
                 .iter()
                 .any(|entry| entry.change_id != head.change_id)
         );
 
-        assert_eq!(evolog.graph.lines().count(), evolog.graph_heads.len());
-        assert!(evolog.graph_heads.iter().all(Option::is_some));
+        assert_eq!(evolog.graph.lines().count(), evolog.graph_items.len());
+        assert!(evolog.graph_items.iter().all(Option::is_some));
 
         Ok(())
     }
@@ -585,7 +626,7 @@ mod tests {
         // changed, and nothing of the versions before it
         assert!(entry.contains(head.commit_id.short()));
         assert!(entry.contains("+AAA"));
-        assert!(!entry.contains(evolog.heads[1].commit_id.short()));
+        assert!(!entry.contains(evolog.items[1].commit_id.short()));
 
         Ok(())
     }

@@ -31,6 +31,7 @@ use crate::event::AppEvent;
 use crate::ui::files_tab::FileDiffKey;
 use crate::ui::panel::CommitShowKey;
 use crate::ui::panel::EvologShowKey;
+use crate::ui::panel::OpShowKey;
 use crate::ui::panel::OutputRequest;
 
 /// How many tasks may run at once. A submission beyond this makes room by
@@ -68,6 +69,8 @@ pub enum TaskSlot {
     FileDiff(TabId, OutputRequest<FileDiffKey>),
     /// A 'jj evolog' of a single entry for the details panel of a tab
     EvologShow(TabId, OutputRequest<EvologShowKey>),
+    /// A 'jj op show' for the details panel of a tab
+    OpShow(TabId, OutputRequest<OpShowKey>),
     GitPush,
     GitFetch,
     /// A read of what operation the repo is at.

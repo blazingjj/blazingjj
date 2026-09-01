@@ -6,6 +6,7 @@ pub mod evolog_tab;
 pub mod files_tab;
 pub mod keybindings_tab;
 pub mod log_tab;
+pub mod op_log_tab;
 pub mod panel;
 pub mod settings_tab;
 pub mod styles;

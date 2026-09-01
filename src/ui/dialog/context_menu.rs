@@ -14,6 +14,7 @@ use crate::commander::files::File;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
+use crate::commander::operation::Operation;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::ui::AppAction;
@@ -132,6 +133,30 @@ pub fn evolog_context_menu(
     ];
 
     ChoicePopup::new(config, anchor, "Version actions", items)
+}
+
+/// The context menu for `operation`.
+pub fn op_log_context_menu(
+    config: JjConfig,
+    anchor: Option<Position>,
+    operation: &Operation,
+) -> ChoicePopup {
+    let items = vec![
+        (
+            Line::raw("Restore the repo to this operation"),
+            command::ask_op_restore(config.clone(), operation),
+        ),
+        (
+            Line::raw("Revert this operation"),
+            command::ask_op_revert(config.clone(), operation),
+        ),
+        (
+            Line::raw("Copy operation id"),
+            AppAction::Run(Command::Copy(operation.id.as_str().to_owned())),
+        ),
+    ];
+
+    ChoicePopup::new(config, anchor, "Operation actions", items)
 }
 
 /// The context menu for `selected`, the bookmark and the change its line

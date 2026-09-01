@@ -26,6 +26,7 @@ pub struct KeybindsConfig {
     pub files_tab: Option<FilesTabKeybindsConfig>,
     pub bookmarks_tab: Option<BookmarksTabKeybindsConfig>,
     pub evolog_tab: Option<EvologTabKeybindsConfig>,
+    pub op_log_tab: Option<OpLogTabKeybindsConfig>,
     pub settings_tab: Option<SettingsTabKeybindsConfig>,
     pub keybindings_tab: Option<KeybindingsTabKeybindsConfig>,
     pub details_panel: Option<DetailsPanelKeybindsConfig>,
@@ -171,6 +172,17 @@ pub struct EvologTabKeybindsConfig {
     pub open_files: Option<Keybind>,
     pub duplicate: Option<Keybind>,
     pub copy_rev: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct OpLogTabKeybindsConfig {
+    pub load_more: Option<Keybind>,
+
+    pub restore: Option<Keybind>,
+    pub revert: Option<Keybind>,
+
+    pub copy_id: Option<Keybind>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

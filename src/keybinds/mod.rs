@@ -22,6 +22,8 @@ pub use keybindings_tab::KeybindingsTabKeybinds;
 pub use log_tab::LogTabEvent;
 pub use log_tab::LogTabKeybinds;
 pub use log_tab::PushScope;
+pub use op_log_tab::OpLogTabEvent;
+pub use op_log_tab::OpLogTabKeybinds;
 pub use popup::PopupEvent;
 pub use popup::PopupKeybinds;
 use ratatui::crossterm::event::KeyCode;
@@ -43,6 +45,7 @@ mod global;
 mod keybindings_tab;
 mod keybinds_store;
 mod log_tab;
+mod op_log_tab;
 mod popup;
 pub mod rebase_popup;
 mod settings_tab;
@@ -110,6 +113,7 @@ pub enum Context {
     FilesTab,
     BookmarksTab,
     EvologTab,
+    OpLogTab,
     SettingsTab,
     KeybindingsTab,
     DetailsPanel,
@@ -122,12 +126,13 @@ pub enum Context {
 
 impl Context {
     /// Every context, in the order the keybindings are listed in
-    pub const ORDER: [Self; 13] = [
+    pub const ORDER: [Self; 14] = [
         Self::Global,
         Self::LogTab,
         Self::FilesTab,
         Self::BookmarksTab,
         Self::EvologTab,
+        Self::OpLogTab,
         Self::SettingsTab,
         Self::KeybindingsTab,
         Self::DetailsPanel,
@@ -145,6 +150,7 @@ impl Context {
             Self::FilesTab => "Files tab",
             Self::BookmarksTab => "Bookmarks tab",
             Self::EvologTab => "Evolog tab",
+            Self::OpLogTab => "Operation log tab",
             Self::SettingsTab => "Settings tab",
             Self::KeybindingsTab => "Keybindings tab",
             Self::DetailsPanel => "Details panel",
@@ -166,6 +172,7 @@ impl Context {
             Self::FilesTab => Some("files-tab"),
             Self::BookmarksTab => Some("bookmarks-tab"),
             Self::EvologTab => Some("evolog-tab"),
+            Self::OpLogTab => Some("op-log-tab"),
             Self::SettingsTab => Some("settings-tab"),
             Self::KeybindingsTab => Some("keybindings-tab"),
             Self::DetailsPanel => Some("details-panel"),
@@ -191,18 +198,20 @@ impl Context {
     fn beside(self) -> &'static [Self] {
         /// What is live with the details panel: the keys that hold
         /// everywhere and those of the tabs that have one.
-        const BESIDE_DETAILS_PANEL: [Context; 5] = [
+        const BESIDE_DETAILS_PANEL: [Context; 6] = [
             Context::Global,
             Context::LogTab,
             Context::FilesTab,
             Context::BookmarksTab,
             Context::EvologTab,
+            Context::OpLogTab,
         ];
-        const IN_A_TAB: [Context; 7] = [
+        const IN_A_TAB: [Context; 8] = [
             Context::LogTab,
             Context::FilesTab,
             Context::BookmarksTab,
             Context::EvologTab,
+            Context::OpLogTab,
             Context::SettingsTab,
             Context::KeybindingsTab,
             Context::DetailsPanel,
@@ -219,9 +228,11 @@ impl Context {
             // whichever tab is showing and those of its details panel.
             Self::Global => &IN_A_TAB,
             Self::DetailsPanel => &BESIDE_DETAILS_PANEL,
-            Self::LogTab | Self::FilesTab | Self::BookmarksTab | Self::EvologTab => {
-                &[Self::Global, Self::DetailsPanel]
-            }
+            Self::LogTab
+            | Self::FilesTab
+            | Self::BookmarksTab
+            | Self::EvologTab
+            | Self::OpLogTab => &[Self::Global, Self::DetailsPanel],
             // The tabs about the app have no details panel beside them.
             Self::SettingsTab | Self::KeybindingsTab => &[Self::Global],
             Self::Popup => &IN_A_POPUP,
@@ -243,6 +254,7 @@ impl Context {
             Self::FilesTab => FilesTabKeybinds::from_config(config).bindings(),
             Self::BookmarksTab => BookmarksTabKeybinds::from_config(config).bindings(),
             Self::EvologTab => EvologTabKeybinds::from_config(config).bindings(),
+            Self::OpLogTab => OpLogTabKeybinds::from_config(config).bindings(),
             Self::SettingsTab => SettingsTabKeybinds::from_config(config).bindings(),
             Self::KeybindingsTab => KeybindingsTabKeybinds::from_config(config).bindings(),
             Self::DetailsPanel => DetailsPanelKeybinds::from_config(config).bindings(),
