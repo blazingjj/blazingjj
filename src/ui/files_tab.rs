@@ -501,7 +501,8 @@ impl Component for FilesTab {
                 }
             }
             MouseInput::Copy(text) => return Ok(copy_marked(text)),
-            MouseInput::Handled => {}
+            // Nothing here has a second thing a double click could do.
+            MouseInput::Activate | MouseInput::Handled => {}
             MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
         }
         Ok(ComponentInputResult::Handled)

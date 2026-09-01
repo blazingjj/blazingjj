@@ -526,9 +526,12 @@ impl Component for LogTab<'_> {
             MouseInput::Scroll(delta) => self.log_panel.scroll_relative(delta),
             MouseInput::Select(index) => {
                 if let Some(head) = self.log_panel.head_at_log_line(index) {
-                    self.log_panel.set_head(head);
+                    self.log_panel.set_head_in_place(head);
                 }
             }
+            // The press before this one selected the change, so all that
+            // is left to do is mark it.
+            MouseInput::Activate => self.log_panel.toggle_head_mark(),
             // The graph takes lines of its own, which name no change
             // for a menu to act on.
             MouseInput::Context(index) => {
