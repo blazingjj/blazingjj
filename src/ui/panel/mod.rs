@@ -35,6 +35,10 @@ pub(crate) enum MouseInput {
     /// what its items represent, so it is up to the caller to map the
     /// index onto its own domain type.
     Select(usize),
+    /// The selected item was double-clicked, asking for whatever the
+    /// caller offers as the second thing to do to an item. Only ever
+    /// follows a [`MouseInput::Select`] of that same item.
+    Activate,
     /// The item at this index was right-clicked, asking for whatever the
     /// caller offers as a context menu.
     Context(usize),

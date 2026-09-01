@@ -35,6 +35,11 @@ pub struct ListPane {
 
     /// Index of the first item drawn, as chosen by the list itself.
     offset: usize,
+
+    /// Item the last press hit. Selecting one can scroll the list, so a
+    /// second press on the cell may well be about another item, which is
+    /// not what a double click is.
+    pressed: Option<usize>,
 }
 
 impl ListPane {
@@ -113,16 +118,84 @@ impl PanelMouseInput for ListPane {
         match mouse.kind() {
             MouseEventKind::ScrollDown => MouseInput::Scroll(1),
             MouseEventKind::ScrollUp => MouseInput::Scroll(-1),
-            MouseEventKind::Down(MouseButton::Left) => match self.item_at(pos) {
-                Some(index) => MouseInput::Select(index),
-                // A click in the pane is ours even when it hits no item.
-                None => MouseInput::Handled,
-            },
+            MouseEventKind::Down(MouseButton::Left) => {
+                let hit = self.item_at(pos);
+                let double = mouse.clicks() == 2 && hit == self.pressed;
+                self.pressed = hit;
+                match hit {
+                    // The second press of a double click acts on the item
+                    // the first one selected; a third does nothing new.
+                    Some(_) if double => MouseInput::Activate,
+                    Some(index) => MouseInput::Select(index),
+                    // A click in the pane is ours even when it hits no item.
+                    None => MouseInput::Handled,
+                }
+            }
             MouseEventKind::Down(MouseButton::Right) => match self.item_at(pos) {
                 Some(index) => MouseInput::Context(index),
                 None => MouseInput::Handled,
             },
             _ => MouseInput::NotHandled,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A pane showing ten items in five rows, drawn from `offset` on.
+    fn pane(offset: usize) -> ListPane {
+        ListPane {
+            panel_rect: Rect::new(0, 0, 10, 7),
+            content_rect: Rect::new(1, 1, 8, 5),
+            item_count: 10,
+            offset,
+            pressed: None,
+        }
+    }
+
+    fn press(pane: &mut ListPane, row: u16, clicks: u8) -> MouseInput {
+        pane.input_mouse(Mouse::new(
+            MouseEventKind::Down(MouseButton::Left),
+            Position::new(2, row),
+            clicks,
+        ))
+    }
+
+    #[test]
+    fn a_press_selects_the_item_it_hits() {
+        let mut pane = pane(3);
+
+        assert!(matches!(press(&mut pane, 2, 1), MouseInput::Select(4)));
+    }
+
+    #[test]
+    fn a_second_press_on_the_item_activates_it() {
+        let mut pane = pane(3);
+        press(&mut pane, 2, 1);
+
+        assert!(matches!(press(&mut pane, 2, 2), MouseInput::Activate));
+    }
+
+    /// Selecting an item may scroll the list, which puts another item
+    /// under the pointer. Acting on that one is not what the double click
+    /// was aimed at, so it only selects.
+    #[test]
+    fn a_second_press_on_another_item_selects_it() {
+        let mut pane = pane(3);
+        press(&mut pane, 2, 1);
+        pane.offset = 2;
+
+        assert!(matches!(press(&mut pane, 2, 2), MouseInput::Select(3)));
+    }
+
+    #[test]
+    fn a_third_press_selects_the_item_again() {
+        let mut pane = pane(3);
+        press(&mut pane, 2, 1);
+        press(&mut pane, 2, 2);
+
+        assert!(matches!(press(&mut pane, 2, 3), MouseInput::Select(4)));
     }
 }

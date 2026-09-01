@@ -92,6 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Drag to resize pane divider in all tabs
 - Mouse scrolling in the file and bookmark list panes
 - Left-click to select items in all list panes; log tab click now fires on press rather than release
+- A double click on a change in the log tab marks it, as `space` does
 - The dedicated `Menu` key can now be used in keybindings, spelled `menu`
 - Keybinding to move the log tab selection to the parent commit (`-`), asking
   which one when a merge has more than one parent in the log view; parents

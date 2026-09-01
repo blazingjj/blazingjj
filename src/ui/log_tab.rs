@@ -529,6 +529,9 @@ impl Component for LogTab<'_> {
                     self.log_panel.set_head_in_place(head);
                 }
             }
+            // The press before this one selected the change, so all that
+            // is left to do is mark it.
+            MouseInput::Activate => self.log_panel.toggle_head_mark(),
             // The graph takes lines of its own, which name no change
             // for a menu to act on.
             MouseInput::Context(index) => {
