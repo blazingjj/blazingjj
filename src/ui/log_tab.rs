@@ -526,7 +526,7 @@ impl Component for LogTab<'_> {
             MouseInput::Scroll(delta) => self.log_panel.scroll_relative(delta),
             MouseInput::Select(index) => {
                 if let Some(head) = self.log_panel.head_at_log_line(index) {
-                    self.log_panel.set_head(head);
+                    self.log_panel.set_head_in_place(head);
                 }
             }
             // The graph takes lines of its own, which name no change
