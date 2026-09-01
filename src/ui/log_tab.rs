@@ -21,6 +21,7 @@ use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::event::Mouse;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::HelpItem;
@@ -40,6 +41,7 @@ use crate::ui::dialog::parent_select;
 use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::LogPanel;
 use crate::ui::panel::MouseInput;
+use crate::ui::panel::copy_marked;
 use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::centered_rect_line_height;
@@ -412,8 +414,8 @@ impl Component for LogTab<'_> {
         Ok(None)
     }
 
-    fn is_waiting(&self) -> bool {
-        self.head_panel.is_waiting()
+    fn needs_periodic_redraw(&self) -> bool {
+        self.head_panel.needs_periodic_redraw()
     }
 
     fn draw(
@@ -513,40 +515,34 @@ impl Component for LogTab<'_> {
             };
         }
 
-        if let Event::Mouse(mouse_event) = event {
-            if self
-                .pane_divider
-                .handle_mouse(mouse_event, self.config.layout())
-            {
-                return Ok(ComponentInputResult::Handled);
-            }
-            match route_mouse(
-                mouse_event,
-                &mut [&mut self.log_panel, &mut self.head_panel],
-            ) {
-                MouseInput::Scroll(delta) => self.log_panel.scroll_relative(delta),
-                MouseInput::Select(index) => {
-                    if let Some(head) = self.log_panel.head_at_log_line(index) {
-                        self.log_panel.set_head(head);
-                    }
-                }
-                // The graph takes lines of its own, which name no change
-                // for a menu to act on.
-                MouseInput::Context(index) => {
-                    if let Some(head) = self.log_panel.head_at_log_line(index) {
-                        self.log_panel.set_head_in_place(head);
-                        self.sync_head_output();
-                        let anchor = Position::new(mouse_event.column, mouse_event.row);
-                        return Ok(self.context_menu(Some(anchor))?.into());
-                    }
-                }
-                MouseInput::Handled => {}
-                MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
-            }
-            self.sync_head_output();
+        Ok(ComponentInputResult::Handled)
+    }
+
+    fn input_mouse(&mut self, mouse: Mouse) -> Result<ComponentInputResult> {
+        if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
             return Ok(ComponentInputResult::Handled);
         }
-
+        match route_mouse(mouse, &mut [&mut self.log_panel, &mut self.head_panel]) {
+            MouseInput::Scroll(delta) => self.log_panel.scroll_relative(delta),
+            MouseInput::Select(index) => {
+                if let Some(head) = self.log_panel.head_at_log_line(index) {
+                    self.log_panel.set_head(head);
+                }
+            }
+            // The graph takes lines of its own, which name no change
+            // for a menu to act on.
+            MouseInput::Context(index) => {
+                if let Some(head) = self.log_panel.head_at_log_line(index) {
+                    self.log_panel.set_head_in_place(head);
+                    self.sync_head_output();
+                    return Ok(self.context_menu(Some(mouse.position()))?.into());
+                }
+            }
+            MouseInput::Copy(text) => return Ok(copy_marked(text)),
+            MouseInput::Handled => {}
+            MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
+        }
+        self.sync_head_output();
         Ok(ComponentInputResult::Handled)
     }
 }

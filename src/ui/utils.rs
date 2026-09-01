@@ -7,11 +7,11 @@ use std::time::Instant;
 use ansi_to_tui::IntoText;
 pub use large_string::LargeString;
 use ratatui::crossterm::event::MouseButton;
-use ratatui::crossterm::event::MouseEvent;
 use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
+use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Stylize;
@@ -20,6 +20,7 @@ use ratatui::text::Text;
 use ratatui::widgets::Block;
 
 use crate::env::JJLayout;
+use crate::event::Mouse;
 use crate::keybinds::Shortcut;
 
 /// Tracks the split position between two panes and handles drag-to-resize mouse events.
@@ -66,20 +67,21 @@ impl PaneDivider {
     }
 
     /// Handle a mouse event. Returns true if the event was consumed.
-    pub fn handle_mouse(&mut self, mouse: MouseEvent, layout: JJLayout) -> bool {
-        match mouse.kind {
+    pub fn handle_mouse(&mut self, mouse: Mouse, layout: JJLayout) -> bool {
+        let position = mouse.position();
+        match mouse.kind() {
             MouseEventKind::Down(MouseButton::Left) => {
                 self.dragging = false;
-                if self.on_border(mouse.column, mouse.row, layout) {
+                if self.on_border(position, layout) {
                     self.dragging = true;
-                    self.update_size(mouse.column, mouse.row, layout);
+                    self.update_size(position, layout);
                     true
                 } else {
                     false
                 }
             }
             MouseEventKind::Drag(MouseButton::Left) if self.dragging => {
-                self.update_size(mouse.column, mouse.row, layout);
+                self.update_size(position, layout);
                 true
             }
             MouseEventKind::Up(MouseButton::Left) if self.dragging => {
@@ -90,32 +92,32 @@ impl PaneDivider {
         }
     }
 
-    fn on_border(&self, col: u16, row: u16, layout: JJLayout) -> bool {
+    fn on_border(&self, position: Position, layout: JJLayout) -> bool {
         let [r0, r1] = self.rects;
         match layout {
             JJLayout::Horizontal => {
-                let in_row = row >= r0.top() && row < r0.bottom();
+                let in_row = position.y >= r0.top() && position.y < r0.bottom();
                 // Right border of r0 and left border of r1 are adjacent columns.
-                let on_col = col == r0.right().saturating_sub(1) || col == r1.left();
+                let on_col = position.x == r0.right().saturating_sub(1) || position.x == r1.left();
                 in_row && on_col
             }
             JJLayout::Vertical => {
-                let in_col = col >= r0.left() && col < r0.right();
-                let on_row = row == r0.bottom().saturating_sub(1) || row == r1.top();
+                let in_col = position.x >= r0.left() && position.x < r0.right();
+                let on_row = position.y == r0.bottom().saturating_sub(1) || position.y == r1.top();
                 in_col && on_row
             }
         }
     }
 
-    fn update_size(&mut self, col: u16, row: u16, layout: JJLayout) {
+    fn update_size(&mut self, position: Position, layout: JJLayout) {
         let [r0, r1] = self.rects;
         let (pos, total) = match layout {
             JJLayout::Horizontal => (
-                col.saturating_sub(r0.left()),
+                position.x.saturating_sub(r0.left()),
                 r1.right().saturating_sub(r0.left()),
             ),
             JJLayout::Vertical => (
-                row.saturating_sub(r0.top()),
+                position.y.saturating_sub(r0.top()),
                 r1.bottom().saturating_sub(r0.top()),
             ),
         };

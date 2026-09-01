@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Text in the details panel can be marked by dragging the mouse over it,
+  by double clicking a word or by triple clicking a line, and goes to the
+  system clipboard when the button comes up. A line the panel wrapped or
+  cut off to show is copied as the one whole line it is
 - Diff format rendering the Git format with a pager like
   [delta](https://github.com/dandavison/delta), configured as
   `blazingjj.diff-pager` and toggled through with `w` like the others

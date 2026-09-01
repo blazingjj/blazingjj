@@ -20,6 +20,7 @@ use ratatui::widgets::Scrollbar;
 use ratatui::widgets::ScrollbarOrientation;
 use ratatui::widgets::ScrollbarState;
 
+use crate::event::Mouse;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::ui::Component;
@@ -180,17 +181,20 @@ impl Component for MessagePopup<'_> {
                 self.do_scroll(delta);
                 Ok(ComponentInputResult::Handled)
             }
-            Event::Mouse(mouse) => match mouse.kind {
-                MouseEventKind::ScrollDown => {
-                    self.do_scroll(3);
-                    Ok(ComponentInputResult::Handled)
-                }
-                MouseEventKind::ScrollUp => {
-                    self.do_scroll(-3);
-                    Ok(ComponentInputResult::Handled)
-                }
-                _ => Ok(ComponentInputResult::NotHandled),
-            },
+            _ => Ok(ComponentInputResult::NotHandled),
+        }
+    }
+
+    fn input_mouse(&mut self, mouse: Mouse) -> Result<ComponentInputResult> {
+        match mouse.kind() {
+            MouseEventKind::ScrollDown => {
+                self.do_scroll(3);
+                Ok(ComponentInputResult::Handled)
+            }
+            MouseEventKind::ScrollUp => {
+                self.do_scroll(-3);
+                Ok(ComponentInputResult::Handled)
+            }
             _ => Ok(ComponentInputResult::NotHandled),
         }
     }

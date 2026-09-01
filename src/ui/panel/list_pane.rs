@@ -1,6 +1,5 @@
 use ratatui::Frame;
 use ratatui::crossterm::event::MouseButton;
-use ratatui::crossterm::event::MouseEvent;
 use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Margin;
 use ratatui::layout::Position;
@@ -14,6 +13,7 @@ use ratatui::widgets::ScrollbarState;
 
 use super::MouseInput;
 use super::PanelMouseInput;
+use crate::event::Mouse;
 
 /// The list a tab shows in its main panel, with a scrollbar and mouse
 /// handling.
@@ -105,12 +105,12 @@ impl ListPane {
 }
 
 impl PanelMouseInput for ListPane {
-    fn input_mouse(&mut self, mouse: MouseEvent) -> MouseInput {
-        let pos = Position::new(mouse.column, mouse.row);
+    fn input_mouse(&mut self, mouse: Mouse) -> MouseInput {
+        let pos = mouse.position();
         if !self.panel_rect.contains(pos) {
             return MouseInput::NotHandled;
         }
-        match mouse.kind {
+        match mouse.kind() {
             MouseEventKind::ScrollDown => MouseInput::Scroll(1),
             MouseEventKind::ScrollUp => MouseInput::Scroll(-1),
             MouseEventKind::Down(MouseButton::Left) => match self.item_at(pos) {

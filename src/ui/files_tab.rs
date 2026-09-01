@@ -24,6 +24,7 @@ use crate::commander::new_commander;
 use crate::env::DiffFormat;
 use crate::env::JjConfig;
 use crate::env::get_env;
+use crate::event::Mouse;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::FilesTabEvent;
@@ -40,6 +41,7 @@ use crate::ui::panel::MouseInput;
 use crate::ui::panel::OutputKey;
 use crate::ui::panel::OutputPanel;
 use crate::ui::panel::OutputRequest;
+use crate::ui::panel::copy_marked;
 use crate::ui::panel::route_mouse;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::error_text;
@@ -347,8 +349,8 @@ impl Component for FilesTab {
         Ok(None)
     }
 
-    fn is_waiting(&self) -> bool {
-        self.diff_panel.is_waiting()
+    fn needs_periodic_redraw(&self) -> bool {
+        self.diff_panel.needs_periodic_redraw()
     }
 
     fn draw(
@@ -470,38 +472,38 @@ impl Component for FilesTab {
             };
         }
 
-        if let Event::Mouse(mouse) = event {
-            if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
-                return Ok(ComponentInputResult::Handled);
-            }
-            match route_mouse(mouse, &mut [&mut self.files_pane, &mut self.diff_panel]) {
-                MouseInput::Scroll(delta) => self.scroll_files(delta),
-                MouseInput::Select(index) => {
-                    if let Ok(files) = self.files_output.as_ref()
-                        && let Some(file) = files.get(index).cloned()
-                    {
-                        self.file = Some(file);
-                        self.show_diff();
-                    }
-                }
-                // The conflicts are listed below the files, and name no
-                // file for a menu to act on.
-                MouseInput::Context(index) => {
-                    if let Ok(files) = self.files_output.as_ref()
-                        && let Some(file) = files.get(index).cloned()
-                    {
-                        self.file = Some(file);
-                        self.show_diff();
-                        let anchor = Position::new(mouse.column, mouse.row);
-                        return Ok(self.context_menu(Some(anchor)).into());
-                    }
-                }
-                MouseInput::Handled => {}
-                MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
-            }
+        Ok(ComponentInputResult::Handled)
+    }
+
+    fn input_mouse(&mut self, mouse: Mouse) -> Result<ComponentInputResult> {
+        if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
             return Ok(ComponentInputResult::Handled);
         }
-
+        match route_mouse(mouse, &mut [&mut self.files_pane, &mut self.diff_panel]) {
+            MouseInput::Scroll(delta) => self.scroll_files(delta),
+            MouseInput::Select(index) => {
+                if let Ok(files) = self.files_output.as_ref()
+                    && let Some(file) = files.get(index).cloned()
+                {
+                    self.file = Some(file);
+                    self.show_diff();
+                }
+            }
+            // The conflicts are listed below the files, and name no
+            // file for a menu to act on.
+            MouseInput::Context(index) => {
+                if let Ok(files) = self.files_output.as_ref()
+                    && let Some(file) = files.get(index).cloned()
+                {
+                    self.file = Some(file);
+                    self.show_diff();
+                    return Ok(self.context_menu(Some(mouse.position())).into());
+                }
+            }
+            MouseInput::Copy(text) => return Ok(copy_marked(text)),
+            MouseInput::Handled => {}
+            MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
+        }
         Ok(ComponentInputResult::Handled)
     }
 }

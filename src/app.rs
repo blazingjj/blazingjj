@@ -35,7 +35,9 @@ use crate::commander::ids::OperationId;
 use crate::commander::new_commander;
 use crate::env::get_env;
 use crate::event::AppEvent;
+use crate::event::Clicks;
 use crate::event::EventSource;
+use crate::event::Mouse;
 use crate::keybinds::GlobalEvent;
 use crate::keybinds::GlobalKeybinds;
 use crate::keybinds::HelpSection;
@@ -118,6 +120,9 @@ pub struct App<'a> {
 
     // event handling
     running: Arc<AtomicBool>,
+    /// Counts the clicks of the mouse events on their way to the
+    /// components
+    clicks: Clicks,
     event_source: EventSource,
     background_tasks: BackgroundTasks,
 }
@@ -152,6 +157,7 @@ impl<'a> App<'a> {
             pending_interactive: None,
 
             running,
+            clicks: Clicks::default(),
             event_source,
             background_tasks,
         })
@@ -495,9 +501,9 @@ impl<'a> App<'a> {
     }
 
     /// Whether the mouse event went to the tabs overview.
-    fn input_tabs(&mut self, mouse: event::MouseEvent) -> bool {
-        let position = Position::new(mouse.column, mouse.row);
-        match mouse.kind {
+    fn input_tabs(&mut self, mouse: Mouse) -> bool {
+        let position = mouse.position();
+        match mouse.kind() {
             event::MouseEventKind::Down(event::MouseButton::Left) => {
                 let Some((_, tab)) = self
                     .tab_hits
@@ -544,7 +550,7 @@ impl<'a> App<'a> {
     /// Whether something on screen counts up on its own, so that the main
     /// loop has to come back on a timer rather than only on an event.
     pub fn needs_periodic_redraw(&mut self) -> bool {
-        self.popup.is_some() || self.get_current_tab().is_waiting()
+        self.popup.is_some() || self.get_current_tab().needs_periodic_redraw()
     }
 
     /// Hand the output of a finished task to whoever asked for it
@@ -579,6 +585,43 @@ impl<'a> App<'a> {
         Ok(Handled::Redraw)
     }
 
+    /// Offer what the mouse did to whatever is on screen, from the top
+    /// down.
+    fn input_mouse(&mut self, mouse: Mouse) -> Result<Handled> {
+        let mut to_tab = self.popup.is_none();
+        if let Some(popup) = self.popup.as_mut() {
+            match popup.input_mouse(mouse)? {
+                ComponentInputResult::HandledAction(app_action) => {
+                    self.handle_action(app_action)?
+                }
+                ComponentInputResult::Handled | ComponentInputResult::NotHandled => {}
+                ComponentInputResult::Dismissed => {
+                    self.popup = None;
+                    to_tab = true;
+                }
+            }
+        }
+
+        if !to_tab {
+            return Ok(Handled::Redraw);
+        }
+
+        if self.input_tabs(mouse) {
+            return Ok(Handled::Redraw);
+        }
+
+        match self.get_current_tab().input_mouse(mouse)? {
+            ComponentInputResult::HandledAction(app_action) => self.handle_action(app_action)?,
+            // A tab is never on top of anything, so it has nothing to
+            // dismiss itself in favour of.
+            ComponentInputResult::Handled
+            | ComponentInputResult::Dismissed
+            | ComponentInputResult::NotHandled => {}
+        }
+
+        Ok(Handled::Redraw)
+    }
+
     /// Process an AppEvent
     #[instrument(level = "trace", skip(self))]
     pub fn input(&mut self, event: AppEvent) -> Result<Handled> {
@@ -590,6 +633,11 @@ impl<'a> App<'a> {
             }
         };
         trace!("Processing user input");
+
+        if let TermEvent::Mouse(mouse) = event {
+            let mouse = self.clicks.count(mouse);
+            return self.input_mouse(mouse);
+        }
 
         match event {
             // Coming back to the window is worth a check, as the repo
@@ -632,13 +680,6 @@ impl<'a> App<'a> {
                     }
                 }
             };
-        }
-
-        if to_tab
-            && let TermEvent::Mouse(mouse) = event
-            && self.input_tabs(mouse)
-        {
-            return Ok(Handled::Redraw);
         }
 
         if to_tab {
