@@ -134,11 +134,10 @@ impl TabId {
     }
 }
 
-/// The line of hints in the header, in the three pieces the refresh key
+/// The line of hints in the header, in the two pieces the refresh key
 /// is lit up on its own in.
 const HINTS_BEFORE_REFRESH: &str = "q: quit | ?: help | ";
 const HINTS_REFRESH: &str = "R: refresh";
-const HINTS_AFTER_REFRESH: &str = " | 0-5: tabs";
 
 /// How much of the right of the header the runtime is drawn over. It is
 /// a count of milliseconds, which takes a column more every tenfold, so
@@ -146,11 +145,62 @@ const HINTS_AFTER_REFRESH: &str = " | 0-5: tabs";
 const RUNTIME_WIDTH: usize = 12;
 
 /// How wide the hints are with their border and the runtime beside them.
-const HINTS_WIDTH: u16 = (HINTS_BEFORE_REFRESH.len()
-    + HINTS_REFRESH.len()
-    + HINTS_AFTER_REFRESH.len()
-    + 2
-    + RUNTIME_WIDTH) as u16;
+const HINTS_WIDTH: u16 =
+    (HINTS_BEFORE_REFRESH.len() + HINTS_REFRESH.len() + 2 + RUNTIME_WIDTH) as u16;
+
+/// Where each tab's title sits in the tab bar and how wide it is: one
+/// cell of padding on either side of a title, then a one cell divider.
+/// The padding counts as part of the title, so that clicking next to a
+/// name still hits it.
+fn tab_bar_layout(titles: &[String]) -> impl Iterator<Item = (u16, u16)> {
+    titles.iter().scan(0, |x, title| {
+        let start = *x;
+        let width = Line::raw(title).width() as u16 + 2;
+        *x += width + 1;
+        Some((start, width))
+    })
+}
+
+/// The whole tab bar, however much of it shows, with the selected tab
+/// highlighted.
+fn tab_bar_line(titles: &[String], selected: usize) -> Line<'static> {
+    let highlight = get_env().jj_config.highlight_color();
+
+    let mut spans = Vec::new();
+    for (i, title) in titles.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw(symbols::line::VERTICAL));
+        }
+        let title = format!(" {title} ");
+        spans.push(if i == selected {
+            Span::styled(title, Style::default().bg(highlight))
+        } else {
+            Span::raw(title)
+        });
+    }
+
+    Line::from(spans)
+}
+
+/// How far into the tab bar a window `width` wide starts: at the front
+/// while every tab fits, and on the selected tab, centered as far as the
+/// ends of the bar allow, once they do not.
+fn tab_bar_scroll(titles: &[String], selected: usize, width: u16) -> u16 {
+    let total = tab_bar_layout(titles)
+        .last()
+        .map_or(0, |(start, tab_width)| start + tab_width);
+
+    let Some((start, tab_width)) = tab_bar_layout(titles)
+        .nth(selected)
+        .filter(|_| total > width)
+    else {
+        return 0;
+    };
+
+    (start + tab_width / 2)
+        .saturating_sub(width / 2)
+        .min(total - width)
+}
 
 pub struct Stats {
     pub start_time: Instant,
@@ -515,21 +565,22 @@ impl<'a> App<'a> {
                 .map(|tab| format!("[{}] {}", tab.number(), tab))
                 .collect();
 
+            let selected = TabId::VALUES
+                .iter()
+                .position(|tab| *tab == self.current_tab.in_tab_bar())
+                .unwrap_or(0);
+
             let block = Block::bordered()
                 .title(" Tabs ")
                 .border_type(BorderType::Rounded);
-            self.record_tab_hits(header_chunks[0], block.inner(header_chunks[0]), &titles);
+            let area = block.inner(header_chunks[0]);
 
-            let tabs = Tabs::new(titles)
+            let scroll = tab_bar_scroll(&titles, selected, area.width);
+            self.record_tab_hits(header_chunks[0], area, &titles, scroll);
+
+            let tabs = Paragraph::new(tab_bar_line(&titles, selected))
                 .block(block)
-                .highlight_style(Style::default().bg(get_env().jj_config.highlight_color()))
-                .select(
-                    TabId::VALUES
-                        .iter()
-                        .position(|tab| *tab == self.current_tab.in_tab_bar())
-                        .unwrap_or(0),
-                )
-                .divider(symbols::line::VERTICAL);
+                .scroll((0, scroll));
 
             f.render_widget(tabs, header_chunks[0]);
         }
@@ -545,7 +596,6 @@ impl<'a> App<'a> {
             let hints = Paragraph::new(Line::from(vec![
                 Span::raw(HINTS_BEFORE_REFRESH),
                 Span::styled(HINTS_REFRESH, refresh_style),
-                Span::raw(HINTS_AFTER_REFRESH),
             ]))
             .fg(Color::DarkGray)
             .block(
@@ -580,30 +630,30 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    /// Note where each tab's title ends up inside `area`, following how
-    /// [Tabs] lays them out: one cell of padding on either side of a
-    /// title, then a one cell divider. The padding counts as part of the
-    /// title, so that clicking next to a name still hits it.
-    fn record_tab_hits(&mut self, block: Rect, area: Rect, titles: &[String]) {
+    /// Note where each tab's title ends up inside `area`, which is the
+    /// tab bar scrolled by `scroll`. A title outside the area is left
+    /// out, and one that is only half there is taken for what shows.
+    fn record_tab_hits(&mut self, block: Rect, area: Rect, titles: &[String], scroll: u16) {
         self.tabs_rect = block;
         self.tab_hits.clear();
 
-        let mut x = area.left();
-        for (title, tab) in titles.iter().zip(TabId::VALUES) {
-            let width = Line::raw(title).width() as u16 + 2;
-            if x >= area.right() {
-                break;
+        for ((start, width), tab) in tab_bar_layout(titles).zip(TabId::VALUES) {
+            // The tab bar is drawn from `scroll` on, so a title starting
+            // before it is cut short and one ending before it is gone.
+            let left = start.saturating_sub(scroll);
+            let right = (start + width).saturating_sub(scroll);
+            if right == 0 || area.left() + left >= area.right() {
+                continue;
             }
             self.tab_hits.push((
                 Rect {
-                    x,
+                    x: area.left() + left,
                     y: area.top(),
-                    width: width.min(area.right() - x),
+                    width: (right - left).min(area.right() - area.left() - left),
                     height: 1,
                 },
                 tab,
             ));
-            x += width + 1;
         }
     }
 
@@ -875,5 +925,35 @@ impl<'a> App<'a> {
         }
 
         Ok(Handled::Redraw)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Titles taking 5, 5 and 7 cells with their padding, so 19 with the
+    /// dividers between them.
+    fn titles() -> Vec<String> {
+        ["one", "two", "three"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[test]
+    fn the_tab_bar_stays_at_its_front_while_every_tab_fits() {
+        assert_eq!(tab_bar_scroll(&titles(), 2, 19), 0);
+    }
+
+    #[test]
+    fn a_tab_bar_wider_than_its_window_centers_the_selected_tab() {
+        assert_eq!(tab_bar_scroll(&titles(), 1, 10), 3);
+    }
+
+    #[test]
+    fn the_tab_bar_scrolls_no_further_than_its_ends() {
+        assert_eq!(tab_bar_scroll(&titles(), 0, 10), 0);
+        assert_eq!(tab_bar_scroll(&titles(), 2, 10), 9);
     }
 }
