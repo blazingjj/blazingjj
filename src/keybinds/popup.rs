@@ -2,11 +2,14 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
+use super::Binding;
+use super::Context;
 use super::Shortcut;
 use super::config::KeybindsConfig;
 use super::config::TextPopupKeybindsConfig;
 use super::keybinds_store::KeybindsStore;
 use crate::env::keybinds_config;
+use crate::make_bindings;
 use crate::set_keybinds;
 use crate::update_keybinds;
 
@@ -32,8 +35,9 @@ pub enum PopupEvent {
 }
 
 impl PopupKeybinds {
-    /// Keys for a popup that lists what there is to pick from.
-    pub fn dialog() -> Self {
+    /// The keys a popup that lists what there is to pick from comes
+    /// with.
+    fn dialog_keys() -> KeybindsStore<PopupEvent> {
         let mut keys = KeybindsStore::<PopupEvent>::default();
         set_keybinds!(
             keys,
@@ -52,8 +56,20 @@ impl PopupKeybinds {
             PopupEvent::ScrollUpPage => "ctrl+b",
             PopupEvent::ScrollUpPage => "pageup",
         );
-        let mut keybinds = Self { keys };
-        if let Some(config) = keybinds_config() {
+        keys
+    }
+
+    /// Keys for a popup that lists what there is to pick from.
+    pub fn dialog() -> Self {
+        Self::dialog_from_config(keybinds_config())
+    }
+
+    /// The same as `config` has them.
+    pub(super) fn dialog_from_config(config: Option<&KeybindsConfig>) -> Self {
+        let mut keybinds = Self {
+            keys: Self::dialog_keys(),
+        };
+        if let Some(config) = config {
             keybinds.extend_dialog_from_config(config);
         }
         keybinds
@@ -62,22 +78,33 @@ impl PopupKeybinds {
     /// Keys for a popup holding a text field, where every key the field
     /// can take is the field's.
     pub fn text() -> Self {
-        Self::text_field(false)
+        Self::text_field(false, keybinds_config())
+    }
+
+    /// The same as `config` has them.
+    pub(super) fn text_from_config(config: Option<&KeybindsConfig>) -> Self {
+        Self::text_field(false, config)
     }
 
     /// Keys for a popup holding a text field of a single line, which has
     /// no newline to put an Enter in.
     pub fn text_line() -> Self {
-        Self::text_field(true)
+        Self::text_field(true, keybinds_config())
     }
 
-    fn text_field(single_line: bool) -> Self {
+    /// The keys a popup holding a text field comes with.
+    fn text_keys() -> KeybindsStore<PopupEvent> {
         let mut keys = KeybindsStore::<PopupEvent>::default();
         set_keybinds!(
             keys,
             PopupEvent::Accept => "ctrl+s",
             PopupEvent::Cancel => "esc",
         );
+        keys
+    }
+
+    fn text_field(single_line: bool, config: Option<&KeybindsConfig>) -> Self {
+        let mut keys = Self::text_keys();
         if single_line {
             keys.add_action(
                 Shortcut::from_str("enter").expect("shortcut should parse"),
@@ -86,7 +113,7 @@ impl PopupKeybinds {
         }
 
         let mut keybinds = Self { keys };
-        if let Some(config) = keybinds_config().and_then(|config| config.text_popup.as_ref()) {
+        if let Some(config) = config.and_then(|config| config.text_popup.as_ref()) {
             keybinds.extend_text_from_config(config);
         }
         keybinds
@@ -94,6 +121,31 @@ impl PopupKeybinds {
 
     pub fn match_event(&self, event: KeyEvent) -> PopupEvent {
         self.keys.match_event(event).unwrap_or(PopupEvent::Unbound)
+    }
+
+    /// What a popup that lists what there is to pick from binds. Which
+    /// keys scroll it is not its own to say: they are the keys that
+    /// scroll everywhere.
+    pub fn bindings(&self) -> Vec<Binding> {
+        make_bindings!(
+            self.keys, Self::dialog_keys(), Context::Popup,
+            PopupEvent::Accept => "accept", None, "take the popup up on what is selected",
+            PopupEvent::Cancel => "cancel", None, "take the popup down",
+            PopupEvent::ScrollDownHalf => "scroll-down-half", None, "scroll down by ½ page",
+            PopupEvent::ScrollUpHalf => "scroll-up-half", None, "scroll up by ½ page",
+            PopupEvent::ScrollDownPage => "scroll-down-page", None, "scroll down by page",
+            PopupEvent::ScrollUpPage => "scroll-up-page", None, "scroll up by page",
+        )
+    }
+
+    /// What a popup holding a text field binds, which is only what the
+    /// field itself leaves free.
+    pub fn text_bindings(&self) -> Vec<Binding> {
+        make_bindings!(
+            self.keys, Self::text_keys(), Context::TextPopup,
+            PopupEvent::Accept => "accept", None, "accept what was typed, as Enter does in a field of a single line",
+            PopupEvent::Cancel => "cancel", None, "take the popup down",
+        )
     }
 
     /// The line under a popup saying what it answers to, with `accept`

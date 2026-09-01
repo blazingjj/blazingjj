@@ -22,14 +22,13 @@ use crate::commander::ids::ChangeId;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::env::DiffFormat;
-use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::event::Mouse;
+use crate::keybinds::Binding;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::FilesTabEvent;
 use crate::keybinds::FilesTabKeybinds;
-use crate::keybinds::HelpItem;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -63,7 +62,6 @@ pub struct FilesTab {
     pub file: Option<File>,
     diff_panel: FileDiffPanel,
 
-    config: JjConfig,
     keybinds: FilesTabKeybinds,
     details_keybinds: DetailsPanelKeybinds,
     pane_divider: PaneDivider,
@@ -145,8 +143,7 @@ impl FilesTab {
     /// A stale tab at `current_head`, holding no files yet.
     #[instrument(level = "info", name = "Initializing files tab", parent = None, skip(background_tasks))]
     pub fn new(current_head: &Head, background_tasks: BackgroundTasks) -> Self {
-        let config = get_env().jj_config.clone();
-        let pane_divider = PaneDivider::new(config.layout_percent());
+        let pane_divider = PaneDivider::default();
         let keybinds = FilesTabKeybinds::new();
         let details_keybinds = DetailsPanelKeybinds::new();
 
@@ -164,7 +161,6 @@ impl FilesTab {
 
             diff_panel: FileDiffPanel::new(TabId::Files, background_tasks),
 
-            config,
             keybinds,
             details_keybinds,
             pane_divider,
@@ -240,7 +236,7 @@ impl FilesTab {
         let file = self.file.as_ref()?;
 
         Some(AppAction::SetPopup(Box::new(files_context_menu(
-            self.config.clone(),
+            get_env().jj_config.clone(),
             anchor,
             file,
         ))))
@@ -301,6 +297,12 @@ impl Tab for FilesTab {
         self.stale = true;
     }
 
+    fn config_changed(&mut self) {
+        self.diff_panel.config_changed();
+        self.keybinds = FilesTabKeybinds::new();
+        self.details_keybinds = DetailsPanelKeybinds::new();
+    }
+
     fn is_stale(&self) -> bool {
         self.stale
     }
@@ -326,12 +328,12 @@ impl Tab for FilesTab {
         ))
     }
 
-    fn make_main_panel_help(&self) -> Vec<HelpItem> {
-        self.keybinds.make_help()
+    fn main_panel_bindings(&self) -> Vec<Binding> {
+        self.keybinds.bindings()
     }
 
-    fn make_details_panel_help(&self) -> Vec<HelpItem> {
-        self.details_keybinds.make_help()
+    fn details_panel_bindings(&self) -> Vec<Binding> {
+        self.details_keybinds.bindings()
     }
 }
 
@@ -358,7 +360,7 @@ impl Component for FilesTab {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = self.pane_divider.split(area, self.config.layout());
+        let chunks = self.pane_divider.split(area);
 
         // Draw files
         {
@@ -389,14 +391,13 @@ impl Component for FilesTab {
                                     }
 
                                     if current_file_index == Some(i) {
-                                        line = line.bg(self.config.highlight_color());
+                                        let highlight = get_env().jj_config.highlight_color();
 
+                                        line = line.bg(highlight);
                                         line.spans = line
                                             .spans
                                             .iter_mut()
-                                            .map(|span| {
-                                                span.to_owned().bg(self.config.highlight_color())
-                                            })
+                                            .map(|span| span.to_owned().bg(highlight))
                                             .collect();
                                     }
 
@@ -476,7 +477,7 @@ impl Component for FilesTab {
     }
 
     fn input_mouse(&mut self, mouse: Mouse) -> Result<ComponentInputResult> {
-        if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+        if self.pane_divider.handle_mouse(mouse) {
             return Ok(ComponentInputResult::Handled);
         }
         match route_mouse(mouse, &mut [&mut self.files_pane, &mut self.diff_panel]) {

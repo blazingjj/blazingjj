@@ -20,14 +20,13 @@ use crate::commander::bookmarks::BookmarkLine;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
-use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::event::Mouse;
+use crate::keybinds::Binding;
 use crate::keybinds::BookmarksTabEvent;
 use crate::keybinds::BookmarksTabKeybinds;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
-use crate::keybinds::HelpItem;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -54,7 +53,6 @@ pub struct BookmarksTab {
 
     bookmark_panel: CommitShowPanel,
 
-    config: JjConfig,
     keybinds: BookmarksTabKeybinds,
     details_keybinds: DetailsPanelKeybinds,
     pane_divider: PaneDivider,
@@ -118,8 +116,7 @@ impl BookmarksTab {
     /// A stale tab holding no bookmarks yet.
     #[instrument(level = "info", name = "Initializing bookmarks tab", parent = None, skip(background_tasks))]
     pub fn new(background_tasks: BackgroundTasks) -> Self {
-        let config = get_env().jj_config.clone();
-        let pane_divider = PaneDivider::new(config.layout_percent());
+        let pane_divider = PaneDivider::default();
         let keybinds = BookmarksTabKeybinds::new();
         let details_keybinds = DetailsPanelKeybinds::new();
 
@@ -133,7 +130,6 @@ impl BookmarksTab {
 
             bookmark_panel: CommitShowPanel::new(TabId::Bookmarks, background_tasks),
 
-            config,
             keybinds,
             details_keybinds,
             pane_divider,
@@ -280,7 +276,7 @@ impl BookmarksTab {
     /// `anchor` or centered when there is nowhere to point at.
     fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(bookmarks_context_menu(
-            self.config.clone(),
+            get_env().jj_config.clone(),
             anchor,
             self.selected_target(),
         ))))
@@ -308,7 +304,7 @@ impl BookmarksTab {
             BookmarksTabEvent::DeleteBookmark => {
                 if let Some(bookmark) = self.selected_bookmark() {
                     return Ok(Some(command::ask_delete_bookmark(
-                        self.config.clone(),
+                        get_env().jj_config.clone(),
                         &bookmark.name,
                     )));
                 }
@@ -316,7 +312,7 @@ impl BookmarksTab {
             BookmarksTabEvent::ForgetBookmark => {
                 if let Some(bookmark) = self.listed_bookmark() {
                     return Ok(Some(command::ask_forget_bookmark(
-                        self.config.clone(),
+                        get_env().jj_config.clone(),
                         &bookmark.name,
                     )));
                 }
@@ -339,7 +335,7 @@ impl BookmarksTab {
             BookmarksTabEvent::SetBookmark => {
                 if let Some((bookmark, head)) = self.selected_target() {
                     return Ok(Some(command::ask_set_bookmark(
-                        self.config.clone(),
+                        get_env().jj_config.clone(),
                         bookmark,
                         head,
                     )));
@@ -348,7 +344,7 @@ impl BookmarksTab {
             BookmarksTabEvent::NewChange { describe } => {
                 if let Some((bookmark, head)) = self.selected_target() {
                     return Ok(Some(command::ask_new_change(
-                        self.config.clone(),
+                        get_env().jj_config.clone(),
                         Revset::from(&head.commit_id),
                         NewSource::Change,
                         &bookmark.to_string(),
@@ -359,7 +355,7 @@ impl BookmarksTab {
             BookmarksTabEvent::EditChange { ignore_immutable } => {
                 if let Some((bookmark, head)) = self.selected_target() {
                     return Ok(Some(command::ask_edit(
-                        self.config.clone(),
+                        get_env().jj_config.clone(),
                         head,
                         format!("Bookmark: {bookmark}"),
                         ignore_immutable,
@@ -393,6 +389,12 @@ impl Tab for BookmarksTab {
 
     fn mark_stale(&mut self) {
         self.stale = true;
+    }
+
+    fn config_changed(&mut self) {
+        self.bookmark_panel.config_changed();
+        self.keybinds = BookmarksTabKeybinds::new();
+        self.details_keybinds = DetailsPanelKeybinds::new();
     }
 
     fn is_stale(&self) -> bool {
@@ -438,12 +440,12 @@ impl Tab for BookmarksTab {
         ))
     }
 
-    fn make_main_panel_help(&self) -> Vec<HelpItem> {
-        self.keybinds.make_help()
+    fn main_panel_bindings(&self) -> Vec<Binding> {
+        self.keybinds.bindings()
     }
 
-    fn make_details_panel_help(&self) -> Vec<HelpItem> {
-        self.details_keybinds.make_help()
+    fn details_panel_bindings(&self) -> Vec<Binding> {
+        self.details_keybinds.bindings()
     }
 }
 
@@ -470,7 +472,7 @@ impl Component for BookmarksTab {
         f: &mut ratatui::prelude::Frame<'_>,
         area: ratatui::prelude::Rect,
     ) -> Result<()> {
-        let chunks = self.pane_divider.split(area, self.config.layout());
+        let chunks = self.pane_divider.split(area);
 
         // Draw bookmarks
         {
@@ -491,14 +493,13 @@ impl Component for BookmarksTab {
                                 line.spans.insert(0, Span::from(" "));
 
                                 if current_bookmark_index == Some(i) {
-                                    line = line.bg(self.config.highlight_color());
+                                    let highlight = get_env().jj_config.highlight_color();
 
+                                    line = line.bg(highlight);
                                     line.spans = line
                                         .spans
                                         .iter_mut()
-                                        .map(|span| {
-                                            span.to_owned().bg(self.config.highlight_color())
-                                        })
+                                        .map(|span| span.to_owned().bg(highlight))
                                         .collect();
                                 }
 
@@ -585,7 +586,7 @@ impl Component for BookmarksTab {
     }
 
     fn input_mouse(&mut self, mouse: Mouse) -> Result<ComponentInputResult> {
-        if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+        if self.pane_divider.handle_mouse(mouse) {
             return Ok(ComponentInputResult::Handled);
         }
         match route_mouse(

@@ -15,7 +15,6 @@ use crate::commander::CommandError;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::log::LogOutput;
-use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::event::Mouse;
 use crate::ui::AppAction;
@@ -59,9 +58,6 @@ pub struct LogPanel<'a> {
     pub marked_heads: HashSet<CommitId>,
 
     list_pane: ListPane,
-
-    /// Configuration of colours
-    config: JjConfig,
 
     /// Whether to apply scroll_padding on the next draw.
     /// Disabled after a right-click so the viewport doesn't jump.
@@ -119,7 +115,6 @@ impl<'a> LogPanel<'a> {
 
             list_pane: ListPane::default(),
 
-            config: get_env().jj_config.clone(),
             scroll_padding_active: true,
         }
     }
@@ -170,6 +165,8 @@ impl<'a> LogPanel<'a> {
             }
         }
 
+        let highlight = get_env().jj_config.highlight_color();
+
         self.log_output_text
             .iter()
             .enumerate()
@@ -181,7 +178,7 @@ impl<'a> LogPanel<'a> {
 
                 // Highlight lines that correspond to self.head
                 if log_output.head_at(i) == Some(&self.head) {
-                    set_bg(&mut line, self.config.highlight_color());
+                    set_bg(&mut line, highlight);
                 };
 
                 line

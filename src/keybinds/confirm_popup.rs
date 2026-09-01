@@ -6,10 +6,14 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
+use super::Binding;
+use super::Context;
 use super::Shortcut;
 use super::config::ConfirmPopupKeybindsConfig;
+use super::config::KeybindsConfig;
 use super::keybinds_store::KeybindsStore;
 use crate::env::keybinds_config;
+use crate::make_bindings;
 use crate::set_keybinds;
 use crate::update_keybinds;
 
@@ -45,8 +49,13 @@ impl Default for ConfirmPopupKeybinds {
 impl ConfirmPopupKeybinds {
     /// The bindings as the configuration has them.
     pub fn new() -> Self {
+        Self::from_config(keybinds_config())
+    }
+
+    /// The bindings as `config` has them.
+    pub(super) fn from_config(config: Option<&KeybindsConfig>) -> Self {
         let mut keybinds = Self::default();
-        if let Some(config) = keybinds_config().and_then(|config| config.confirm_popup.as_ref()) {
+        if let Some(config) = config.and_then(|config| config.confirm_popup.as_ref()) {
             keybinds.extend_from_config(config);
         }
         keybinds
@@ -56,6 +65,16 @@ impl ConfirmPopupKeybinds {
         self.keys
             .match_event(event)
             .unwrap_or(ConfirmPopupEvent::Unbound)
+    }
+
+    pub fn bindings(&self) -> Vec<Binding> {
+        make_bindings!(
+            self.keys, Self::default().keys, Context::ConfirmPopup,
+            ConfirmPopupEvent::Answer(true) => "yes", None, "answer yes",
+            ConfirmPopupEvent::Answer(false) => "no", None, "answer no",
+            ConfirmPopupEvent::Select(true) => "select-yes", None, "select the yes button",
+            ConfirmPopupEvent::Select(false) => "select-no", None, "select the no button",
+        )
     }
 
     /// The shortcut to name `event` by, of those bound to it.

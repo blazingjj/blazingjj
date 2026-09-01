@@ -2,13 +2,15 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
-use super::HelpItem;
+use super::Binding;
+use super::Context;
 use super::Section;
 use super::Shortcut;
 use super::config::FilesTabKeybindsConfig;
+use super::config::KeybindsConfig;
 use super::keybinds_store::KeybindsStore;
 use crate::env::keybinds_config;
-use crate::make_keybinds_help;
+use crate::make_bindings;
 use crate::set_keybinds;
 use crate::update_keybinds;
 
@@ -40,8 +42,13 @@ impl Default for FilesTabKeybinds {
 impl FilesTabKeybinds {
     /// The bindings as the configuration has them.
     pub fn new() -> Self {
+        Self::from_config(keybinds_config())
+    }
+
+    /// The bindings as `config` has them.
+    pub(super) fn from_config(config: Option<&KeybindsConfig>) -> Self {
         let mut keybinds = Self::default();
-        if let Some(config) = keybinds_config().and_then(|config| config.files_tab.as_ref()) {
+        if let Some(config) = config.and_then(|config| config.files_tab.as_ref()) {
             keybinds.extend_from_config(config);
         }
         keybinds
@@ -61,11 +68,11 @@ impl FilesTabKeybinds {
             .unwrap_or(FilesTabEvent::Unbound)
     }
 
-    pub fn make_help(&self) -> Vec<HelpItem> {
-        make_keybinds_help!(
-            self.keys,
-            FilesTabEvent::Untrack => Section::Files, "untrack file",
-            FilesTabEvent::Restore => Section::Files, "restore file",
+    pub fn bindings(&self) -> Vec<Binding> {
+        make_bindings!(
+            self.keys, Self::default().keys, Context::FilesTab,
+            FilesTabEvent::Untrack => "untrack", Some(Section::Files), "untrack file",
+            FilesTabEvent::Restore => "restore", Some(Section::Files), "restore file",
         )
     }
 }

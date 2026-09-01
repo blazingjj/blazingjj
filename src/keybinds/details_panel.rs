@@ -2,13 +2,15 @@ use std::str::FromStr;
 
 use ratatui::crossterm::event::KeyEvent;
 
-use super::HelpItem;
+use super::Binding;
+use super::Context;
 use super::Section;
 use super::Shortcut;
 use super::config::DetailsPanelKeybindsConfig;
+use super::config::KeybindsConfig;
 use super::keybinds_store::KeybindsStore;
 use crate::env::keybinds_config;
-use crate::make_keybinds_help;
+use crate::make_bindings;
 use crate::set_keybinds;
 use crate::update_keybinds;
 
@@ -52,8 +54,13 @@ impl DetailsPanelKeybinds {
     /// The bindings as the configuration has them, which every tab's
     /// details panel answers to alike.
     pub fn new() -> Self {
+        Self::from_config(keybinds_config())
+    }
+
+    /// The bindings as `config` has them.
+    pub(super) fn from_config(config: Option<&KeybindsConfig>) -> Self {
         let mut keybinds = Self::default();
-        if let Some(config) = keybinds_config().and_then(|config| config.details_panel.as_ref()) {
+        if let Some(config) = config.and_then(|config| config.details_panel.as_ref()) {
             keybinds.extend_from_config(config);
         }
         keybinds
@@ -79,17 +86,17 @@ impl DetailsPanelKeybinds {
         );
     }
 
-    pub fn make_help(&self) -> Vec<HelpItem> {
-        make_keybinds_help!(
-            self.keys,
-            DetailsPanelEvent::ScrollDown => Section::DetailsPanel, "scroll down",
-            DetailsPanelEvent::ScrollUp => Section::DetailsPanel, "scroll up",
-            DetailsPanelEvent::ScrollDownHalfPage => Section::DetailsPanel, "scroll down by ½ page",
-            DetailsPanelEvent::ScrollUpHalfPage => Section::DetailsPanel, "scroll up by ½ page",
-            DetailsPanelEvent::ScrollDownPage => Section::DetailsPanel, "scroll down by page",
-            DetailsPanelEvent::ScrollUpPage => Section::DetailsPanel, "scroll up by page",
-            DetailsPanelEvent::ToggleDiffFormat => Section::DetailsPanel, "toggle diff format",
-            DetailsPanelEvent::ToggleWrap => Section::DetailsPanel, "toggle wrapping",
+    pub fn bindings(&self) -> Vec<Binding> {
+        make_bindings!(
+            self.keys, Self::default().keys, Context::DetailsPanel,
+            DetailsPanelEvent::ScrollDown => "scroll-down", Some(Section::DetailsPanel), "scroll down",
+            DetailsPanelEvent::ScrollUp => "scroll-up", Some(Section::DetailsPanel), "scroll up",
+            DetailsPanelEvent::ScrollDownHalfPage => "scroll-down-half", Some(Section::DetailsPanel), "scroll down by ½ page",
+            DetailsPanelEvent::ScrollUpHalfPage => "scroll-up-half", Some(Section::DetailsPanel), "scroll up by ½ page",
+            DetailsPanelEvent::ScrollDownPage => "scroll-down-page", Some(Section::DetailsPanel), "scroll down by page",
+            DetailsPanelEvent::ScrollUpPage => "scroll-up-page", Some(Section::DetailsPanel), "scroll up by page",
+            DetailsPanelEvent::ToggleDiffFormat => "toggle-diff-format", Some(Section::DetailsPanel), "toggle diff format",
+            DetailsPanelEvent::ToggleWrap => "toggle-wrap", Some(Section::DetailsPanel), "toggle wrapping",
         )
     }
 }

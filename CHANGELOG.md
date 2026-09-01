@@ -49,6 +49,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `blazingjj.diff-pager` and toggled through with `w` like the others
 - The details panel now names the diff format it renders in, in its top
   right corner
+- Settings tab, listing the `blazingjj.*` options with what the configuration
+  says about them and what the app goes by while it says nothing; opened from the
+  tab bar with `0`, where it sits after the tabs that show the repo. `Enter`
+  changes the selected setting and `x` takes it back out of your config, both
+  through `jj config` on the user config file and both configurable under
+  `[blazingjj.keybinds.settings-tab]`. A change takes effect at once, without
+  a restart
+- Keybindings tab, opened from the settings tab's `blazingjj.keybinds` row,
+  listing every action a key can be bound to under the heading of where its
+  keys take effect. `Enter` takes the next key you press for the selected
+  action and `a` takes one more key beside the keys it has, `X` leaves it bound
+  to nothing and `x` takes the binding back out of your config; `Esc` goes back
+  to the settings
 - Keybinding in the bookmarks tab to point a bookmark at the change the
   selected line stands for (`b`, as in the log tab), which settles a bookmark
   torn between several targets on the one selected, and moves a bookmark to

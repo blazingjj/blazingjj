@@ -26,6 +26,7 @@ invocation with [Commander::jj], which returns a [JjCommand] builder:
 
 pub mod bookmarks;
 pub mod cancel;
+pub mod config;
 pub mod files;
 pub mod ids;
 pub mod jj;
@@ -586,6 +587,7 @@ pub mod tests {
 
             let env = Env {
                 root: directory.path().to_string_lossy().to_string(),
+                config: toml::Table::new(),
                 jj_config: JjConfig::default(),
                 default_revset: None,
                 jj_bin,

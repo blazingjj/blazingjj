@@ -4,8 +4,10 @@ pub mod bookmarks_tab;
 pub mod dialog;
 pub mod evolog_tab;
 pub mod files_tab;
+pub mod keybindings_tab;
 pub mod log_tab;
 pub mod panel;
+pub mod settings_tab;
 pub mod styles;
 pub mod utils;
 use anyhow::Result;
@@ -13,12 +15,13 @@ use ratatui::Frame;
 use ratatui::crossterm::event::Event;
 use ratatui::layout::Rect;
 
+use crate::app::TabId;
 use crate::app::command::Command;
 use crate::background_tasks::TaskResult;
 use crate::commander::JjCommand;
 use crate::commander::log::Head;
 use crate::event::Mouse;
-use crate::keybinds::HelpItem;
+use crate::keybinds::Binding;
 
 /// Action commmands from component to application
 pub enum AppAction {
@@ -31,6 +34,8 @@ pub enum AppAction {
     /// Show the bookmark of this name, which may have just come into
     /// being.
     ViewBookmark(String),
+    /// Show this tab, as it stands.
+    ViewTab(TabId),
     ChangeHead(Head),
     /// Put this popup up, in place of whatever is up now.
     SetPopup(Box<dyn Component>),
@@ -44,6 +49,9 @@ pub enum AppAction {
     /// Have every tab read itself again before it is next drawn, the
     /// operation that has just run having moved the repo.
     MarkTabsStale,
+    /// The configuration has changed, so the app reads it again and
+    /// everything that goes by it takes up what it now says.
+    ConfigChanged,
     /// Run this operation and do whatever it asks for in turn. Whoever
     /// raises one has named it in full, so the app can run it without
     /// asking anything of the component the request came from.
@@ -150,6 +158,10 @@ pub trait Tab: Component {
     /// Have the next [refresh](Tab::refresh) read the repo.
     fn mark_stale(&mut self);
 
+    /// Take up the configuration as it now reads, of which the tab and
+    /// its panels hold what they go by.
+    fn config_changed(&mut self);
+
     /// Whether the next [refresh](Tab::refresh) will read the repo.
     fn is_stale(&self) -> bool;
 
@@ -170,8 +182,8 @@ pub trait Tab: Component {
     fn open_context_menu(&self) -> Result<Option<AppAction>>;
 
     /// Keybindings of the main panel, for the help popup.
-    fn make_main_panel_help(&self) -> Vec<HelpItem>;
+    fn main_panel_bindings(&self) -> Vec<Binding>;
 
     /// Keybindings of the details panel, for the help popup.
-    fn make_details_panel_help(&self) -> Vec<HelpItem>;
+    fn details_panel_bindings(&self) -> Vec<Binding>;
 }

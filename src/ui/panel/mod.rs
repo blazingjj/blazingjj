@@ -5,6 +5,7 @@ mod list_pane;
 mod log_panel;
 mod output_cache;
 mod output_panel;
+mod sections;
 
 pub use commit_show::CommitShowKey;
 pub use commit_show::CommitShowPanel;
@@ -18,6 +19,8 @@ pub use log_panel::LogPanel;
 pub use output_cache::OutputKey;
 pub use output_cache::OutputRequest;
 pub use output_panel::OutputPanel;
+pub use sections::Row;
+pub use sections::Sections;
 
 use crate::app::command::Command;
 use crate::event::Mouse;

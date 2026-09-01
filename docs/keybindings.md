@@ -11,10 +11,18 @@ describe = false
 
 In below examples default values are used.
 
+The keybindings tab does the same from within blazingjj: the settings tab
+(`0`) opens it on the `blazingjj.keybinds` row, and it lists every action
+under the heading of where its keys take effect. A key is written under
+the name it reads by, so what the app shows is also what the config file
+takes; a key it has no name for, such as one of the lock keys, is one
+it cannot offer. `Enter` takes the key you press next as the one key an
+action answers to, `a` takes it as another key beside the ones it has.
+
 ### Global
 
 These work in every tab, and `scroll-down` and `scroll-up` scroll the
-popups as well. Selecting a tab by its number in the tab bar (`1` to `4`)
+popups as well. Selecting a tab by its number in the tab bar (`0` to `4`)
 is not configurable.
 
 ```toml
@@ -177,4 +185,23 @@ edit-change-ignore-immutable = "shift+e"
 open-files = "enter"
 duplicate = "shift+d"
 copy-rev = "shift+y"
+```
+
+### Settings tab
+
+```toml
+[blazingjj.keybinds.settings-tab]
+change = "enter"
+unset = "x"
+```
+
+### Keybindings tab
+
+```toml
+[blazingjj.keybinds.keybindings-tab]
+bind = "enter"
+bind-besides = "a"
+disable = "shift+x"
+unset = "x"
+back = "esc"
 ```

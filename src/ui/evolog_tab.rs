@@ -19,14 +19,13 @@ use crate::commander::log::EVOLOG_LINES_PER_HEAD;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
-use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::event::Mouse;
+use crate::keybinds::Binding;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::EvologTabEvent;
 use crate::keybinds::EvologTabKeybinds;
-use crate::keybinds::HelpItem;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -51,7 +50,6 @@ pub struct EvologTab<'a> {
     /// The panel showing what the selected version changed
     patch_panel: EvologShowPanel,
 
-    config: JjConfig,
     keybinds: EvologTabKeybinds,
     details_keybinds: DetailsPanelKeybinds,
     pane_divider: PaneDivider,
@@ -63,16 +61,13 @@ impl<'a> EvologTab<'a> {
     /// A stale tab for `current_head`, holding no entries yet.
     #[instrument(level = "info", name = "Initializing evolog tab", parent = None, skip(background_tasks))]
     pub fn new(current_head: &Head, background_tasks: BackgroundTasks) -> Self {
-        let config = get_env().jj_config.clone();
-
         Self {
             change: current_head.clone(),
 
             entry_panel: LogPanel::new(current_head.clone(), EVOLOG_LINES_PER_HEAD),
             patch_panel: EvologShowPanel::new(TabId::Evolog, background_tasks),
 
-            pane_divider: PaneDivider::new(config.layout_percent()),
-            config,
+            pane_divider: PaneDivider::default(),
             keybinds: EvologTabKeybinds::new(),
             details_keybinds: DetailsPanelKeybinds::new(),
 
@@ -123,7 +118,7 @@ impl<'a> EvologTab<'a> {
     /// `anchor` or centered when there is nowhere to point at.
     fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(evolog_context_menu(
-            self.config.clone(),
+            get_env().jj_config.clone(),
             anchor,
             &self.entry_panel.head,
             &self.change,
@@ -175,6 +170,12 @@ impl Tab for EvologTab<'_> {
         self.stale = true;
     }
 
+    fn config_changed(&mut self) {
+        self.patch_panel.config_changed();
+        self.keybinds = EvologTabKeybinds::new();
+        self.details_keybinds = DetailsPanelKeybinds::new();
+    }
+
     fn is_stale(&self) -> bool {
         self.stale
     }
@@ -197,12 +198,12 @@ impl Tab for EvologTab<'_> {
         Ok(self.context_menu(self.entry_panel.selected_position()))
     }
 
-    fn make_main_panel_help(&self) -> Vec<HelpItem> {
-        self.keybinds.make_help()
+    fn main_panel_bindings(&self) -> Vec<Binding> {
+        self.keybinds.bindings()
     }
 
-    fn make_details_panel_help(&self) -> Vec<HelpItem> {
-        self.details_keybinds.make_help()
+    fn details_panel_bindings(&self) -> Vec<Binding> {
+        self.details_keybinds.bindings()
     }
 }
 
@@ -225,7 +226,7 @@ impl Component for EvologTab<'_> {
     }
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        let chunks = self.pane_divider.split(area, self.config.layout());
+        let chunks = self.pane_divider.split(area);
 
         self.entry_panel.draw(f, chunks[0])?;
         self.patch_panel.draw(f, chunks[1]);
@@ -259,7 +260,7 @@ impl Component for EvologTab<'_> {
     }
 
     fn input_mouse(&mut self, mouse: Mouse) -> Result<ComponentInputResult> {
-        if self.pane_divider.handle_mouse(mouse, self.config.layout()) {
+        if self.pane_divider.handle_mouse(mouse) {
             return Ok(ComponentInputResult::Handled);
         }
         match route_mouse(mouse, &mut [&mut self.entry_panel, &mut self.patch_panel]) {

@@ -7,6 +7,7 @@ Once launched, a dialog will receive all input events from the App,
 until it sends [`AppAction::ClosePopup`](crate::ui::AppAction).
 */
 
+mod bind_key;
 mod bookmark_name;
 mod bookmark_set;
 mod choice;
@@ -20,7 +21,10 @@ mod message;
 mod new_insert;
 mod parent_select;
 mod rebase;
+mod setting_value;
 
+pub use bind_key::BindKey;
+pub use bind_key::BindKeyPopup;
 pub use bookmark_name::BookmarkNameMode;
 pub use bookmark_name::BookmarkNamePopup;
 pub use bookmark_set::BookmarkSetPopup;
@@ -40,3 +44,4 @@ pub use message::MessagePopup;
 pub use new_insert::new_insert;
 pub use parent_select::parent_select;
 pub use rebase::RebasePopup;
+pub use setting_value::SettingValuePopup;
