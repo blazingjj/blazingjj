@@ -147,6 +147,8 @@ See all key mappings for the current tab with `?`.
   - Scroll down/up by a full page with `Ctrl+f`/`Ctrl+b`
 - Change details panel diff format between color words (default) and Git (and a diff pager and diff tool if set) with `w`
 - Toggle details panel wrapping with `W`
+- Toggle between horizontal and vertical split with whatever key you bind
+  `toggle-layout` to, which comes unbound
 - Open the context menu for what the tab has selected with `Menu` or a right click
 - Open a command popup to run jj commands using `:` (jj prefix not required, e.g. write `new main` instead of `jj new main`)
 

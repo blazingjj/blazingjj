@@ -306,6 +306,10 @@ impl Tab for SettingsTab {
         self.keybinds = SettingsTabKeybinds::new();
     }
 
+    fn toggle_layout(&mut self) {
+        self.pane_divider.toggle_layout();
+    }
+
     fn is_stale(&self) -> bool {
         self.stale
     }

@@ -163,6 +163,9 @@ pub trait Tab: Component {
     /// its panels hold what they go by.
     fn config_changed(&mut self);
 
+    /// Turn the tab's panes the other way round.
+    fn toggle_layout(&mut self);
+
     /// Whether the next [refresh](Tab::refresh) will read the repo.
     fn is_stale(&self) -> bool;
 

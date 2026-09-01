@@ -302,6 +302,14 @@ impl<'a> App<'a> {
         self.set_tab(new_tab);
     }
 
+    /// Turn the panes of every tab the other way round, so that going
+    /// to another tab does not go back to how the configuration has it.
+    fn toggle_layout(&mut self) {
+        for tab in TabId::ALL {
+            self.get_tab(tab).toggle_layout();
+        }
+    }
+
     fn open_help(&mut self) -> Result<()> {
         let global_bindings = self.global_keybinds.bindings();
         let tab = self.get_current_tab();
@@ -912,6 +920,7 @@ impl<'a> App<'a> {
                                 self.popup =
                                     Some(Box::new(CommandPopup::new(CommandMode::Interactive)));
                             }
+                            GlobalEvent::ToggleLayout => self.toggle_layout(),
                             GlobalEvent::OpenHelp => self.open_help()?,
                             GlobalEvent::Quit => {
                                 self.running.store(false, Ordering::Relaxed);
