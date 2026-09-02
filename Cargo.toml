@@ -43,7 +43,7 @@ ratatui-textarea = "0.9.2"
 version-compare = "0.2.1"
 
 [target."cfg(unix)".dependencies]
-signal-hook = { version = "0.3", default-features = false }
+signal-hook = { version = "0.4", default-features = false }
 
 # Release build optimize size.
 # Run strip manually after build to reduce further.
