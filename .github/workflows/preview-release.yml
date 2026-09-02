@@ -1,0 +1,93 @@
+name: Preview release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag and release to update in place
+        required: true
+        type: string
+      title:
+        description: Release title
+        required: true
+        type: string
+
+permissions: read-all
+
+env:
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  create-release:
+    name: Create GitHub prerelease
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Point tag at the built commit
+        run: |
+          git tag -f "${{ inputs.tag }}"
+          git push --force origin "refs/tags/${{ inputs.tag }}"
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          notes="Preview build of \`${{ github.ref_name }}\` at ${{ github.sha }}, built $(date -u '+%Y-%m-%d %H:%M UTC').
+
+          This is not a release: it gets overwritten whenever the branch moves
+          and is not published to crates.io."
+          if gh release view "${{ inputs.tag }}" > /dev/null 2>&1; then
+            gh release edit "${{ inputs.tag }}" --title "${{ inputs.title }}" --notes "$notes" --prerelease
+          else
+            gh release create "${{ inputs.tag }}" --title "${{ inputs.title }}" --notes "$notes" --prerelease
+          fi
+  publish-binaries:
+    name: Publish binaries
+    needs: create-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [linux-musl, macos-x86_64, macos-aarch64, win-msvc]
+        include:
+          - build: linux-musl
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-musl
+          - build: macos-x86_64
+            os: macos-14
+            target: x86_64-apple-darwin
+          - build: macos-aarch64
+            os: macos-14
+            target: aarch64-apple-darwin
+          - build: win-msvc
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.target }}
+      - name: Build release binary
+        run: cargo build --target ${{ matrix.target }} --verbose --release --locked
+      - name: Build archive
+        shell: bash
+        run: |
+          outdir="target/${{ matrix.target }}/release"
+          name="blazingjj-${{ inputs.tag }}-${{ matrix.target }}"
+          cd "$outdir"
+          if [ "${{ matrix.os }}" = "windows-2022" ]; then
+            7z a "../../../$name.zip" blazingjj.exe
+            echo "ASSET=$name.zip" >> $GITHUB_ENV
+          else
+            tar czf "../../../$name.tar.gz" blazingjj
+            echo "ASSET=$name.tar.gz" >> $GITHUB_ENV
+          fi
+      - name: Upload release archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run:
+          gh release upload "${{ inputs.tag }}" "${{ env.ASSET }}" --clobber
