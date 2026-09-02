@@ -12,7 +12,8 @@ on:
         required: true
         type: string
 
-permissions: read-all
+# No workflow-wide permissions: as a called workflow we cannot ask for more
+# than the calling job was granted, and the jobs below state what they need.
 
 env:
   CARGO_INCREMENTAL: 0
