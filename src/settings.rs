@@ -171,6 +171,13 @@ pub const SETTINGS: &[Setting] = &[
         kind: SettingKind::Choice(&["terminal", "detached"]),
     },
     Setting {
+        key: "blazingjj.editor-url",
+        section: "Files",
+        doc: "What names a file at a revision to an editor that reads revisions itself, like `jj://$revision/$file`. Setting it offers opening a file at the revision shown, without checking anything out.",
+        fallback: "no such editor",
+        kind: SettingKind::Text,
+    },
+    Setting {
         key: "blazingjj.describe-mode",
         section: "Changes",
         doc: "What describing a change puts up: the built-in editor, or `jj describe` with the terminal and your own editor.",
@@ -276,6 +283,12 @@ mod tests {
         assert_eq!(
             set("blazingjj.editor-mode", "\"detached\"").editor_mode(),
             EditorMode::Detached
+        );
+        assert_eq!(
+            set("blazingjj.editor-url", "\"jj://$revision/$file\"")
+                .editor_url("kmxqmnmr", "a.txt")
+                .as_deref(),
+            Some("jj://kmxqmnmr/a.txt")
         );
         assert_eq!(
             set("blazingjj.layout", "\"vertical\"").layout(),

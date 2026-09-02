@@ -126,6 +126,19 @@ impl OutputKey for FileDiffKey {
     }
 }
 
+/// How the revision the tab is on is named to something outside the app:
+/// by its change id, so that it is read as the change stands, except
+/// where what is shown is not the change as it stands. A version out of
+/// the evolog and one of several divergent commits are both only to be
+/// found by their commit id.
+fn shown_revision(head: &Head, pinned: bool) -> &str {
+    if pinned || head.divergent {
+        head.commit_id.as_str()
+    } else {
+        head.change_id.as_str()
+    }
+}
+
 fn get_current_file_index(
     current_file: Option<&File>,
     files_output: Result<&Vec<File>, &CommandError>,
@@ -256,7 +269,12 @@ impl FilesTab {
             });
         }
 
-        ask_open_file(get_env().jj_config.clone(), &self.head, file)
+        ask_open_file(
+            get_env().jj_config.clone(),
+            &self.head,
+            shown_revision(&self.head, self.pinned),
+            file,
+        )
     }
 
     fn handle_event(&mut self, event: FilesTabEvent) -> Result<Option<AppAction>> {
@@ -558,6 +576,29 @@ mod tests {
 
     fn key(change_id: &str, commit_id: &str, path: &str) -> FileDiffKey {
         FileDiffKey::new((head(change_id, commit_id), file(path)), DiffFormat::Git)
+    }
+
+    /// The change id is what an editor is given, so that it opens the
+    /// file as the change stands rather than as it stood when the tab
+    /// last read it.
+    #[test]
+    fn a_change_is_named_by_its_change_id_while_it_is_shown_as_it_stands() {
+        let head = head("change", "commit");
+
+        assert_eq!(shown_revision(&head, false), "change");
+        assert_eq!(
+            shown_revision(&head, true),
+            "commit",
+            "a version out of the evolog is only found by its commit id"
+        );
+
+        let mut divergent = head.clone();
+        divergent.divergent = true;
+        assert_eq!(
+            shown_revision(&divergent, false),
+            "commit",
+            "a change id names several commits while a change is divergent"
+        );
     }
 
     #[test]

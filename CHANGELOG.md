@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     version of the file to open: the one on disk, the change's own after
     checking it out, or the change's own through a change of your own on
     top of it, which is the only way to an immutable one
+  - `blazingjj.editor-url`, like `jj://$revision/$file`, adds opening the file
+    at the revision shown to that question, for an editor that reads a
+    revision itself, such as neovim with jj.nvim
 - Diff format rendering the Git format with a pager like
   [delta](https://github.com/dandavison/delta), configured as
   `blazingjj.diff-pager` and toggled through with `w` like the others

@@ -122,6 +122,7 @@ pub struct JjConfigBlazingjj {
     diff_pager: Option<DiffPager>,
     editor: Option<Editor>,
     editor_mode: EditorMode,
+    editor_url: Option<String>,
     bookmark_template: Option<String>,
     confirm_push: bool,
     layout: JJLayout,
@@ -150,6 +151,7 @@ impl Default for JjConfigBlazingjj {
             diff_pager: None,
             editor: None,
             editor_mode: EditorMode::default(),
+            editor_url: None,
             bookmark_template: None,
             layout: JJLayout::default(),
             keybinds: None,
@@ -248,6 +250,19 @@ impl JjConfig {
 
     pub fn editor_mode(&self) -> EditorMode {
         self.blazingjj.editor_mode
+    }
+
+    /// What names `path` at `revision` to an editor that opens a file at
+    /// a revision of its own accord, for as long as one is configured.
+    /// It goes to the editor in place of the file to open.
+    pub fn editor_url(&self, revision: &str, path: &str) -> Option<String> {
+        Some(
+            self.blazingjj
+                .editor_url
+                .as_ref()?
+                .replace(REVISION_PLACEHOLDER, revision)
+                .replace(FILE_PLACEHOLDER, path),
+        )
     }
 
     pub fn highlight_color(&self) -> Color {
@@ -351,6 +366,10 @@ pub enum DescribeMode {
 /// What an editor argument says to have the file to open substituted
 /// into it
 const FILE_PLACEHOLDER: &str = "$file";
+
+/// What an editor URL says to have the revision to open the file at
+/// substituted into it
+const REVISION_PLACEHOLDER: &str = "$revision";
 
 /// The editor a file is opened in, like `nvim`. `$file` in an argument
 /// stands for the file to open; an editor whose arguments say nothing
@@ -732,6 +751,20 @@ mod tests {
         assert_eq!(Editor::from_command_line(""), None);
         assert_eq!(Editor::from_command_line("   "), None);
         assert_eq!(Editor::from_command_line("nvim 'unbalanced"), None);
+    }
+
+    #[test]
+    fn an_editor_url_names_the_file_and_the_revision_it_is_read_at() {
+        let config = config(r#"blazingjj.editor-url = "jj://$revision/$file""#);
+
+        assert_eq!(
+            config.editor_url("kmxqmnmr", "src/main.rs").as_deref(),
+            Some("jj://kmxqmnmr/src/main.rs")
+        );
+        assert_eq!(
+            JjConfig::default().editor_url("kmxqmnmr", "src/main.rs"),
+            None
+        );
     }
 
     #[test]
