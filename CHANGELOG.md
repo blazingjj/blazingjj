@@ -212,6 +212,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A stale working copy no longer makes the app fail to start: it asks whether
+  to update it, and quits if you would rather do it yourself
 - `@` in the bookmarks tab now goes to the bookmark on the working copy, or to
   the one it is standing on, rather than doing nothing while the help offers it
 - A keybinding on Home, End or the space bar now shows the key's name rather
