@@ -49,7 +49,9 @@ pub fn describe_action(
             AppAction::SetPopup(Box::new(DescribePopup::new(head.clone(), seed()?)))
         }
         DescribeMode::Jj => AppAction::RunInteractive(Interactive {
-            command: new_commander().jj(["describe", head.commit_id.as_str()]),
+            program: new_commander()
+                .jj(["describe", head.commit_id.as_str()])
+                .foreground(),
             hold_screen: false,
         }),
     })

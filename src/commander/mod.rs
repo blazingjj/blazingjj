@@ -20,7 +20,7 @@ invocation with [Commander::jj], which returns a [JjCommand] builder:
 * [JjCommand::run] - Execute the command and return its output
 * [JjCommand::run_void] - Execute the command and discard the output
 * [JjCommand::run_cancellable] - Execute the command so it can be killed
-* [JjCommand::run_foreground] - Execute the command attached to the terminal
+* [JjCommand::foreground] - The command as a program to attach to the terminal
 
 */
 
@@ -32,6 +32,7 @@ pub mod ids;
 pub mod jj;
 pub mod log;
 pub mod operation;
+pub mod program;
 pub mod revset;
 
 use std::ffi::OsStr;
@@ -40,8 +41,6 @@ use std::io;
 use std::io::Read;
 use std::io::Write;
 use std::process::Child;
-use std::process::Command;
-use std::process::ExitStatus;
 use std::process::Stdio;
 use std::string::FromUtf8Error;
 use std::thread;
@@ -59,6 +58,7 @@ use version_compare::Cmp;
 use version_compare::compare;
 
 use crate::commander::cancel::CancelToken;
+use crate::commander::program::Program;
 use crate::env::DiffFormat;
 use crate::env::DiffPager;
 use crate::env::Env;
@@ -169,7 +169,7 @@ impl Commander {
     /// The returned [JjCommand] carries the per-command options (color,
     /// quiet, ...) and is executed with [JjCommand::run],
     /// [JjCommand::run_void], [JjCommand::run_cancellable] or
-    /// [JjCommand::run_foreground].
+    /// [JjCommand::foreground].
     pub fn jj<I, S>(&self, args: I) -> JjCommand
     where
         I: IntoIterator<Item = S>,
@@ -254,8 +254,8 @@ impl Commander {
 /// Carries the arguments and the per-command options. Configuration
 /// methods consume and return the builder so they can be chained; the
 /// command is run exactly once with [Self::run], [Self::run_void],
-/// [Self::run_cancellable] or [Self::run_foreground], the last of which
-/// leaves the output options to jj.
+/// [Self::run_cancellable], or handed to the terminal as the program
+/// [Self::foreground] returns.
 pub struct JjCommand {
     jj_bin: String,
     root: String,
@@ -380,13 +380,13 @@ impl JjCommand {
         }))
     }
 
-    /// Run the command with the terminal handed over to it, so it can page,
-    /// colorize and prompt as it would outside the app, and return how it
-    /// exited. The terminal is the command's to read and write as it sees
-    /// fit, so [Self::stdin], [Self::color] and [Self::verbose] have no say
-    /// here.
-    pub fn run_foreground(self) -> io::Result<ExitStatus> {
-        self.build_command().status()
+    /// The command as a program to run with the terminal handed over to
+    /// it, so it can page, colorize and prompt as it would outside the
+    /// app. The terminal is the program's to read and write as it sees
+    /// fit, so [Self::stdin], [Self::color] and [Self::verbose] have no
+    /// say in what it does.
+    pub fn foreground(self) -> Program {
+        self.build_jj()
     }
 
     /// Configure and run the command as a child process, as described in
@@ -394,22 +394,21 @@ impl JjCommand {
     fn execute(mut self, stdout: Stdio, cancel: &CancelToken) -> Result<Vec<u8>, CommandError> {
         let input = self.stdin.take().map(String::into_bytes);
 
-        let mut command = self.build_command();
-        command.args(get_output_args(
+        let program = self.build_jj().args(get_output_args(
             !self.force_no_color && self.color,
             self.quiet,
         ));
 
         let Some(pager) = self.pager.take() else {
-            return run_child(command, input, stdout, cancel, self.with_stderr);
+            return run_child(&program, input, stdout, cancel, self.with_stderr);
         };
 
         // The pager is what produces the output, so what jj writes is
         // captured whatever the caller asked for.
-        let piped = run_child(command, input, Stdio::piped(), cancel, self.with_stderr)?;
+        let piped = run_child(&program, input, Stdio::piped(), cancel, self.with_stderr)?;
 
         run_child(
-            self.build_pager_command(&pager),
+            &self.build_pager(&pager),
             Some(piped),
             stdout,
             cancel,
@@ -417,32 +416,28 @@ impl JjCommand {
         )
     }
 
-    /// Construct a Command ready for execution. The caller adds the output
+    /// The jj invocation as a program to run. The caller adds the output
     /// args, which only suit a command whose output it captures.
-    fn build_command(&self) -> Command {
-        let mut command = Command::new(&self.jj_bin);
-        command.args(&self.args);
-
+    fn build_jj(&self) -> Program {
+        let mut args = self.args.clone();
         if self.ignore_working_copy {
-            command.arg("--ignore-working-copy");
+            args.push("--ignore-working-copy".into());
         }
 
-        command.current_dir(&self.root);
-        command.envs(self.env_var.iter().cloned());
-        command
+        Program::new(&self.jj_bin, self.root.clone())
+            .args(args)
+            .envs(self.env_var.iter().cloned())
     }
 
-    /// Construct a Command running the pager the output goes through
-    fn build_pager_command(&self, pager: &DiffPager) -> Command {
-        let mut command = Command::new(pager.program());
-        command.args(pager.args(self.columns.unwrap_or(0)));
-        command.current_dir(&self.root);
-        command.envs(self.env_var.iter().cloned());
-        command
+    /// The pager the output goes through, as a program to run
+    fn build_pager(&self, pager: &DiffPager) -> Program {
+        Program::new(pager.program(), self.root.clone())
+            .args(pager.args(self.columns.unwrap_or(0)))
+            .envs(self.env_var.iter().cloned())
     }
 }
 
-/// Run `command` in a child process `cancel` can kill, blocking until it is
+/// Run `program` in a child process `cancel` can kill, blocking until it is
 /// done, and return its captured standard output.
 ///
 /// `input` is fed to the child on standard input, if there is any. `stdout`
@@ -451,12 +446,13 @@ impl JjCommand {
 /// so it can be surfaced on failure, and `with_stderr` appends it to the
 /// output of a child that succeeded.
 fn run_child(
-    mut command: Command,
+    program: &Program,
     input: Option<Vec<u8>>,
     stdout: Stdio,
     cancel: &CancelToken,
     with_stderr: bool,
 ) -> Result<Vec<u8>, CommandError> {
+    let mut command = program.command();
     command
         .stdin(if input.is_some() {
             Stdio::piped()
@@ -647,7 +643,7 @@ pub mod tests {
     }
 
     #[test]
-    fn run_foreground_reports_how_the_command_exited() -> Result<()> {
+    fn a_foreground_command_reports_how_it_exited() -> Result<()> {
         let test_repo = TestRepo::new()?;
 
         // The command writes to the terminal the test runs in, so it has
@@ -655,6 +651,7 @@ pub mod tests {
         let status = test_repo
             .commander
             .jj(["bookmark", "list"])
+            .foreground()
             .run_foreground()?;
         assert!(status.success());
 

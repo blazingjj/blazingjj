@@ -212,10 +212,10 @@ fn run_interactive(
 
     let ran = {
         let _interrupts = catch_interrupts();
-        match interactive.command.run_foreground() {
+        match interactive.program.run_foreground() {
             Ok(status) => status.success(),
             Err(err) => {
-                println!("Could not run jj: {err}");
+                println!("Could not run the command: {err}");
                 false
             }
         }
