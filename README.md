@@ -85,6 +85,21 @@ Make sure you have [`jj`](https://martinvonz.github.io/jj/latest/install-and-set
 
 To build and install a pre-release version: `cargo install --git https://github.com/blazingjj/blazingjj.git --locked`
 
+> [!NOTE]
+> Want to try unreleased changes without compiling them yourself? We have
+> a nightly build of the main branch along with a dev preview branch that
+> contains features that are still rough around the edges, waiting for review or
+> might even get dropped in the future. The prereleases carry pre-built
+> binaries for the same platforms as a real release, rebuilt and replaced in
+> place and they are not published to crates.io.
+>
+> - [`nightly`](https://github.com/blazingjj/blazingjj/releases/tag/nightly):
+>   `main`, rebuilt every night.
+> - [`dev`](https://github.com/blazingjj/blazingjj/releases/tag/dev): the `dev`
+>   branch, rebuilt on every push.
+>
+> These are previews for testing only, their tags move, so don't pin anything to them.
+
 ## Configuration
 
 You can optionally configure the following options through your jj config:

@@ -1,0 +1,17 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  preview-release:
+    permissions:
+      contents: write
+    uses: ./.github/workflows/preview-release.yml
+    with:
+      tag: nightly
+      title: Nightly
