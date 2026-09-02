@@ -2,17 +2,21 @@
 to.
 
 A [Program] describes what to run, with what and where. It is run with
-the terminal handed over to it ([Program::run_foreground]), or turned
-into a [Command] ([Program::command]) for a caller that drives the child
-process itself.
+the terminal handed over to it ([Program::run_foreground]), left running
+on its own ([Program::run_detached]), or turned into a [Command]
+([Program::command]) for a caller that drives the child process itself.
 */
 
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::io;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::ExitStatus;
+use std::process::Stdio;
+use std::thread;
 
 /// A program to run, with the arguments and the environment it is to run
 /// with.
@@ -70,10 +74,34 @@ impl Program {
     pub fn run_foreground(&self) -> io::Result<ExitStatus> {
         self.command().status()
     }
+
+    /// Start the program and leave it running on its own, with neither
+    /// the terminal nor anything to say to the app.
+    ///
+    /// It is put in a process group of its own, so that the keys the app
+    /// answers to are not read as signals by it, and waited on in a
+    /// thread of its own, so that it is reaped whenever it exits.
+    pub fn run_detached(&self) -> io::Result<()> {
+        let mut command = self.command();
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        #[cfg(unix)]
+        command.process_group(0);
+
+        let mut child = command.spawn()?;
+        thread::spawn(move || child.wait());
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+    use std::time::Instant;
+
     use anyhow::Result;
 
     use super::*;
@@ -94,5 +122,23 @@ mod tests {
                 .run_foreground()
                 .is_err()
         );
+        assert!(
+            Program::new("blazingjj-no-such-program", ".")
+                .run_detached()
+                .is_err()
+        );
+    }
+
+    /// A detached program is the app's only in that it started it, so
+    /// the app carries on while it runs.
+    #[test]
+    fn a_detached_program_is_not_waited_for() -> Result<()> {
+        let started = Instant::now();
+
+        Program::new("sleep", ".").args(["3"]).run_detached()?;
+
+        assert!(started.elapsed() < Duration::from_secs(1));
+
+        Ok(())
     }
 }

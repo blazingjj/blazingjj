@@ -31,11 +31,14 @@ use crate::commander::jj::RebaseTarget;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::operation::Operation;
+use crate::commander::program::Program;
 use crate::commander::revset::Revset;
+use crate::env::EditorMode;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::PushScope;
 use crate::ui::AppAction;
+use crate::ui::Interactive;
 use crate::ui::dialog::BookmarkNameMode;
 use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::BookmarkSetPopup;
@@ -114,6 +117,9 @@ pub enum Command {
     RevertOperation(OperationId),
     RestoreFile(File),
     UntrackFile(File),
+    /// Open the working copy's version of the file in the configured
+    /// editor.
+    OpenFile(File),
     CreateBookmark(String),
     RenameBookmark {
         old_name: String,
@@ -303,6 +309,7 @@ impl Command {
                 Ok(_) => Ok(Some(show_working_copy_files()?)),
                 Err(err) => Ok(Some(refused("Untrack", err))),
             },
+            Command::OpenFile(file) => open_file(&file),
             Command::CreateBookmark(name) => match new_commander().create_bookmark(&name) {
                 Ok(_) => Ok(Some(AppAction::Multiple(vec![
                     AppAction::ViewBookmark(name),
@@ -379,6 +386,38 @@ impl Command {
                 Err(err) => Ok(Some(refused("Unset", err))),
             },
         }
+    }
+}
+
+/// Open the working copy's `file` in the configured editor, either with
+/// the terminal handed over to it or left running on its own, as the
+/// configuration says.
+fn open_file(file: &File) -> Result<Option<AppAction>> {
+    let env = get_env();
+    let Some(path) = file.path.as_deref() else {
+        return Ok(Some(message("Open", "The line names no file to open.")));
+    };
+    let Some(editor) = env.jj_config.editor() else {
+        return Ok(Some(message(
+            "Open",
+            "There is no editor to open the file in. Set `blazingjj.editor`, \
+             or `VISUAL` or `EDITOR` in the environment.",
+        )));
+    };
+
+    let program = Program::new(editor.program(), env.root.clone()).args(editor.args(path));
+
+    match env.jj_config.editor_mode() {
+        EditorMode::Terminal => Ok(Some(AppAction::RunInteractive(Interactive {
+            program,
+            // The editor leaves the file it edited on the screen, which
+            // is not something to read once it is closed.
+            hold_screen: false,
+        }))),
+        EditorMode::Detached => match program.run_detached() {
+            Ok(()) => Ok(None),
+            Err(err) => Ok(Some(refused("Open", err))),
+        },
     }
 }
 

@@ -161,6 +161,7 @@ fetch-all = "shift+f"
 [blazingjj.keybinds.files-tab]
 untrack = "x"
 restore = "r"
+open = "o"
 ```
 
 ### Bookmarks tab

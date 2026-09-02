@@ -252,6 +252,10 @@ impl FilesTab {
                 .file
                 .clone()
                 .map(|file| AppAction::Run(Command::RestoreFile(file)))),
+            FilesTabEvent::Open => Ok(self
+                .file
+                .clone()
+                .map(|file| AppAction::Run(Command::OpenFile(file)))),
             // Not an operation of its own; the key handler deals with it.
             FilesTabEvent::Unbound => Ok(None),
         }

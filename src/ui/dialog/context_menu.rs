@@ -103,6 +103,10 @@ pub fn log_context_menu(
 pub fn files_context_menu(config: JjConfig, anchor: Option<Position>, file: &File) -> ChoicePopup {
     let items = vec![
         (
+            Line::raw("Open in editor"),
+            AppAction::Run(Command::OpenFile(file.clone())),
+        ),
+        (
             Line::raw("Restore"),
             AppAction::Run(Command::RestoreFile(file.clone())),
         ),

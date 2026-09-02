@@ -48,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by double clicking a word or by triple clicking a line, and goes to the
   system clipboard when the button comes up. A line the panel wrapped or
   cut off to show is copied as the one whole line it is
+- `o` in the files tab opens the selected file, as the working copy has it,
+  in an editor, which `blazingjj.editor` names and `blazingjj.editor-mode`
+  says whether to hand the terminal to or leave running on its own. Without
+  one configured, `$VISUAL` and then `$EDITOR` are used
 - Diff format rendering the Git format with a pager like
   [delta](https://github.com/dandavison/delta), configured as
   `blazingjj.diff-pager` and toggled through with `w` like the others
