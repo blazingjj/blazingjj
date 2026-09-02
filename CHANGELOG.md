@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in an editor, which `blazingjj.editor` names and `blazingjj.editor-mode`
   says whether to hand the terminal to or leave running on its own. Without
   one configured, `$VISUAL` and then `$EDITOR` are used
+  - While the tab shows a change other than the working copy, it asks which
+    version of the file to open: the one on disk, the change's own after
+    checking it out, or the change's own through a change of your own on
+    top of it, which is the only way to an immutable one
 - Diff format rendering the Git format with a pager like
   [delta](https://github.com/dandavison/delta), configured as
   `blazingjj.diff-pager` and toggled through with `w` like the others
