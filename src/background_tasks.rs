@@ -72,6 +72,9 @@ pub enum TaskSlot {
     /// A 'jj op show' for the details panel of a tab
     OpShow(TabId, OutputRequest<OpShowKey>),
     GitPush,
+    /// A 'jj git push --dry-run', which is a push in every way but the
+    /// pushing, and so is not the work [TaskSlot::GitPush] stands for.
+    GitPushDryRun,
     GitFetch,
     /// A read of what operation the repo is at.
     RepoOpId,

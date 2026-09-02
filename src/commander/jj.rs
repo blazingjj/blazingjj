@@ -59,6 +59,12 @@ pub enum PushTarget {
     Tracked,
     /// `jj git push --all` — every bookmark, new ones included.
     All,
+    /// `jj git push -c <rev>` — a new bookmark for the change, named by
+    /// jj after it.
+    Change(Revset),
+    /// `jj git push --named <name>=<rev>` — a new bookmark of this name
+    /// for the change.
+    Named { name: String, revset: Revset },
 }
 
 impl Commander {
@@ -273,10 +279,14 @@ impl Commander {
             .run_void()
     }
 
-    /// Git push. Maps to `jj git push`
+    /// Git push. Maps to `jj git push`, which only says what it would do
+    /// when `dry_run`.
     #[instrument(level = "trace", skip(self))]
-    pub fn git_push(&self, target: &PushTarget) -> Result<String, CommandError> {
+    pub fn git_push(&self, target: &PushTarget, dry_run: bool) -> Result<String, CommandError> {
         let mut args = vec!["git".to_owned(), "push".to_owned()];
+        if dry_run {
+            args.push("--dry-run".to_owned());
+        }
         match target {
             PushTarget::Revision(revset) => {
                 args.push("-r".to_owned());
@@ -292,9 +302,25 @@ impl Commander {
             }
             PushTarget::Tracked => args.push("--tracked".to_owned()),
             PushTarget::All => args.push("--all".to_owned()),
+            PushTarget::Change(revset) => {
+                args.push("-c".to_owned());
+                args.push(revset.as_str().to_owned());
+            }
+            PushTarget::Named { name, revset } => {
+                args.push("--named".to_owned());
+                args.push(format!("{name}={}", revset.as_str()));
+            }
         }
 
-        self.jj(args).color().run()
+        let command = self.jj(args).color();
+        if dry_run {
+            // What the push would do is all jj has to say here, and it
+            // says it as it does every report: on stderr, and not at all
+            // when told to be quiet.
+            command.verbose().with_stderr().run()
+        } else {
+            command.run()
+        }
     }
 
     /// Git fetch. Maps to `jj git fetch`

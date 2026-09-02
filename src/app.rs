@@ -735,7 +735,7 @@ impl<'a> App<'a> {
             | TaskSlot::OpShow(tab, _) => Some(self.get_tab(tab)),
             // The cast reborrows the popup for the body rather than for
             // the lifetime the app is tied to.
-            TaskSlot::GitPush | TaskSlot::GitFetch => self
+            TaskSlot::GitPush | TaskSlot::GitPushDryRun | TaskSlot::GitFetch => self
                 .popup
                 .as_deref_mut()
                 .map(|popup| popup as &mut dyn Component),

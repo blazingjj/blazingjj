@@ -121,6 +121,7 @@ pub struct JjConfigBlazingjj {
     diff_tool: Option<String>,
     diff_pager: Option<DiffPager>,
     bookmark_template: Option<String>,
+    confirm_push: bool,
     layout: JJLayout,
     /// The share of a tab the main panel takes, of the whole of it at
     /// the most.
@@ -137,6 +138,7 @@ impl Default for JjConfigBlazingjj {
     fn default() -> Self {
         Self {
             highlight_color: Color::Rgb(50, 50, 150),
+            confirm_push: true,
             layout_percent: 50,
             poll_interval: Some(Duration::from_secs(1)),
             // Standard defaults for the rest
@@ -224,6 +226,11 @@ impl JjConfig {
             _ if self.ui.diff.tool.is_some() => Some(None),
             _ => None,
         }
+    }
+
+    /// Whether a push is to be shown and asked about before it is sent.
+    pub fn confirm_push(&self) -> bool {
+        self.blazingjj.confirm_push
     }
 
     pub fn highlight_color(&self) -> Color {

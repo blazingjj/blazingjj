@@ -5,6 +5,7 @@ app is to take, and raises the one picked.
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::MouseButton;
 use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Alignment;
@@ -41,9 +42,40 @@ use crate::ui::utils::chrome;
 /// The help line and the border it sits under
 const HELP_HEIGHT: u16 = 2;
 
+/// One of the choices a popup lists: what it says, what it stands for,
+/// and the key that picks it without walking the list first.
+pub struct Choice {
+    label: Line<'static>,
+    action: AppAction,
+    key: Option<char>,
+}
+
+impl Choice {
+    pub fn new(label: impl Into<Line<'static>>, action: AppAction) -> Self {
+        Self {
+            label: label.into(),
+            action,
+            key: None,
+        }
+    }
+
+    /// Pick this choice on `key`. Marking the key is up to the label, the
+    /// way the (Y)es and (N)o buttons of a question do it.
+    pub fn key(mut self, key: char) -> Self {
+        self.key = Some(key);
+        self
+    }
+}
+
+impl From<(Line<'static>, AppAction)> for Choice {
+    fn from((label, action): (Line<'static>, AppAction)) -> Self {
+        Self::new(label, action)
+    }
+}
+
 pub struct ChoicePopup {
     title: &'static str,
-    items: Vec<(Line<'static>, AppAction)>,
+    items: Vec<Choice>,
     /// Rows listed under the choices that cannot be picked
     footnote: Vec<Line<'static>>,
     list_state: ListState,
@@ -64,13 +96,13 @@ impl ChoicePopup {
         config: JjConfig,
         anchor: Option<Position>,
         title: &'static str,
-        items: Vec<(Line<'static>, AppAction)>,
+        items: impl IntoIterator<Item: Into<Choice>>,
     ) -> Self {
         let keybinds = PopupKeybinds::dialog();
         Self {
             hint: keybinds.scroll_hint("select"),
             title,
-            items,
+            items: items.into_iter().map(Into::into).collect(),
             footnote: vec![],
             list_state: ListState::default().with_selected(Some(0)),
             anchor,
@@ -110,7 +142,7 @@ impl ChoicePopup {
     fn rows(&self) -> impl Iterator<Item = &Line<'static>> {
         self.items
             .iter()
-            .map(|(label, _)| label)
+            .map(|item| &item.label)
             .chain(self.footnote.iter())
     }
 
@@ -152,6 +184,13 @@ impl ChoicePopup {
         (index < self.items.len()).then_some(index)
     }
 
+    /// The choice `key` picks, if it picks one at all.
+    fn item_with_key(&self, key: char) -> Option<usize> {
+        self.items
+            .iter()
+            .position(|item| item.key == Some(key.to_ascii_lowercase()))
+    }
+
     fn close() -> Result<ComponentInputResult> {
         Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup))
     }
@@ -165,7 +204,14 @@ impl ChoicePopup {
         let Some(index) = index else {
             return Self::close();
         };
-        let (_, chosen) = self.items.remove(index);
+
+        self.pick(index)
+    }
+
+    /// Take the popup down and raise what the choice at `index` stands
+    /// for.
+    fn pick(&mut self, index: usize) -> Result<ComponentInputResult> {
+        let chosen = self.items.remove(index).action;
 
         Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
             vec![AppAction::ClosePopup, chosen],
@@ -223,7 +269,15 @@ impl Component for ChoicePopup {
                 }
                 PopupEvent::Accept => return self.confirm(),
                 PopupEvent::Cancel => return Self::close(),
-                PopupEvent::Unbound => {}
+                // The keys the popup itself answers to come first, so a
+                // choice cannot take one of them over.
+                PopupEvent::Unbound => {
+                    if let KeyCode::Char(key) = key.code
+                        && let Some(index) = self.item_with_key(key)
+                    {
+                        return self.pick(index);
+                    }
+                }
             }
         }
         Ok(ComponentInputResult::Handled)
@@ -304,9 +358,7 @@ pub(super) mod tests {
     }
 
     fn popup(count: u8, footnote: usize) -> ChoicePopup {
-        let items = (0..count)
-            .map(|i| (Line::raw(format!("item {i}")), action(i)))
-            .collect();
+        let items = (0..count).map(|i| (Line::raw(format!("item {i}")), action(i)));
 
         ChoicePopup::new(JjConfig::default(), None, "Choose", items).footnote(vec![
             Line::raw(
@@ -344,6 +396,45 @@ pub(super) mod tests {
         press(&mut popup, KeyCode::Char('j'));
 
         assert_eq!(chosen(press(&mut popup, KeyCode::Enter)), Some(1));
+    }
+
+    /// Three choices, the middle one picked by its own key
+    fn popup_with_key() -> ChoicePopup {
+        let items = (0..3).map(|i| {
+            let choice = Choice::new(Line::raw(format!("item {i}")), action(i));
+            if i == 1 { choice.key('x') } else { choice }
+        });
+
+        ChoicePopup::new(JjConfig::default(), None, "Choose", items)
+    }
+
+    #[test]
+    fn a_choices_own_key_raises_it_wherever_the_selection_is() {
+        let mut popup = popup_with_key();
+
+        assert_eq!(chosen(press(&mut popup, KeyCode::Char('x'))), Some(1));
+    }
+
+    #[test]
+    fn a_key_no_choice_asked_for_raises_nothing() {
+        let mut popup = popup_with_key();
+
+        assert!(matches!(
+            press(&mut popup, KeyCode::Char('z')),
+            ComponentInputResult::Handled
+        ));
+    }
+
+    /// The keys of the popup answer first, so a choice asking for one of
+    /// them does not get it.
+    #[test]
+    fn a_choice_cannot_take_over_a_key_of_the_popup() {
+        let items = (0..3).map(|i| Choice::new(Line::raw(format!("item {i}")), action(i)).key('j'));
+        let mut popup = ChoicePopup::new(JjConfig::default(), None, "Choose", items);
+
+        press(&mut popup, KeyCode::Char('j'));
+
+        assert_eq!(popup.list_state.selected(), Some(1));
     }
 
     fn mouse(

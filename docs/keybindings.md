@@ -143,10 +143,14 @@ open-evolog = "v"
 copy-change-id = "y"
 copy-rev = "shift+y"
 
-push = "p"
-push-new = "ctrl+p"
-push-all = "shift+p"
-push-all-new = "ctrl+shift+p"
+push-menu = "p"
+# The targets the push menu offers, none of them on a key of its own
+push = false
+push-new = false
+push-all = false
+push-all-new = false
+push-change = false
+push-named = false
 fetch = "f"
 fetch-all = "shift+f"
 ```

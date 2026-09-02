@@ -194,6 +194,7 @@ impl Commander {
             force_no_color: self.force_no_color,
             quiet: true,
             ignore_working_copy: self.ignore_working_copy,
+            with_stderr: false,
             stdin: None,
             pager: None,
             columns: self.columns,
@@ -270,6 +271,9 @@ pub struct JjCommand {
     /// Whether to pass `--ignore-working-copy`. Off unless the commander
     /// already asks for it, so a command sees the files as they are now.
     ignore_working_copy: bool,
+    /// Whether what the command writes on standard error is part of its
+    /// output. Off by default, as stderr is not fit to parse.
+    with_stderr: bool,
     /// Data to feed the command on standard input, if any.
     stdin: Option<String>,
     /// The pager the output of the command is piped through, if any.
@@ -316,6 +320,18 @@ impl JjCommand {
             self.args.push("--config".into());
             self.args.push(format!("{setting}=\"{NO_EDITOR}\"").into());
         }
+        self
+    }
+
+    /// Take what the command writes on standard error as part of its
+    /// output, after what it wrote on standard output.
+    ///
+    /// Off by default. Use it where what the command has to say about
+    /// what it did is the point of running it, as jj reports that on
+    /// standard error and keeps standard output for the answer it was
+    /// asked for.
+    pub fn with_stderr(mut self) -> Self {
+        self.with_stderr = true;
         self
     }
 
@@ -385,18 +401,19 @@ impl JjCommand {
         ));
 
         let Some(pager) = self.pager.take() else {
-            return run_child(command, input, stdout, cancel);
+            return run_child(command, input, stdout, cancel, self.with_stderr);
         };
 
         // The pager is what produces the output, so what jj writes is
         // captured whatever the caller asked for.
-        let piped = run_child(command, input, Stdio::piped(), cancel)?;
+        let piped = run_child(command, input, Stdio::piped(), cancel, self.with_stderr)?;
 
         run_child(
             self.build_pager_command(&pager),
             Some(piped),
             stdout,
             cancel,
+            false,
         )
     }
 
@@ -431,12 +448,14 @@ impl JjCommand {
 /// `input` is fed to the child on standard input, if there is any. `stdout`
 /// selects how the child's standard output is handled: piped to be captured
 /// and returned, or null to be discarded. Standard error is always captured
-/// so it can be surfaced on failure.
+/// so it can be surfaced on failure, and `with_stderr` appends it to the
+/// output of a child that succeeded.
 fn run_child(
     mut command: Command,
     input: Option<Vec<u8>>,
     stdout: Stdio,
     cancel: &CancelToken,
+    with_stderr: bool,
 ) -> Result<Vec<u8>, CommandError> {
     command
         .stdin(if input.is_some() {
@@ -491,7 +510,9 @@ fn run_child(
     // succeeded; for one that failed, its status and stderr say more.
     write_result?;
     read_result?;
-    if !stderr.is_empty() {
+    if with_stderr {
+        output.extend_from_slice(&stderr);
+    } else if !stderr.is_empty() {
         warn!(
             "Ignoring stderr of successful command:\n{}",
             String::from_utf8_lossy(&stderr)
