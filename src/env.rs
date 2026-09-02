@@ -353,35 +353,43 @@ const WIDTH_PLACEHOLDER: &str = "$width";
 /// writes the rendering to standard output; `$width` in an argument stands
 /// for the number of columns it has to render into.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
-#[serde(try_from = "ConfiguredDiffPager")]
+#[serde(try_from = "ConfiguredCommandLine")]
 pub struct DiffPager {
     program: String,
     args: Vec<String>,
 }
 
-/// A pager as it is configured: the program on its own, or a command line
-/// of the program and its arguments.
+/// A command line as it is configured: the program on its own, or the
+/// program and its arguments.
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum ConfiguredDiffPager {
+enum ConfiguredCommandLine {
     Program(String),
     CommandLine(Vec<String>),
 }
 
-impl TryFrom<ConfiguredDiffPager> for DiffPager {
-    type Error = &'static str;
-
-    fn try_from(configured: ConfiguredDiffPager) -> Result<Self, Self::Error> {
-        let (program, args) = match configured {
-            ConfiguredDiffPager::Program(program) => (program, Vec::new()),
-            ConfiguredDiffPager::CommandLine(mut command_line) => {
+impl ConfiguredCommandLine {
+    /// The program to run and the arguments to run it with, refused when
+    /// there is no program to run.
+    fn split(self) -> Result<(String, Vec<String>), &'static str> {
+        match self {
+            ConfiguredCommandLine::Program(program) => Ok((program, Vec::new())),
+            ConfiguredCommandLine::CommandLine(mut command_line) => {
                 if command_line.is_empty() {
-                    return Err("a diff pager needs a program to run");
+                    return Err("a command line needs a program to run");
                 }
                 let args = command_line.split_off(1);
-                (command_line.remove(0), args)
+                Ok((command_line.remove(0), args))
             }
-        };
+        }
+    }
+}
+
+impl TryFrom<ConfiguredCommandLine> for DiffPager {
+    type Error = &'static str;
+
+    fn try_from(configured: ConfiguredCommandLine) -> Result<Self, Self::Error> {
+        let (program, args) = configured.split()?;
 
         Ok(Self { program, args })
     }
@@ -567,7 +575,7 @@ mod tests {
         let error = toml::from_str::<JjConfig>("blazingjj.diff-pager = []\n")
             .expect_err("a pager without a program is an error");
         assert!(
-            error.to_string().contains("a diff pager needs a program"),
+            error.to_string().contains("a command line needs a program"),
             "the error does not say what is wrong: {error}"
         );
     }
