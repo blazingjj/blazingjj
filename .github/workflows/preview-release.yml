@@ -26,9 +26,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Point tag at the built commit
+      - name: Point tag at an empty commit outside of history
         run: |
-          git tag -f "${{ inputs.tag }}"
+          # A tag on the built commit would make it and its ancestors
+          # immutable in jj, so anchor the release on a parentless commit with
+          # an empty tree: it has no ancestors to drag along and belongs to no
+          # branch. The source archives GitHub derives from it are empty,
+          # hence the pointer to the built commit in the notes below.
+          tree=$(git hash-object -w -t tree /dev/null)
+          commit=$(
+            git -c "user.name=github-actions[bot]" \
+                -c "user.email=41898282+github-actions[bot]@users.noreply.github.com" \
+                commit-tree "$tree" \
+                -m "${{ inputs.title }} of ${{ github.sha }}"
+          )
+          git tag -f "${{ inputs.tag }}" "$commit"
           git push --force origin "refs/tags/${{ inputs.tag }}"
       - name: Create or update release
         env:
@@ -37,7 +49,8 @@ jobs:
           notes="Preview build of \`${{ github.ref_name }}\` at ${{ github.sha }}, built $(date -u '+%Y-%m-%d %H:%M UTC').
 
           This is not a release: it gets overwritten whenever the branch moves
-          and is not published to crates.io."
+          and is not published to crates.io. Take the binaries below; the tag
+          and the source archives carry nothing."
           if gh release view "${{ inputs.tag }}" > /dev/null 2>&1; then
             gh release edit "${{ inputs.tag }}" --title "${{ inputs.title }}" --notes "$notes" --prerelease
           else

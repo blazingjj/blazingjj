@@ -14,5 +14,5 @@ jobs:
       contents: write
     uses: ./.github/workflows/preview-release.yml
     with:
-      tag: dev
+      tag: dev-preview
       title: Dev preview

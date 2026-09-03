@@ -98,7 +98,8 @@ To build and install a pre-release version: `cargo install --git https://github.
 > - [`dev`](https://github.com/blazingjj/blazingjj/releases/tag/dev): the `dev`
 >   branch, rebuilt on every push.
 >
-> These are previews for testing only, their tags move, so don't pin anything to them.
+> These are previews for testing only, their tags move and carry no source, so
+> don't pin anything to them.
 
 ## Configuration
 
