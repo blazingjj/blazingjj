@@ -135,6 +135,7 @@ impl SettingsTab {
             SettingKind::Keybindings
             | SettingKind::Styles
             | SettingKind::Commands
+            | SettingKind::ContextMenus
             | SettingKind::Choice(_)
             | SettingKind::Text
             | SettingKind::Number
