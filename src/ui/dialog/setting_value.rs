@@ -46,7 +46,8 @@ pub struct SettingValuePopup<'a> {
     title: String,
     /// The config key clearing the field takes out, where there is one
     /// to take out. It is the key asked about unless what is written is
-    /// only part of a value that was set as a whole.
+    /// only part of a value that was set as a whole. Without one, an
+    /// empty field is text like any other.
     taken_out: Option<String>,
     /// What the text that was typed asks for, which is also what
     /// refuses a text that cannot be read.
@@ -169,13 +170,10 @@ impl Component for SettingValuePopup<'_> {
                     // Clearing the field is asking for the option to be
                     // taken out rather than for it to be set to nothing:
                     // there is no value that stands for "as if it were
-                    // never set", so what says so is saying nothing. An
-                    // option nothing has set is already out.
-                    let asked = if typed.trim().is_empty() {
-                        let Some(key) = self.taken_out.clone() else {
-                            return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
-                        };
-
+                    // never set", so what says so is saying nothing.
+                    let asked = if let Some(key) =
+                        self.taken_out.clone().filter(|_| typed.trim().is_empty())
+                    {
                         AppAction::Run(Command::UnsetSetting { key })
                     } else {
                         // A text that cannot be read is one to correct
