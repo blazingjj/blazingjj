@@ -36,6 +36,7 @@ use tracing_subscriber::layer::SubscriberExt;
 mod app;
 mod background_tasks;
 mod commander;
+mod commands;
 mod env;
 mod event;
 mod interrupt;

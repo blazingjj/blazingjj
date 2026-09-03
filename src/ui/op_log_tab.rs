@@ -136,6 +136,7 @@ impl<'a> OpLogTab<'a> {
     fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(op_log_context_menu(
             anchor,
+            &self.selection(),
             &self.op_panel.selected,
         ))))
     }
