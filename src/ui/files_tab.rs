@@ -245,6 +245,7 @@ impl FilesTab {
 
         Some(AppAction::SetPopup(Box::new(files_context_menu(
             anchor,
+            &self.selection(),
             file,
             self.open(file),
         ))))

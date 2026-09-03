@@ -248,6 +248,7 @@ impl<'a> LogTab<'a> {
         Ok(Some(AppAction::SetPopup(Box::new(log_context_menu(
             get_env().jj_config.clone(),
             anchor,
+            &self.selection(),
             &self.head,
             &self.marked(),
         )?))))

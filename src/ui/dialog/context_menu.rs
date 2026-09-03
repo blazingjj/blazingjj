@@ -27,6 +27,7 @@ use crate::env::get_env;
 use crate::menus::Item;
 use crate::menus::Menu;
 use crate::menus::context_menu;
+use crate::selection::Selection;
 use crate::ui::AppAction;
 use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::ChoicePopup;
@@ -38,6 +39,7 @@ use crate::ui::dialog::push_menu;
 pub fn log_context_menu(
     config: JjConfig,
     anchor: Option<Position>,
+    selection: &Selection,
     selected: &Head,
     marked: &[CommitId],
 ) -> Result<ChoicePopup> {
@@ -124,12 +126,17 @@ pub fn log_context_menu(
         ),
     ]);
 
-    Ok(context_menu(&config, anchor, Menu::Log, items))
+    Ok(context_menu(&config, anchor, Menu::Log, selection, items))
 }
 
 /// The context menu for `file`, `open` being what opening it in an
 /// editor takes, which depends on what the tab is showing.
-pub fn files_context_menu(anchor: Option<Position>, file: &File, open: AppAction) -> ChoicePopup {
+pub fn files_context_menu(
+    anchor: Option<Position>,
+    selection: &Selection,
+    file: &File,
+    open: AppAction,
+) -> ChoicePopup {
     let items = vec![
         Item::new("open", Line::raw("Open in editor"), open),
         Item::new(
@@ -144,11 +151,16 @@ pub fn files_context_menu(anchor: Option<Position>, file: &File, open: AppAction
         ),
     ];
 
-    context_menu(&get_env().jj_config, anchor, Menu::Files, items)
+    context_menu(&get_env().jj_config, anchor, Menu::Files, selection, items)
 }
 
 /// The context menu for `version` of `change`.
-pub fn evolog_context_menu(anchor: Option<Position>, version: &Head, change: &Head) -> ChoicePopup {
+pub fn evolog_context_menu(
+    anchor: Option<Position>,
+    selection: &Selection,
+    version: &Head,
+    change: &Head,
+) -> ChoicePopup {
     let items = vec![
         Item::new(
             "open-files",
@@ -167,11 +179,15 @@ pub fn evolog_context_menu(anchor: Option<Position>, version: &Head, change: &He
         ),
     ];
 
-    context_menu(&get_env().jj_config, anchor, Menu::Evolog, items)
+    context_menu(&get_env().jj_config, anchor, Menu::Evolog, selection, items)
 }
 
 /// The context menu for `operation`.
-pub fn op_log_context_menu(anchor: Option<Position>, operation: &Operation) -> ChoicePopup {
+pub fn op_log_context_menu(
+    anchor: Option<Position>,
+    selection: &Selection,
+    operation: &Operation,
+) -> ChoicePopup {
     let items = vec![
         Item::new(
             "restore",
@@ -190,7 +206,7 @@ pub fn op_log_context_menu(anchor: Option<Position>, operation: &Operation) -> C
         ),
     ];
 
-    context_menu(&get_env().jj_config, anchor, Menu::OpLog, items)
+    context_menu(&get_env().jj_config, anchor, Menu::OpLog, selection, items)
 }
 
 /// The context menu for `selected`, the bookmark and the change its line
@@ -199,6 +215,7 @@ pub fn op_log_context_menu(anchor: Option<Position>, operation: &Operation) -> C
 /// only applies to the bookmarks on a remote.
 pub fn bookmarks_context_menu(
     anchor: Option<Position>,
+    selection: &Selection,
     selected: Option<(&Bookmark, &Head)>,
 ) -> ChoicePopup {
     let mut items = vec![Item::new(
@@ -264,5 +281,11 @@ pub fn bookmarks_context_menu(
         ]);
     }
 
-    context_menu(&get_env().jj_config, anchor, Menu::Bookmarks, items)
+    context_menu(
+        &get_env().jj_config,
+        anchor,
+        Menu::Bookmarks,
+        selection,
+        items,
+    )
 }
