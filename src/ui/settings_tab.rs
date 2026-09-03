@@ -123,10 +123,9 @@ impl SettingsTab {
 
         let values = self.values.as_ref().ok()?;
         let Some(choices) = setting.choices() else {
-            return Some(AppAction::SetPopup(Box::new(SettingValuePopup::new(
-                setting,
-                values.value(setting).unwrap_or_default(),
-            ))));
+            return Some(AppAction::SetPopup(Box::new(
+                SettingValuePopup::of_setting(setting, values.value(setting).unwrap_or_default()),
+            )));
         };
 
         let items: Vec<_> = choices
