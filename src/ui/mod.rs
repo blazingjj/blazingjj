@@ -19,8 +19,8 @@ use ratatui::layout::Rect;
 use crate::app::TabId;
 use crate::app::command::Command;
 use crate::background_tasks::TaskResult;
-use crate::commander::JjCommand;
 use crate::commander::log::Head;
+use crate::commander::program::Program;
 use crate::event::Mouse;
 use crate::keybinds::Binding;
 
@@ -62,9 +62,9 @@ pub enum AppAction {
     RunInteractive(Interactive),
 }
 
-/// A command to run with the terminal handed over to it.
+/// A program to run with the terminal handed over to it.
 pub struct Interactive {
-    pub command: JjCommand,
+    pub program: Program,
     /// Whether to wait for the user before taking the screen back. Off for
     /// a command run for its effect, whose output is beside the point
     /// unless it failed.

@@ -7,6 +7,7 @@ as an [AppAction].
 */
 
 use std::fmt::Display;
+use std::path::Path;
 
 use ansi_to_tui::IntoText;
 use anyhow::Result;
@@ -20,6 +21,7 @@ use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskOutput;
 use crate::background_tasks::TaskSlot;
 use crate::commander::bookmarks::Bookmark;
+use crate::commander::files::DiffType;
 use crate::commander::files::File;
 use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
@@ -31,14 +33,19 @@ use crate::commander::jj::RebaseTarget;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::operation::Operation;
+use crate::commander::program::Program;
 use crate::commander::revset::Revset;
+use crate::env::Editor;
+use crate::env::EditorMode;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::PushScope;
 use crate::ui::AppAction;
+use crate::ui::Interactive;
 use crate::ui::dialog::BookmarkNameMode;
 use crate::ui::dialog::BookmarkNamePopup;
 use crate::ui::dialog::BookmarkSetPopup;
+use crate::ui::dialog::ChoicePopup;
 use crate::ui::dialog::ConfirmPopup;
 use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
@@ -56,6 +63,23 @@ pub enum NewSource {
     Marks,
     /// A single change, named by the selection or by a bookmark.
     Change,
+}
+
+/// Which version of a file an editor is opened on. The editor edits the
+/// working copy either way, so reaching another change's version of a
+/// file means moving the working copy there first.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum OpenAt {
+    /// The file as the working copy has it.
+    WorkingCopy,
+    /// The file as this change has it, which is checked out to get at.
+    Checkout(CommitId),
+    /// The file as this change has it, reached by a new change on top of
+    /// it, for a change that cannot be edited itself.
+    NewOnTop(CommitId),
+    /// The file at a revision, this URL naming both, for an editor that
+    /// reads a revision itself and so needs nothing checked out.
+    AtRevision(String),
 }
 
 /// The change the set-bookmark dialog was opened for, which is all it
@@ -114,6 +138,12 @@ pub enum Command {
     RevertOperation(OperationId),
     RestoreFile(File),
     UntrackFile(File),
+    /// Open the file in the configured editor, on the version of it
+    /// `at` names.
+    OpenFile {
+        file: File,
+        at: OpenAt,
+    },
     CreateBookmark(String),
     RenameBookmark {
         old_name: String,
@@ -303,6 +333,7 @@ impl Command {
                 Ok(_) => Ok(Some(show_working_copy_files()?)),
                 Err(err) => Ok(Some(refused("Untrack", err))),
             },
+            Command::OpenFile { file, at } => open_file(&file, &at),
             Command::CreateBookmark(name) => match new_commander().create_bookmark(&name) {
                 Ok(_) => Ok(Some(AppAction::Multiple(vec![
                     AppAction::ViewBookmark(name),
@@ -380,6 +411,137 @@ impl Command {
             },
         }
     }
+}
+
+/// Open `file` in the configured editor, having taken the working copy
+/// to where `at` says the version to open is.
+fn open_file(file: &File, at: &OpenAt) -> Result<Option<AppAction>> {
+    let Some(path) = file.path.as_deref() else {
+        return Ok(Some(message("Open", "The line names no file to open.")));
+    };
+    // Whatever is in the way of opening the file is in the way before the
+    // working copy has been taken anywhere for it.
+    let Some(editor) = get_env().jj_config.editor() else {
+        return Ok(Some(message(
+            "Open",
+            "There is no editor to open the file in. Set `blazingjj.editor`, \
+             or `VISUAL` or `EDITOR` in the environment.",
+        )));
+    };
+
+    let (moved, target) = match at {
+        OpenAt::WorkingCopy => (None, path),
+        OpenAt::Checkout(commit_id) => match new_commander().run_edit(commit_id, false) {
+            Ok(()) => (Some(show_change(new_commander().get_current_head()?)), path),
+            Err(err) => return Ok(Some(refused("Edit", err))),
+        },
+        OpenAt::NewOnTop(commit_id) => {
+            match new_commander().run_new_with_insert(commit_id, NewInsertMode::Child) {
+                Ok(()) => (Some(show_change(new_commander().get_current_head()?)), path),
+                Err(err) => return Ok(Some(refused("New", err))),
+            }
+        }
+        // The editor reads the revision itself, so the working copy
+        // stays where it is and the URL goes where the file would.
+        OpenAt::AtRevision(url) => (None, url.as_str()),
+    };
+
+    let opened = open_in_editor(&editor, target);
+
+    Ok(match moved {
+        Some(moved) => Some(AppAction::Multiple(
+            [moved].into_iter().chain(opened).collect(),
+        )),
+        None => opened,
+    })
+}
+
+/// Open `target`, a file of the working copy or a URL naming one at a
+/// revision, in `editor`, either with the terminal handed over to it or
+/// left running on its own, as the configuration says.
+fn open_in_editor(editor: &Editor, target: &str) -> Option<AppAction> {
+    let env = get_env();
+    let program = Program::new(editor.program(), env.root.clone()).args(editor.args(target));
+
+    match env.jj_config.editor_mode() {
+        EditorMode::Terminal => Some(AppAction::RunInteractive(Interactive {
+            program,
+            // The editor leaves the file it edited on the screen, which
+            // is not something to read once it is closed.
+            hold_screen: false,
+        })),
+        EditorMode::Detached => match program.run_detached() {
+            Ok(()) => None,
+            Err(err) => Some(refused("Open", err)),
+        },
+    }
+}
+
+/// Asking where to open `file`, which is shown at `head`, named
+/// `revision` to an editor, rather than in the working copy: what is on
+/// disk now, what that change has, which means taking the working copy
+/// there first, or, for an editor that reads a revision itself, the file
+/// at `revision`. Only the versions there are to open are offered.
+pub fn ask_open_file(config: JjConfig, head: &Head, revision: &str, file: &File) -> AppAction {
+    let open = |at| {
+        AppAction::Run(Command::OpenFile {
+            file: file.clone(),
+            at,
+        })
+    };
+
+    let Some(path) = file.path.as_deref() else {
+        return message("Open", "The line names no file to open.");
+    };
+
+    // The change has no version of a file it deletes, however the tab
+    // shows it.
+    let at_change = file.diff_type != Some(DiffType::Deleted);
+
+    let mut items = Vec::new();
+    // An editor that reads the revision itself gets at the file without
+    // anything being checked out, which makes it the first thing to
+    // offer wherever it is configured.
+    if at_change && let Some(url) = config.editor_url(revision, path) {
+        items.push((
+            Line::raw("Open the file at this revision"),
+            open(OpenAt::AtRevision(url)),
+        ));
+    }
+    if in_working_copy(path) {
+        items.push((
+            Line::raw("Open the file as the working copy has it"),
+            open(OpenAt::WorkingCopy),
+        ));
+    }
+    if at_change {
+        if !head.immutable {
+            items.push((
+                Line::raw("Check this change out and open the file there"),
+                open(OpenAt::Checkout(head.commit_id.clone())),
+            ));
+        }
+        items.push((
+            Line::raw("Create a change on top of it and open the file there"),
+            open(OpenAt::NewOnTop(head.commit_id.clone())),
+        ));
+    }
+
+    if items.is_empty() {
+        return message("Open", "There is no version of the file to open.");
+    }
+
+    AppAction::SetPopup(Box::new(ChoicePopup::new(config, None, "Open", items)))
+}
+
+/// Whether the working copy has `path`. A file another change added or
+/// deleted is not there to open, however the change shows it. A symlink
+/// is there whether or not what it points at is.
+fn in_working_copy(path: &str) -> bool {
+    Path::new(&get_env().root)
+        .join(path)
+        .symlink_metadata()
+        .is_ok()
 }
 
 /// Asking for a new change from the marked changes, or from `selected`
@@ -951,6 +1113,139 @@ mod tests {
             ),
             "jj said nothing"
         ));
+    }
+
+    /// Opening a file at a revision is only something an editor that
+    /// reads revisions itself can do, which is what a URL to name one by
+    /// says the configured editor does.
+    #[test]
+    fn the_file_at_the_revision_is_only_offered_with_a_url_to_name_it_by() {
+        set_test_env();
+        let opening = |config, diff_type| {
+            ask_open_file(
+                config,
+                &head("a", false),
+                "change-a",
+                &File {
+                    line: "M Cargo.toml".to_owned(),
+                    path: Some("Cargo.toml".to_owned()),
+                    diff_type: Some(diff_type),
+                },
+            )
+        };
+        let configured = || {
+            toml::from_str::<JjConfig>(r#"blazingjj.editor-url = "jj://$revision/$file""#)
+                .expect("the configuration parses")
+        };
+
+        assert!(!says(
+            opening(JjConfig::default(), DiffType::Modified),
+            "at this revision"
+        ));
+        assert!(says(
+            opening(configured(), DiffType::Modified),
+            "at this revision"
+        ));
+        assert!(
+            !says(opening(configured(), DiffType::Deleted), "at this revision"),
+            "the revision has no version of a file it deletes"
+        );
+    }
+
+    /// A file the working copy does not have is one there is nothing to
+    /// open at `@`, whatever the change being shown says about it.
+    #[test]
+    fn only_a_file_the_working_copy_has_is_offered_as_it_is() {
+        set_test_env();
+        let opening = |path: &str| {
+            ask_open_file(
+                JjConfig::default(),
+                &head("a", false),
+                "change-a",
+                &File {
+                    line: format!("M {path}"),
+                    path: Some(path.to_owned()),
+                    diff_type: Some(DiffType::Modified),
+                },
+            )
+        };
+
+        assert!(says(opening("Cargo.toml"), "as the working copy has it"));
+        assert!(!says(opening("gone.txt"), "as the working copy has it"));
+    }
+
+    /// An immutable change cannot be checked out to edit, so the only way
+    /// to the file is a change of one's own on top of it.
+    #[test]
+    fn an_immutable_change_is_not_offered_for_checking_out() {
+        set_test_env();
+        let opening = |immutable| {
+            ask_open_file(
+                JjConfig::default(),
+                &head("a", immutable),
+                "change-a",
+                &File {
+                    line: "M Cargo.toml".to_owned(),
+                    path: Some("Cargo.toml".to_owned()),
+                    diff_type: Some(DiffType::Modified),
+                },
+            )
+        };
+
+        assert!(says(opening(false), "Check this change out"));
+        assert!(!says(opening(true), "Check this change out"));
+        assert!(says(opening(true), "Create a change on top of it"));
+    }
+
+    /// Taking the working copy to a change that deletes the file leaves
+    /// nothing to open there, so neither way of getting to that version
+    /// is one to offer.
+    #[test]
+    fn a_file_the_change_deletes_is_not_offered_at_that_change() {
+        set_test_env();
+        let opening = |path: &str| {
+            ask_open_file(
+                JjConfig::default(),
+                &head("a", false),
+                "change-a",
+                &File {
+                    line: format!("D {path}"),
+                    path: Some(path.to_owned()),
+                    diff_type: Some(DiffType::Deleted),
+                },
+            )
+        };
+
+        assert!(!says(opening("Cargo.toml"), "Check this change out"));
+        assert!(!says(opening("Cargo.toml"), "Create a change on top of it"));
+        assert!(says(opening("Cargo.toml"), "as the working copy has it"));
+        assert!(says(
+            opening("gone.txt"),
+            "There is no version of the file to open"
+        ));
+    }
+
+    /// A line naming no file is one to say so about rather than one to
+    /// take the working copy anywhere for.
+    #[test]
+    fn a_line_naming_no_file_moves_the_working_copy_nowhere() -> Result<()> {
+        set_test_env();
+        let file = File {
+            line: "Some other line".to_owned(),
+            path: None,
+            diff_type: None,
+        };
+
+        assert!(says(
+            ask_open_file(JjConfig::default(), &head("a", false), "change-a", &file),
+            "names no file to open"
+        ));
+
+        let action = open_file(&file, &OpenAt::Checkout(CommitId("commit-a".to_owned())))?
+            .expect("the line is refused");
+        assert!(says(action, "names no file to open"));
+
+        Ok(())
     }
 
     #[test]

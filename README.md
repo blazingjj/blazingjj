@@ -113,6 +113,13 @@ You can optionally configure the following options through your jj config:
   - The pager reads the diff on standard input and writes its rendering to standard output; it must not page, since blazingjj shows the output itself
   - `$width` in an argument stands for the columns the details panel has, which a pager that cannot find out for itself needs to be told
   - Setting it makes `pager` the default format, unless `blazingjj.diff-format` says otherwise, and adds it to what `w` toggles through
+- `blazingjj.editor`: The editor `o` in the files tab opens the working copy's version of the selected file in, like `jj config set --user blazingjj.editor '["code", "--wait", "$file"]'`
+  - `$file` in an argument stands for the file to open; an editor whose arguments say nothing about it is given it as the last one
+  - Without it, `$VISUAL` and then `$EDITOR` are used
+- `blazingjj.editor-mode`: How the editor is run. Can be `terminal` (default), which hands the terminal over to it, or `detached`, which leaves it running on its own, as an editor with a window of its own is
+- `blazingjj.editor-url`: What names a file at a revision to an editor that reads revisions itself, like neovim with jj.nvim: `jj config set --user blazingjj.editor-url 'jj://$revision/$file'`
+  - Setting it offers opening a file at the revision the files tab shows, with nothing checked out; the URL goes to the editor in place of the file to open
+  - `$revision` is the change id, except that a version out of the evolog and a divergent change are named by their commit id, those being what they are found by
 - `blazingjj.bookmark-template`: Change the bookmark name template for generated bookmark names. Defaults to `'push-' ++ change_id.short()`
   - If `blazingjj.bookmark-template` is not set but `templates.git_push_bookmark` is, the latter will be used
 - `blazingjj.describe-mode`: What describing a change puts up. Can be `popup` (default) for the built-in editor, or `jj` to hand the terminal to `jj describe` and your own editor

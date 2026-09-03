@@ -148,6 +148,7 @@ pub struct LogTabKeybindsConfig {
 pub struct FilesTabKeybindsConfig {
     pub untrack: Option<Keybind>,
     pub restore: Option<Keybind>,
+    pub open: Option<Keybind>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

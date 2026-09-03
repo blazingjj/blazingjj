@@ -108,7 +108,7 @@ fn popup(title: String, output: String) -> AppAction {
 /// command is done so that what it printed can be read.
 fn run_interactively(command: JjCommand) -> AppAction {
     AppAction::RunInteractive(Interactive {
-        command,
+        program: command.foreground(),
         hold_screen: true,
     })
 }

@@ -23,6 +23,7 @@ pub struct FilesTabKeybinds {
 pub enum FilesTabEvent {
     Untrack,
     Restore,
+    Open,
 
     Unbound,
 }
@@ -34,6 +35,7 @@ impl Default for FilesTabKeybinds {
             keys,
             FilesTabEvent::Untrack => "x",
             FilesTabEvent::Restore => "r",
+            FilesTabEvent::Open => "o",
         );
         Self { keys }
     }
@@ -59,6 +61,7 @@ impl FilesTabKeybinds {
             self.keys,
             FilesTabEvent::Untrack => config.untrack,
             FilesTabEvent::Restore => config.restore,
+            FilesTabEvent::Open => config.open,
         );
     }
 
@@ -73,6 +76,7 @@ impl FilesTabKeybinds {
             self.keys, Self::default().keys, Context::FilesTab,
             FilesTabEvent::Untrack => "untrack", Some(Section::Files), "untrack file",
             FilesTabEvent::Restore => "restore", Some(Section::Files), "restore file",
+            FilesTabEvent::Open => "open", Some(Section::Files), "open file in editor",
         )
     }
 }
@@ -101,6 +105,7 @@ mod tests {
                 Shortcut::from_str("u").expect("shortcut should parse"),
             )),
             restore: Some(Keybind::Enable(false)),
+            open: None,
         };
 
         let mut keybinds = FilesTabKeybinds::default();

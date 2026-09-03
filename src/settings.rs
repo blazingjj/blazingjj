@@ -157,6 +157,27 @@ pub const SETTINGS: &[Setting] = &[
         kind: SettingKind::Text,
     },
     Setting {
+        key: "blazingjj.editor",
+        section: "Files",
+        doc: "The editor a file is opened in, like `code --wait $file`. $file stands for the file to open, and is passed as the last argument when no argument names it.",
+        fallback: "$VISUAL, else $EDITOR",
+        kind: SettingKind::CommandLine,
+    },
+    Setting {
+        key: "blazingjj.editor-mode",
+        section: "Files",
+        doc: "How the editor is run: with the terminal handed over to it, or left running on its own, as an editor with a window of its own is.",
+        fallback: "terminal",
+        kind: SettingKind::Choice(&["terminal", "detached"]),
+    },
+    Setting {
+        key: "blazingjj.editor-url",
+        section: "Files",
+        doc: "What names a file at a revision to an editor that reads revisions itself, like `jj://$revision/$file`. Setting it offers opening a file at the revision shown, without checking anything out.",
+        fallback: "no such editor",
+        kind: SettingKind::Text,
+    },
+    Setting {
         key: "blazingjj.describe-mode",
         section: "Changes",
         doc: "What describing a change puts up: the built-in editor, or `jj describe` with the terminal and your own editor.",
@@ -195,6 +216,7 @@ mod tests {
     use super::*;
     use crate::env::DescribeMode;
     use crate::env::DiffFormat;
+    use crate::env::EditorMode;
     use crate::env::JJLayout;
     use crate::env::JjConfig;
 
@@ -251,6 +273,22 @@ mod tests {
         assert_eq!(
             set("blazingjj.describe-mode", "\"jj\"").describe_mode(),
             DescribeMode::Jj
+        );
+        assert_eq!(
+            set("blazingjj.editor", "\"nvim\"")
+                .editor()
+                .map(|editor| editor.program().to_owned()),
+            Some("nvim".to_owned())
+        );
+        assert_eq!(
+            set("blazingjj.editor-mode", "\"detached\"").editor_mode(),
+            EditorMode::Detached
+        );
+        assert_eq!(
+            set("blazingjj.editor-url", "\"jj://$revision/$file\"")
+                .editor_url("kmxqmnmr", "a.txt")
+                .as_deref(),
+            Some("jj://kmxqmnmr/a.txt")
         );
         assert_eq!(
             set("blazingjj.layout", "\"vertical\"").layout(),

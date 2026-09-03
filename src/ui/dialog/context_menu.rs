@@ -99,9 +99,16 @@ pub fn log_context_menu(
     Ok(ChoicePopup::new(config, anchor, "Actions", items))
 }
 
-/// The context menu for `file`.
-pub fn files_context_menu(config: JjConfig, anchor: Option<Position>, file: &File) -> ChoicePopup {
+/// The context menu for `file`, `open` being what opening it in an
+/// editor takes, which depends on what the tab is showing.
+pub fn files_context_menu(
+    config: JjConfig,
+    anchor: Option<Position>,
+    file: &File,
+    open: AppAction,
+) -> ChoicePopup {
     let items = vec![
+        (Line::raw("Open in editor"), open),
         (
             Line::raw("Restore"),
             AppAction::Run(Command::RestoreFile(file.clone())),

@@ -120,6 +120,9 @@ pub struct JjConfigBlazingjj {
     diff_format: Option<ConfiguredDiffFormat>,
     diff_tool: Option<String>,
     diff_pager: Option<DiffPager>,
+    editor: Option<Editor>,
+    editor_mode: EditorMode,
+    editor_url: Option<String>,
     bookmark_template: Option<String>,
     confirm_push: bool,
     layout: JJLayout,
@@ -146,6 +149,9 @@ impl Default for JjConfigBlazingjj {
             diff_format: None,
             diff_tool: None,
             diff_pager: None,
+            editor: None,
+            editor_mode: EditorMode::default(),
+            editor_url: None,
             bookmark_template: None,
             layout: JJLayout::default(),
             keybinds: None,
@@ -231,6 +237,32 @@ impl JjConfig {
     /// Whether a push is to be shown and asked about before it is sent.
     pub fn confirm_push(&self) -> bool {
         self.blazingjj.confirm_push
+    }
+
+    /// The editor a file is opened in, which the environment names while
+    /// the configuration says nothing about it.
+    pub fn editor(&self) -> Option<Editor> {
+        self.blazingjj
+            .editor
+            .clone()
+            .or_else(Editor::from_environment)
+    }
+
+    pub fn editor_mode(&self) -> EditorMode {
+        self.blazingjj.editor_mode
+    }
+
+    /// What names `path` at `revision` to an editor that opens a file at
+    /// a revision of its own accord, for as long as one is configured.
+    /// It goes to the editor in place of the file to open.
+    pub fn editor_url(&self, revision: &str, path: &str) -> Option<String> {
+        Some(
+            self.blazingjj
+                .editor_url
+                .as_ref()?
+                .replace(REVISION_PLACEHOLDER, revision)
+                .replace(FILE_PLACEHOLDER, path),
+        )
     }
 
     pub fn highlight_color(&self) -> Color {
@@ -331,6 +363,88 @@ pub enum DescribeMode {
     Jj,
 }
 
+/// What an editor argument says to have the file to open substituted
+/// into it
+const FILE_PLACEHOLDER: &str = "$file";
+
+/// What an editor URL says to have the revision to open the file at
+/// substituted into it
+const REVISION_PLACEHOLDER: &str = "$revision";
+
+/// The editor a file is opened in, like `nvim`. `$file` in an argument
+/// stands for the file to open; an editor whose arguments say nothing
+/// about it is given it as the last one.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(try_from = "ConfiguredCommandLine")]
+pub struct Editor {
+    program: String,
+    args: Vec<String>,
+}
+
+impl TryFrom<ConfiguredCommandLine> for Editor {
+    type Error = &'static str;
+
+    fn try_from(configured: ConfiguredCommandLine) -> Result<Self, Self::Error> {
+        let (program, args) = configured.split()?;
+
+        Ok(Self { program, args })
+    }
+}
+
+impl Editor {
+    /// The editor the environment names, which is what the app opens a
+    /// file in while `blazingjj.editor` says nothing.
+    fn from_environment() -> Option<Self> {
+        ["VISUAL", "EDITOR"]
+            .into_iter()
+            .filter_map(|variable| std::env::var(variable).ok())
+            .find_map(|command_line| Self::from_command_line(&command_line))
+    }
+
+    /// The editor `command_line` names, reading it as a shell would,
+    /// arguments and all. One that names no program, whether because it
+    /// is empty or because it does not read as a command line at all,
+    /// names no editor.
+    fn from_command_line(command_line: &str) -> Option<Self> {
+        let words = shell_words::split(command_line).ok()?;
+        let (program, args) = ConfiguredCommandLine::CommandLine(words).split().ok()?;
+
+        Some(Self { program, args })
+    }
+
+    pub fn program(&self) -> &str {
+        &self.program
+    }
+
+    /// The arguments to open `file` with, which is appended when no
+    /// argument asks for it.
+    pub fn args(&self, file: &str) -> Vec<String> {
+        let mut args: Vec<String> = self
+            .args
+            .iter()
+            .map(|arg| arg.replace(FILE_PLACEHOLDER, file))
+            .collect();
+        if !self.args.iter().any(|arg| arg.contains(FILE_PLACEHOLDER)) {
+            args.push(file.to_owned());
+        }
+
+        args
+    }
+}
+
+/// How the app runs the editor a file is opened in.
+#[derive(Clone, Copy, Debug, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum EditorMode {
+    /// Hand the terminal over to the editor and take it back once it is
+    /// done, as a terminal editor needs.
+    #[default]
+    Terminal,
+    /// Leave the editor running on its own and carry on, as an editor
+    /// with a window of its own is used.
+    Detached,
+}
+
 /// A diff format as `blazingjj.diff-format` and `ui.diff.format` name it.
 /// What a name stands for depends on the rest of the configuration, so it
 /// is resolved into a [DiffFormat] by
@@ -353,35 +467,43 @@ const WIDTH_PLACEHOLDER: &str = "$width";
 /// writes the rendering to standard output; `$width` in an argument stands
 /// for the number of columns it has to render into.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Hash)]
-#[serde(try_from = "ConfiguredDiffPager")]
+#[serde(try_from = "ConfiguredCommandLine")]
 pub struct DiffPager {
     program: String,
     args: Vec<String>,
 }
 
-/// A pager as it is configured: the program on its own, or a command line
-/// of the program and its arguments.
+/// A command line as it is configured: the program on its own, or the
+/// program and its arguments.
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum ConfiguredDiffPager {
+enum ConfiguredCommandLine {
     Program(String),
     CommandLine(Vec<String>),
 }
 
-impl TryFrom<ConfiguredDiffPager> for DiffPager {
-    type Error = &'static str;
-
-    fn try_from(configured: ConfiguredDiffPager) -> Result<Self, Self::Error> {
-        let (program, args) = match configured {
-            ConfiguredDiffPager::Program(program) => (program, Vec::new()),
-            ConfiguredDiffPager::CommandLine(mut command_line) => {
+impl ConfiguredCommandLine {
+    /// The program to run and the arguments to run it with, refused when
+    /// there is no program to run.
+    fn split(self) -> Result<(String, Vec<String>), &'static str> {
+        match self {
+            ConfiguredCommandLine::Program(program) => Ok((program, Vec::new())),
+            ConfiguredCommandLine::CommandLine(mut command_line) => {
                 if command_line.is_empty() {
-                    return Err("a diff pager needs a program to run");
+                    return Err("a command line needs a program to run");
                 }
                 let args = command_line.split_off(1);
-                (command_line.remove(0), args)
+                Ok((command_line.remove(0), args))
             }
-        };
+        }
+    }
+}
+
+impl TryFrom<ConfiguredCommandLine> for DiffPager {
+    type Error = &'static str;
+
+    fn try_from(configured: ConfiguredCommandLine) -> Result<Self, Self::Error> {
+        let (program, args) = configured.split()?;
 
         Ok(Self { program, args })
     }
@@ -524,6 +646,13 @@ mod tests {
             .expect("the setting configures a pager")
     }
 
+    /// The editor the given `blazingjj.editor` value configures
+    fn editor(setting: &str) -> Editor {
+        config(&format!("blazingjj.editor = {setting}\n"))
+            .editor()
+            .expect("the setting configures an editor")
+    }
+
     #[test]
     fn only_formats_that_scale_are_told_the_panel_width() {
         for format in [
@@ -567,7 +696,7 @@ mod tests {
         let error = toml::from_str::<JjConfig>("blazingjj.diff-pager = []\n")
             .expect_err("a pager without a program is an error");
         assert!(
-            error.to_string().contains("a diff pager needs a program"),
+            error.to_string().contains("a command line needs a program"),
             "the error does not say what is wrong: {error}"
         );
     }
@@ -585,6 +714,56 @@ mod tests {
             pager.args(0),
             ["--line-numbers"],
             "an argument asking for a width there is none of is left out"
+        );
+    }
+
+    #[test]
+    fn an_editor_is_configured_as_a_program_or_as_a_command_line() {
+        let program = editor(r#""nvim""#);
+        assert_eq!(program.program(), "nvim");
+        assert_eq!(program.args("src/main.rs"), ["src/main.rs"]);
+
+        let command_line = editor(r#"["code", "--wait"]"#);
+        assert_eq!(command_line.program(), "code");
+        assert_eq!(command_line.args("src/main.rs"), ["--wait", "src/main.rs"]);
+    }
+
+    /// An editor that takes the file among its arguments rather than
+    /// after them says where it goes, and is given it nowhere else.
+    #[test]
+    fn an_argument_asking_for_the_file_is_given_it() {
+        let editor = editor(r#"["kak", "-e", "edit $file", "--"]"#);
+
+        assert_eq!(editor.args("src/main.rs"), ["-e", "edit src/main.rs", "--"]);
+    }
+
+    /// `VISUAL` and `EDITOR` hold a command line rather than a program,
+    /// and one naming no program is one to look past: the next variable
+    /// still gets its say, as does the app's own message about there
+    /// being no editor.
+    #[test]
+    fn an_editor_variable_is_read_as_a_shell_would() {
+        let editor =
+            Editor::from_command_line("code --wait").expect("the variable names an editor");
+        assert_eq!(editor.program(), "code");
+        assert_eq!(editor.args("a.txt"), ["--wait", "a.txt"]);
+
+        assert_eq!(Editor::from_command_line(""), None);
+        assert_eq!(Editor::from_command_line("   "), None);
+        assert_eq!(Editor::from_command_line("nvim 'unbalanced"), None);
+    }
+
+    #[test]
+    fn an_editor_url_names_the_file_and_the_revision_it_is_read_at() {
+        let config = config(r#"blazingjj.editor-url = "jj://$revision/$file""#);
+
+        assert_eq!(
+            config.editor_url("kmxqmnmr", "src/main.rs").as_deref(),
+            Some("jj://kmxqmnmr/src/main.rs")
+        );
+        assert_eq!(
+            JjConfig::default().editor_url("kmxqmnmr", "src/main.rs"),
+            None
         );
     }
 
