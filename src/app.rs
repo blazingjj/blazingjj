@@ -53,6 +53,7 @@ use crate::ui::Interactive;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::bookmarks_tab::BookmarksTab;
+use crate::ui::commands_tab::CommandsTab;
 use crate::ui::dialog::CommandMode;
 use crate::ui::dialog::CommandPopup;
 use crate::ui::dialog::HelpPopup;
@@ -82,6 +83,9 @@ pub enum TabId {
     /// The styles, which the settings tab opens and which has no place
     /// of its own in the tab bar.
     Styles,
+    /// The commands of your own, which the settings tab opens and which
+    /// has no place of its own in the tab bar.
+    Commands,
 }
 
 impl fmt::Display for TabId {
@@ -95,13 +99,14 @@ impl fmt::Display for TabId {
             TabId::Settings => write!(f, "Settings"),
             TabId::Keybindings => write!(f, "Keybindings"),
             TabId::Styles => write!(f, "Styles"),
+            TabId::Commands => write!(f, "Commands"),
         }
     }
 }
 
 impl TabId {
     /// Every tab there is, the transient one included
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         TabId::Log,
         TabId::Files,
         TabId::Bookmarks,
@@ -110,6 +115,7 @@ impl TabId {
         TabId::Settings,
         TabId::Keybindings,
         TabId::Styles,
+        TabId::Commands,
     ];
 
     /// The tabs the tab bar lists, in the order it lists them
@@ -126,7 +132,7 @@ impl TabId {
     /// place of its own is the place of the tab that opens it.
     pub fn in_tab_bar(self) -> Self {
         match self {
-            TabId::Keybindings | TabId::Styles => TabId::Settings,
+            TabId::Keybindings | TabId::Styles | TabId::Commands => TabId::Settings,
             tab => tab,
         }
     }
@@ -136,7 +142,7 @@ impl TabId {
     /// come first by their number and last in the bar.
     pub fn number(self) -> usize {
         match self {
-            TabId::Settings | TabId::Keybindings | TabId::Styles => 0,
+            TabId::Settings | TabId::Keybindings | TabId::Styles | TabId::Commands => 0,
             TabId::Log => 1,
             TabId::Files => 2,
             TabId::Bookmarks => 3,
@@ -251,6 +257,7 @@ pub struct App<'a> {
     pub settings: SettingsTab,
     pub keybindings: KeybindingsTab,
     pub styles: StylesTab,
+    pub commands: CommandsTab,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     /// Where the tabs overview was last drawn, for mouse input.
@@ -300,6 +307,7 @@ impl<'a> App<'a> {
             settings: SettingsTab::new(),
             keybindings: KeybindingsTab::new(),
             styles: StylesTab::new(),
+            commands: CommandsTab::new(),
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
@@ -558,6 +566,7 @@ impl<'a> App<'a> {
             TabId::Settings => &mut self.settings,
             TabId::Keybindings => &mut self.keybindings,
             TabId::Styles => &mut self.styles,
+            TabId::Commands => &mut self.commands,
         }
     }
 
