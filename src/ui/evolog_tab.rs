@@ -119,6 +119,7 @@ impl<'a> EvologTab<'a> {
     fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(evolog_context_menu(
             anchor,
+            &self.selection(),
             &self.entry_panel.selected,
             &self.change,
         ))))
