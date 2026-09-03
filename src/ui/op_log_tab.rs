@@ -25,6 +25,7 @@ use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::OpLogTabEvent;
 use crate::keybinds::OpLogTabKeybinds;
+use crate::selection::Selection;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -225,6 +226,10 @@ impl Tab for OpLogTab<'_> {
 
     fn open_context_menu(&self) -> Result<Option<AppAction>> {
         Ok(self.context_menu(self.op_panel.selected_position()))
+    }
+
+    fn selection(&self) -> Selection {
+        Selection::default().operation(&self.op_panel.selected.id)
     }
 
     fn main_panel_bindings(&self) -> Vec<Binding> {

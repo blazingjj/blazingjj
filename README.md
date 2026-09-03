@@ -176,6 +176,13 @@ See all key mappings for the current tab with `?`.
   `toggle-layout` to, which comes unbound
 - Open the context menu for what the tab has selected with `Menu` or a right click
 - Open a command popup to run jj commands using `:` (jj prefix not required, e.g. write `new main` instead of `jj new main`)
+- A command can name what the tab has selected by a placeholder, so `:new $s` creates a change from the highlighted one and `:abandon $m` abandons the marked ones:
+  - `$selected`, or `$s`: what the tab is about, which is the file in the files tab, the bookmark in the bookmarks tab, the operation in the operation log and the revision everywhere else
+  - `$marked`, or `$m`: the changes the log has marked, as the one revset naming them all
+  - `$revision`: the revision the tab is on, whichever kind of thing it is about
+  - `$file`, `$bookmark`, `$operation`: the selection of that kind, for a command that only makes sense against one
+  - A placeholder is replaced inside the argument holding it, so `-r$s` names the selection as much as `$s` does, and what it stands for is one argument however it reads. A revset can be written around one, as in `$s-`; `$$` is a `$` of its own
+  - A command naming something the tab has nothing of is refused rather than run without it
 
 ### Log tab
 

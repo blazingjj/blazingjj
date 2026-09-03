@@ -23,6 +23,7 @@ use crate::commander::log::Head;
 use crate::commander::program::Program;
 use crate::event::Mouse;
 use crate::keybinds::Binding;
+use crate::selection::Selection;
 
 /// Action commmands from component to application
 pub enum AppAction {
@@ -184,6 +185,13 @@ pub trait Tab: Component {
     /// The menu of what can be done to what the tab has selected, put
     /// where the selection is.
     fn open_context_menu(&self) -> Result<Option<AppAction>>;
+
+    /// What the tab has selected, which a command run from it names by
+    /// its placeholders. A tab about the app itself has nothing to run
+    /// a command against.
+    fn selection(&self) -> Selection {
+        Selection::default()
+    }
 
     /// Keybindings of the main panel, for the help popup.
     fn main_panel_bindings(&self) -> Vec<Binding>;
