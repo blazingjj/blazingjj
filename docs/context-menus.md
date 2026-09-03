@@ -35,8 +35,19 @@ nothing but `create-bookmark`. A name that is no item at all is listed under
 the menu in red, there being nothing else to say about a name that is set but
 does not read.
 
-The settings tab (`0`) does the same from within blazingjj, on the
-`blazingjj.context-menu` row.
+## From within blazingjj
+
+The settings tab (`0`) does the same from within blazingjj. Its
+`blazingjj.context-menu` row opens the list of every item every menu can
+hold, the ones a menu holds numbered and in order first and the ones it could
+hold under them. There, `Enter` puts an item in its menu or takes it out,
+`Shift+j` and `Shift+k` move it along the menu, and `x` takes the whole menu
+out of your config, leaving it holding what the app comes with.
+
+A menu is one config key holding all of it in order, so what is written is
+every item the menu holds every time. That is also why a menu you wrote out
+with `defaults` in it comes back with those spelled out: there is no putting
+an item between them otherwise.
 
 ## What each menu can hold
 

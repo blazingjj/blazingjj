@@ -147,8 +147,11 @@ config file; a setting that comes from anywhere else has to be changed there.
 Its `blazingjj.keybinds` row opens the keybindings, which are changed there one
 action at a time; [docs/keybindings.md](docs/keybindings.md) says what they are
 and how to write them out yourself. Its `blazingjj.commands` row opens the
-commands of your own, which are added and changed there one at a time; see
-[docs/commands.md](docs/commands.md).
+commands of your own, which are added and changed there one at a time, and
+its `blazingjj.context-menu` row opens what every menu holds, where items are
+put in a menu, taken out and moved along it; see
+[docs/commands.md](docs/commands.md) and
+[docs/context-menus.md](docs/context-menus.md).
 
 ## Usage
 

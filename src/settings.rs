@@ -35,6 +35,10 @@ pub enum SettingKind {
     /// to type, so they are changed one command at a time in a tab of
     /// their own.
     Commands,
+    /// What the context menus hold, which is a table of lists rather
+    /// than a value to type, so they are changed one menu at a time in
+    /// a tab of their own.
+    ContextMenus,
 }
 
 impl SettingKind {
@@ -44,6 +48,7 @@ impl SettingKind {
         match self {
             Self::Keybindings => Some(TabId::Keybindings),
             Self::Commands => Some(TabId::Commands),
+            Self::ContextMenus => Some(TabId::Menus),
             _ => None,
         }
     }
@@ -69,6 +74,7 @@ impl Setting {
         let value = match self.kind {
             SettingKind::Keybindings => bail!("The keybindings are not an option to type"),
             SettingKind::Commands => bail!("The commands are not an option to type"),
+            SettingKind::ContextMenus => bail!("The context menus are not an option to type"),
             SettingKind::Number => {
                 let input = input.trim();
                 // TOML reads anything but a number here as text that
@@ -115,6 +121,13 @@ impl Setting {
             (SettingKind::Commands, toml::Value::Table(commands)) => match commands.len() {
                 1 => "1 command".to_owned(),
                 set => format!("{set} commands"),
+            },
+            // What the menus hold is the context menus tab's to say;
+            // what the settings tab says is only how many of them the
+            // configuration has anything to say about.
+            (SettingKind::ContextMenus, toml::Value::Table(menus)) => match menus.len() {
+                1 => "1 menu set".to_owned(),
+                set => format!("{set} menus set"),
             },
             (SettingKind::CommandLine, toml::Value::Array(words)) => words
                 .iter()
@@ -250,6 +263,13 @@ pub const SETTINGS: &[Setting] = &[
         doc: "The commands of your own, each run against what a tab has selected and held by a context menu that lists its name. Opens the list of them.",
         fallback: "no commands of your own",
         kind: SettingKind::Commands,
+    },
+    Setting {
+        key: "blazingjj.context-menu",
+        section: "Commands",
+        doc: "What each tab's context menu holds and in which order. Opens the list of them.",
+        fallback: "every item the app comes with",
+        kind: SettingKind::ContextMenus,
     },
     Setting {
         key: "blazingjj.keybinds",

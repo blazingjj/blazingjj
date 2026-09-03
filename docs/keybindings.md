@@ -237,3 +237,14 @@ add = "n"
 unset = "x"
 back = "esc"
 ```
+
+### Context menus tab
+
+```toml
+[blazingjj.keybinds.menus-tab]
+toggle = "enter"
+move-up = "shift+k"
+move-down = "shift+j"
+unset = "x"
+back = "esc"
+```

@@ -22,6 +22,7 @@ use serde::Deserialize;
 use crate::app::command::Command;
 use crate::commands::CustomRun;
 use crate::env::JjConfig;
+use crate::keybinds::Context;
 use crate::selection::Selection;
 use crate::ui::AppAction;
 use crate::ui::dialog::Choice;
@@ -62,6 +63,28 @@ impl Menu {
             Self::Evolog => "evolog",
             Self::OpLog => "op-log",
         }
+    }
+
+    /// The context whose keys run the same actions, which is where the
+    /// description of an item comes from.
+    pub fn context(self) -> Context {
+        match self {
+            Self::Log => Context::LogTab,
+            Self::Files => Context::FilesTab,
+            Self::Bookmarks => Context::BookmarksTab,
+            Self::Evolog => Context::EvologTab,
+            Self::OpLog => Context::OpLogTab,
+        }
+    }
+
+    /// The TOML expression a menu holding `ids` is written as.
+    pub fn value_of(ids: &[String]) -> String {
+        toml::Value::Array(
+            ids.iter()
+                .map(|id| toml::Value::String(id.clone()))
+                .collect(),
+        )
+        .to_string()
     }
 
     /// The title the menu goes up under.
@@ -179,6 +202,14 @@ fn ordered(menu: Menu, configured: Option<&[String]>) -> Vec<&str> {
     }
 
     ids
+}
+
+/// The ids `menu` holds, as `config` leaves it.
+pub fn held_by(config: &JjConfig, menu: Menu) -> Vec<String> {
+    ordered(menu, config.context_menu().of(menu))
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
 }
 
 /// The `menu` of what can be done to what a tab has selected, holding
