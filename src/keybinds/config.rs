@@ -31,6 +31,7 @@ pub struct KeybindsConfig {
     pub settings_tab: Option<SettingsTabKeybindsConfig>,
     pub keybindings_tab: Option<KeybindingsTabKeybindsConfig>,
     pub styles_tab: Option<StylesTabKeybindsConfig>,
+    pub commands_tab: Option<CommandsTabKeybindsConfig>,
     pub details_panel: Option<DetailsPanelKeybindsConfig>,
     pub popup: Option<PopupKeybindsConfig>,
     pub text_popup: Option<TextPopupKeybindsConfig>,
@@ -220,6 +221,17 @@ pub struct KeybindingsTabKeybindsConfig {
     pub bind: Option<Keybind>,
     pub bind_besides: Option<Keybind>,
     pub disable: Option<Keybind>,
+    pub unset: Option<Keybind>,
+    pub back: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct CommandsTabKeybindsConfig {
+    pub change_command_line: Option<Keybind>,
+    pub change_label: Option<Keybind>,
+    pub toggle_interactive: Option<Keybind>,
+    pub add: Option<Keybind>,
     pub unset: Option<Keybind>,
     pub back: Option<Keybind>,
 }
