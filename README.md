@@ -128,6 +128,10 @@ You can optionally configure the following options through your jj config:
   - What is shown is what `jj git push --dry-run` says the push would do, so it takes a round trip to the remote to put the question
 - `blazingjj.layout`: Changes the layout of the main and details panel. Can be `horizontal` (default) or `vertical`
 - `blazingjj.layout-percent`: Changes the layout split of the main page. Should be number between 0 and 100. Defaults to `50`
+- `blazingjj.commands`: Commands of your own, each named by the name a context menu holds it by: `jj config set --user blazingjj.commands.show-marked '["jj", "show", "$marked"]'`
+  - The arguments name what the tab has selected by the same placeholders the command popup takes, so `$s` is the change in the log and the file in the files tab
+  - A command with more to say than what to run says it alongside the command line: `label` is what a menu calls it, and `interactive = true` hands the terminal over to it rather than capturing its output
+  - A command goes in a context menu by listing its name in `blazingjj.context-menu`; [docs/commands.md](docs/commands.md) says the rest
 - `blazingjj.context-menu`: What each tab's context menu holds and in which order, one key per menu: `jj config set --user blazingjj.context-menu.log '["defaults", "create-pr"]'`
   - A menu the configuration says nothing about holds every item the app comes with; `defaults` in a menu of your own stands for those
   - An item is named by the same name as the keybinding that runs it; [docs/context-menus.md](docs/context-menus.md) lists what every menu can hold

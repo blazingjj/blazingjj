@@ -138,6 +138,7 @@ impl<'a> OpLogTab<'a> {
         Some(AppAction::SetPopup(Box::new(op_log_context_menu(
             get_env().jj_config.clone(),
             anchor,
+            &self.selection(),
             &self.op_panel.selected,
         ))))
     }

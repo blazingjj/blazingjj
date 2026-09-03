@@ -27,6 +27,7 @@ use serde::de;
 use crate::commander::MIN_SETTABLE_WIDTH;
 use crate::commander::RemoveEndLine;
 use crate::commander::get_output_args;
+use crate::commands::CustomCommands;
 use crate::keybinds::KeybindsConfig;
 use crate::menus::ContextMenus;
 
@@ -134,6 +135,7 @@ pub struct JjConfigBlazingjj {
     layout_percent: u16,
     keybinds: Option<KeybindsConfig>,
     context_menu: ContextMenus,
+    commands: CustomCommands,
     /// How long to wait between checks for work done outside the app, or
     /// None to only check when one is asked for.
     #[serde(deserialize_with = "deserialize_poll_interval")]
@@ -159,6 +161,7 @@ impl Default for JjConfigBlazingjj {
             layout: JJLayout::default(),
             keybinds: None,
             context_menu: ContextMenus::default(),
+            commands: CustomCommands::default(),
         }
     }
 }
@@ -321,6 +324,11 @@ impl JjConfig {
     /// says nothing about holds every item the app has.
     pub fn context_menu(&self) -> &ContextMenus {
         &self.blazingjj.context_menu
+    }
+
+    /// The commands of your own the configuration adds.
+    pub fn commands(&self) -> &CustomCommands {
+        &self.blazingjj.commands
     }
 
     pub fn poll_interval(&self) -> Option<Duration> {
@@ -507,7 +515,7 @@ pub struct DiffPager {
 /// program and its arguments.
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum ConfiguredCommandLine {
+pub enum ConfiguredCommandLine {
     Program(String),
     CommandLine(Vec<String>),
 }
@@ -515,7 +523,7 @@ enum ConfiguredCommandLine {
 impl ConfiguredCommandLine {
     /// The program to run and the arguments to run it with, refused when
     /// there is no program to run.
-    fn split(self) -> Result<(String, Vec<String>), &'static str> {
+    pub fn split(self) -> Result<(String, Vec<String>), &'static str> {
         match self {
             ConfiguredCommandLine::Program(program) => Ok((program, Vec::new())),
             ConfiguredCommandLine::CommandLine(mut command_line) => {

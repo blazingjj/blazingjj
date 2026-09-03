@@ -242,6 +242,7 @@ impl FilesTab {
         Some(AppAction::SetPopup(Box::new(files_context_menu(
             get_env().jj_config.clone(),
             anchor,
+            &self.selection(),
             file,
             self.open(file),
         ))))

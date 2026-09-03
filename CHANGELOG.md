@@ -62,6 +62,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `blazingjj.editor-url`, like `jj://$revision/$file`, adds opening the file
     at the revision shown to that question, for an editor that reads a
     revision itself, such as neovim with jj.nvim
+- `blazingjj.commands` adds commands of your own, which name what a tab has
+  selected by the same placeholders the command popup takes and go in a
+  context menu by being listed in `blazingjj.context-menu`. A command has its
+  output captured and put up, or takes the terminal over with
+  `interactive = true`; see [docs/commands.md](docs/commands.md)
 - What a tab's context menu holds and the order it holds it in is
   `blazingjj.context-menu`, one key per menu. A menu the configuration says
   nothing about holds every item the app comes with, which `defaults` stands

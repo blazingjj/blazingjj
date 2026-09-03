@@ -279,6 +279,7 @@ impl BookmarksTab {
         Some(AppAction::SetPopup(Box::new(bookmarks_context_menu(
             get_env().jj_config.clone(),
             anchor,
+            &self.selection(),
             self.selected_target(),
         ))))
     }

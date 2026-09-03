@@ -121,6 +121,7 @@ impl<'a> EvologTab<'a> {
         Some(AppAction::SetPopup(Box::new(evolog_context_menu(
             get_env().jj_config.clone(),
             anchor,
+            &self.selection(),
             &self.entry_panel.selected,
             &self.change,
         ))))

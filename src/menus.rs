@@ -19,7 +19,10 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use serde::Deserialize;
 
+use crate::app::command::Command;
+use crate::commands::CustomRun;
 use crate::env::JjConfig;
+use crate::selection::Selection;
 use crate::ui::AppAction;
 use crate::ui::dialog::Choice;
 use crate::ui::dialog::ChoicePopup;
@@ -174,11 +177,13 @@ fn ordered(menu: Menu, configured: Option<&[String]>) -> Vec<&str> {
 ///
 /// `items` are the items the selection has to offer, of which the ones
 /// the configuration asks for are listed, in the order it asks for
-/// them.
+/// them. An id that names none of them names a command of your own,
+/// which is run against `selection`.
 pub fn context_menu(
     config: &JjConfig,
     anchor: Option<Position>,
     menu: Menu,
+    selection: &Selection,
     items: Vec<Item>,
 ) -> ChoicePopup {
     let mut items = items;
@@ -186,11 +191,23 @@ pub fn context_menu(
     let mut unknown = Vec::new();
 
     for id in ordered(menu, config.context_menu().of(menu)) {
-        match items.iter().position(|item| item.id == id) {
-            Some(index) => {
-                let item = items.remove(index);
-                choices.push(Choice::new(item.label, item.action));
-            }
+        if let Some(index) = items.iter().position(|item| item.id == id) {
+            let item = items.remove(index);
+            choices.push(Choice::new(item.label, item.action));
+            continue;
+        }
+
+        // The app's own items come first, so a command of your own
+        // cannot take the name of one and be picked in its place.
+        match config.commands().get(id) {
+            Some(command) => choices.push(Choice::new(
+                Line::raw(command.label(id)),
+                AppAction::Run(Command::RunCustom(Box::new(CustomRun {
+                    name: id.to_owned(),
+                    command: command.clone(),
+                    selection: selection.clone(),
+                }))),
+            )),
             // An id the menu has an item for is one the selection has
             // nothing to offer, which is nothing to say anything about;
             // one it has no item for at all does not read.
@@ -302,7 +319,13 @@ mod tests {
 
         for menu in ALL {
             let items = menu.items().iter().copied().map(item).collect();
-            let popup = context_menu(&JjConfig::default(), None, menu, items);
+            let popup = context_menu(
+                &JjConfig::default(),
+                None,
+                menu,
+                &Selection::default(),
+                items,
+            );
 
             assert_eq!(
                 popup.labels(),
@@ -328,7 +351,13 @@ mod tests {
             toml::from_str("blazingjj.context-menu.files = [\"restore\", \"restroe\"]\n")
                 .expect("the configuration parses");
 
-        let popup = context_menu(&config, None, Menu::Files, vec![item("restore")]);
+        let popup = context_menu(
+            &config,
+            None,
+            Menu::Files,
+            &Selection::default(),
+            vec![item("restore")],
+        );
 
         assert_eq!(popup.labels(), ["restore"]);
         assert_eq!(
@@ -348,10 +377,65 @@ mod tests {
             &JjConfig::default(),
             None,
             Menu::Files,
+            &Selection::default(),
             vec![item("untrack")],
         );
 
         assert_eq!(popup.labels(), ["untrack"]);
         assert!(popup.footnote_text().is_empty());
+    }
+
+    /// A command of your own goes in a menu by the name it is
+    /// configured under, and says what it is called rather than what it
+    /// is named by wherever it says anything.
+    #[test]
+    fn an_id_naming_a_command_of_your_own_holds_it() {
+        set_test_env();
+        let config: JjConfig = toml::from_str(
+            "blazingjj.context-menu.files = [\"defaults\", \"reveal\", \"blame\"]\n\
+             blazingjj.commands.reveal = \"xdg-open\"\n\
+             [blazingjj.commands.blame]\n\
+             command = [\"jj\", \"file\", \"annotate\", \"$file\"]\n\
+             label = \"Blame\"\n",
+        )
+        .expect("the configuration parses");
+
+        let popup = context_menu(
+            &config,
+            None,
+            Menu::Files,
+            &Selection::default(),
+            vec![item("restore"), item("untrack")],
+        );
+
+        assert_eq!(popup.labels(), ["restore", "untrack", "reveal", "Blame"]);
+        assert!(popup.footnote_text().is_empty());
+    }
+
+    /// The app's own items come first, so that a command of your own
+    /// taking the name of one is not picked in its place.
+    #[test]
+    fn a_command_of_your_own_cannot_take_the_name_of_an_item() {
+        set_test_env();
+        let config: JjConfig = toml::from_str(
+            "[blazingjj.commands.restore]\n\
+             command = \"restore\"\n\
+             label = \"Mine\"\n",
+        )
+        .expect("the configuration parses");
+
+        let popup = context_menu(
+            &config,
+            None,
+            Menu::Files,
+            &Selection::default(),
+            vec![item("restore")],
+        );
+
+        assert_eq!(
+            popup.labels(),
+            ["restore"],
+            "the item is what `restore` holds"
+        );
     }
 }

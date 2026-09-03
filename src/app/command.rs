@@ -35,11 +35,14 @@ use crate::commander::new_commander;
 use crate::commander::operation::Operation;
 use crate::commander::program::Program;
 use crate::commander::revset::Revset;
+use crate::commands::CustomCommand;
+use crate::commands::CustomRun;
 use crate::env::Editor;
 use crate::env::EditorMode;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::PushScope;
+use crate::selection::Selection;
 use crate::ui::AppAction;
 use crate::ui::Interactive;
 use crate::ui::dialog::BookmarkNameMode;
@@ -176,6 +179,10 @@ pub enum Command {
     /// Update the working copy jj refuses to read the repo until it is
     /// updated.
     UpdateStaleWorkspace,
+    /// Run a command of your own against what the tab it was picked
+    /// from had selected, which the placeholders of the command stand
+    /// for.
+    RunCustom(Box<CustomRun>),
 }
 
 impl Command {
@@ -418,8 +425,48 @@ impl Command {
                 Ok(()) => Ok(Some(AppAction::ConfigChanged)),
                 Err(err) => Ok(Some(refused("Unset", err))),
             },
+            Command::RunCustom(run) => {
+                Ok(Some(run_custom(&run.name, &run.command, &run.selection)))
+            }
         }
     }
+}
+
+/// Run `command`, which is configured as `name`, against `selection`:
+/// with the terminal handed over to it, or with what it writes captured
+/// and put up.
+fn run_custom(name: &str, command: &CustomCommand, selection: &Selection) -> AppAction {
+    let said = |text: String| {
+        AppAction::SetPopup(Box::new(
+            MessagePopup::new(name.to_owned(), text).text_align(Alignment::Left),
+        ))
+    };
+
+    let program = match command.program(selection) {
+        Ok(program) => program,
+        Err(missing) => {
+            return said(format!("Nothing to run the command against\n\n{missing}"));
+        }
+    };
+
+    if command.is_interactive() {
+        return AppAction::RunInteractive(Interactive {
+            program,
+            hold_screen: true,
+        });
+    }
+
+    let report = match program.run_captured() {
+        Ok(written) if written.trim().is_empty() => None,
+        Ok(written) => Some(written),
+        Err(err) => Some(format!("Failed to run the command\n\n{err}")),
+    };
+    // The command may have moved the repo whatever it had to say about
+    // it, so the tabs read it again either way.
+    let mut actions = vec![AppAction::MarkTabsStale];
+    actions.extend(report.map(said));
+
+    AppAction::Multiple(actions)
 }
 
 /// Open `file` in the configured editor, having taken the working copy
