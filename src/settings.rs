@@ -7,6 +7,8 @@ expression `jj config set` takes, which is also what the configuration
 is checked against before anything is written.
 */
 
+use std::str::FromStr;
+
 use anyhow::Result;
 use anyhow::bail;
 
@@ -49,7 +51,19 @@ impl Setting {
     pub fn value_of(&self, input: &str) -> Result<String> {
         let value = match self.kind {
             SettingKind::Keybindings => bail!("The keybindings are not an option to type"),
-            SettingKind::Number => input.trim().to_owned(),
+            SettingKind::Number => {
+                let input = input.trim();
+                // TOML reads anything but a number here as text that
+                // was left unquoted, which says nothing about what the
+                // option takes.
+                match input {
+                    "" => bail!("The setting takes a number"),
+                    input if !is_number(input) => {
+                        bail!("The setting takes a number, not {input:?}")
+                    }
+                    input => input.to_owned(),
+                }
+            }
             SettingKind::Choice(_) | SettingKind::Text => {
                 toml::Value::String(input.to_owned()).to_string()
             }
@@ -99,6 +113,14 @@ impl Setting {
             _ => None,
         }
     }
+}
+
+/// Whether `input` is a number as TOML writes one.
+fn is_number(input: &str) -> bool {
+    matches!(
+        toml::Value::from_str(input),
+        Ok(toml::Value::Integer(_) | toml::Value::Float(_))
+    )
 }
 
 /// How many bindings `value` holds, counting the ones in the tables of
@@ -308,6 +330,23 @@ mod tests {
 
         assert_eq!(percent.value_of(" 40 ").unwrap(), "40");
         assert!(percent.value_of("half").is_err());
+    }
+
+    /// TOML reads what is not a number as text that was left unquoted,
+    /// which is not what to say to whoever typed it: what the option
+    /// wants is a number.
+    #[test]
+    fn what_is_not_a_number_is_refused_for_not_being_one() {
+        let percent = setting("blazingjj.layout-percent");
+
+        assert_eq!(
+            percent.value_of(" ").unwrap_err().to_string(),
+            "The setting takes a number"
+        );
+        assert_eq!(
+            percent.value_of("half").unwrap_err().to_string(),
+            "The setting takes a number, not \"half\""
+        );
     }
 
     /// A number the option cannot take is refused where it is typed,
