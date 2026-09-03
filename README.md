@@ -144,6 +144,9 @@ You can optionally configure the following options through your jj config:
 - `blazingjj.layout`: Changes the layout of the main and details panel. Can be `horizontal` (default) or `vertical`
 - `blazingjj.layout-percent`: Changes the layout split of the main page. Should be number between 0 and 100. Defaults to `50`
 - `blazingjj.layout-preserve-ratio`: Whether a resized terminal keeps the ratio the tab is split in, so that both panels grow and shrink, rather than the size of the main panel. Defaults to `true`
+- `blazingjj.context-menu`: What each tab's context menu holds and in which order, one key per menu: `jj config set --user blazingjj.context-menu.log '["defaults", "create-pr"]'`
+  - A menu the configuration says nothing about holds every item the app comes with; `defaults` in a menu of your own stands for those
+  - An item is named by the same name as the keybinding that runs it; [docs/context-menus.md](docs/context-menus.md) lists what every menu can hold
 - `blazingjj.poll-interval`: Seconds between checks for work done outside the app. Set to `0` to only check when asked. Defaults to `1`
   - What is found is picked up while the terminal window has no focus; while it has focus, the header's `R: refresh` hint turns red instead, as refreshing what is being read moves it
   - A terminal that does not report focus changes counts as always focused, so there the hint is all you get
