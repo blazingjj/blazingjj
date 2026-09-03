@@ -37,6 +37,7 @@ pub mod revset;
 
 use std::ffi::OsStr;
 use std::ffi::OsString;
+use std::fmt;
 use std::io;
 use std::io::Read;
 use std::io::Write;
@@ -69,6 +70,10 @@ use crate::env::get_env;
 /// it and `--allow-new` meant together, which is how we push
 const JJ_MIN_VERSION: &str = "0.42.0";
 const JJ_VERSION_IGNORE_HELP: &str = "If you want to continue anyway, use --ignore-jj-version";
+
+/// What jj says when it refuses to read a repo whose working copy has to
+/// be updated first.
+const STALE_WORKING_COPY: &str = "The working copy is stale";
 
 /// The narrowest width jj is told to limit secondary programs to. Anything
 /// below this is ignored, as those programs produce garbage output at that
@@ -128,6 +133,12 @@ pub struct Commander {
     // Used for testing
     pub jj_config_toml: Option<Vec<String>>,
     pub force_no_color: bool,
+}
+
+/// Whether a command failed because jj refuses to read the repo until
+/// the working copy is updated.
+pub fn is_stale_working_copy(err: &impl fmt::Display) -> bool {
+    format!("{err:#}").contains(STALE_WORKING_COPY)
 }
 
 /// Initialize a new [Commander] using [get_env]
@@ -246,6 +257,31 @@ impl Commander {
             ),
             Ok(_) => Ok(()), // found >= min, so jj is recent enough
         }
+    }
+
+    /// Whether jj refuses to read the repo until the working copy is
+    /// updated with [update_stale_workspace](Self::update_stale_workspace).
+    ///
+    /// Anything else that is wrong with the repo comes out as not being
+    /// stale, so that it is reported by whoever went on to read it.
+    #[instrument(level = "trace", skip(self))]
+    pub fn is_workspace_stale(&self) -> bool {
+        // Every read hits the check, so this asks for the least jj can
+        // answer with.
+        let read = self.jj(["log", "-r", "@", "--no-graph", "-T", "''"]).run();
+
+        read.err().is_some_and(|err| is_stale_working_copy(&err))
+    }
+
+    /// Update a stale working copy to the revision the repo has the
+    /// workspace on, and return what jj reports about it.
+    #[instrument(level = "trace", skip(self))]
+    pub fn update_stale_workspace(&self) -> Result<String> {
+        self.jj(["workspace", "update-stale"])
+            .verbose()
+            .with_stderr()
+            .run()
+            .context("Failed to update the working copy")
     }
 }
 
@@ -567,6 +603,7 @@ pub fn get_output_args(color: bool, quiet: bool) -> Vec<String> {
 
 #[cfg(test)]
 pub mod tests {
+    use std::fs;
     use std::time::Duration;
 
     use tempfile::TempDir;
@@ -638,6 +675,55 @@ pub mod tests {
         let test_repo = TestRepo::new()?;
 
         test_repo.commander.jj(["status"]).color().run()?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_stale_working_copy_is_recognized_and_updated() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let repo = &test_repo.commander;
+        assert!(!repo.is_workspace_stale());
+
+        // A workspace goes stale when the repo is taken back to before
+        // the working copy it has recorded, which is what another
+        // workspace undoing its own work does to it.
+        let workspace_directory = TempDir::with_prefix("blazingjj-workspace")?;
+        let workspace_path = workspace_directory.path().join("other");
+        repo.jj([
+            OsStr::new("workspace"),
+            OsStr::new("add"),
+            workspace_path.as_os_str(),
+        ])
+        .run_void()?;
+        let before = repo
+            .jj(["op", "log", "-n1", "--no-graph", "-T", "self.id()"])
+            .ignore_working_copy()
+            .run()?;
+
+        let mut workspace = repo.clone();
+        workspace.env.root = workspace_path.to_string_lossy().into_owned();
+        fs::write(workspace_path.join("README"), b"AAA")?;
+        workspace.jj(["commit", "-m", "work"]).run_void()?;
+        assert!(!workspace.is_workspace_stale());
+
+        repo.jj(["op", "restore", &before]).run_void()?;
+        assert!(workspace.is_workspace_stale());
+
+        // A read that fails on it says so, wherever it is made from, and
+        // a failure of any other kind is not taken for it.
+        let stale = workspace
+            .get_current_head()
+            .expect_err("jj will not read a stale workspace");
+        assert!(is_stale_working_copy(&stale), "{stale:#}");
+        let refused = repo
+            .jj(["log", "-r", "nosuchrevision"])
+            .run()
+            .expect_err("the revset names nothing");
+        assert!(!is_stale_working_copy(&refused), "{refused:#}");
+
+        workspace.update_stale_workspace()?;
+        assert!(!workspace.is_workspace_stale());
 
         Ok(())
     }

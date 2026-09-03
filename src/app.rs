@@ -24,6 +24,7 @@ use tracing::instrument;
 use tracing::trace;
 use tracing::warn;
 
+use crate::app::command::ask_update_stale_workspace;
 use crate::app::repo_watch::Check;
 use crate::app::repo_watch::Moment;
 use crate::app::repo_watch::RepoWatch;
@@ -32,6 +33,7 @@ use crate::background_tasks::TaskOutput;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
 use crate::commander::ids::OperationId;
+use crate::commander::is_stale_working_copy;
 use crate::commander::new_commander;
 use crate::env::get_env;
 use crate::env::reload_env;
@@ -238,6 +240,9 @@ pub struct App<'a> {
     popup_keybinds: PopupKeybinds,
 
     repo_watch: RepoWatch,
+    /// Whether jj refuses to read the repo until the working copy is
+    /// updated, which the user has been asked about.
+    stale_workspace: bool,
 
     /// Interactive command queued by a component for the main loop to run
     /// after restoring the terminal.
@@ -278,6 +283,7 @@ impl<'a> App<'a> {
             popup_keybinds: PopupKeybinds::dialog(),
 
             repo_watch: RepoWatch::new(get_env().jj_config.poll_interval(), Instant::now()),
+            stale_workspace: false,
             pending_interactive: None,
 
             running,
@@ -372,13 +378,35 @@ impl<'a> App<'a> {
 
         let stale = self.get_current_tab().is_stale();
         let hint_changed = self.repo_watch.leave_stale(stale);
-        if self.repo_watch.waiting_for_refresh() || !stale {
+        // A stale working copy is one the user has been asked about, and
+        // jj reads nothing until it is updated, so the tabs stay behind
+        // rather than asking again for every frame.
+        if self.repo_watch.waiting_for_refresh() || !stale || self.stale_workspace {
             return Ok(hint_changed);
         }
 
-        self.get_current_tab().refresh()?;
+        if let Err(err) = self.get_current_tab().refresh() {
+            if !is_stale_working_copy(&err) {
+                return Err(err);
+            }
+            self.ask_about_stale_workspace()?;
+        }
 
         Ok(true)
+    }
+
+    /// Put the question whether to update a stale working copy, which jj
+    /// refuses to read the repo until. It is only asked once, as a no is
+    /// an answer to leave alone until the repo can be read again.
+    fn ask_about_stale_workspace(&mut self) -> Result<()> {
+        // Whatever else is up was asked for, so it stays and the
+        // question comes back with the next read that fails.
+        if self.stale_workspace || self.popup.is_some() {
+            return Ok(());
+        }
+        self.stale_workspace = true;
+
+        self.handle_action(ask_update_stale_workspace(get_env().jj_config.clone()))
     }
 
     /// Read what operation the repo is at, keeping the slot until the
@@ -396,9 +424,18 @@ impl<'a> App<'a> {
 
     /// Take what a check found and mark every tab stale if the repo has
     /// moved since the last one.
-    fn repo_checked(&mut self, output: TaskOutput) {
+    fn repo_checked(&mut self, output: TaskOutput) -> Result<()> {
         let op_id = match output {
-            Ok(op_id) => Some(OperationId(op_id)),
+            Ok(op_id) => {
+                // The repo reads, so whatever was stale about the
+                // working copy has been dealt with.
+                self.stale_workspace = false;
+                Some(OperationId(op_id))
+            }
+            Err(err) if is_stale_working_copy(&err) => {
+                self.ask_about_stale_workspace()?;
+                None
+            }
             Err(err) => {
                 warn!("Could not read what the repo is at: {err}");
                 None
@@ -409,6 +446,8 @@ impl<'a> App<'a> {
             trace!("The repo has moved, so every tab is stale");
             self.mark_all_stale();
         }
+
+        Ok(())
     }
 
     /// Take up the configuration as it now reads, which every tab and
@@ -726,7 +765,7 @@ impl<'a> App<'a> {
             // The check is the app's own, and puts nothing on screen
             // itself.
             TaskSlot::RepoOpId => {
-                self.repo_checked(result.output);
+                self.repo_checked(result.output)?;
                 return Ok(Handled::Nothing);
             }
             TaskSlot::CommitShow(tab, _)
@@ -893,6 +932,10 @@ impl<'a> App<'a> {
                                     snapshot: true,
                                     ours: true,
                                 });
+                                // Asking for a read is asking to be told
+                                // again should it be a stale working copy
+                                // that stands in the way.
+                                self.stale_workspace = false;
                                 self.get_current_tab().drop_caches();
                                 // The check above is the one we want, so
                                 // there is nothing left but to have every

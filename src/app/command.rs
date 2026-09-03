@@ -173,6 +173,9 @@ pub enum Command {
     UnsetSetting {
         key: String,
     },
+    /// Update the working copy jj refuses to read the repo until it is
+    /// updated.
+    UpdateStaleWorkspace,
 }
 
 impl Command {
@@ -315,6 +318,12 @@ impl Command {
                 TaskSlot::GitFetch,
                 move || Ok(new_commander().git_fetch(all_remotes)?),
             ))),
+            Command::UpdateStaleWorkspace => match new_commander().update_stale_workspace() {
+                // The working copy is where the repo says it is now,
+                // which is not where any tab last read it.
+                Ok(_) => Ok(Some(repo_moved()?)),
+                Err(err) => Ok(Some(refused("Update", err))),
+            },
             Command::RestoreOperation(id) => match new_commander().run_op_restore(&id) {
                 Ok(()) => Ok(Some(repo_moved()?)),
                 Err(err) => Ok(Some(refused("Restore", err))),
@@ -923,6 +932,22 @@ pub fn ask_set_bookmark(config: JjConfig, bookmark: &Bookmark, head: &Head) -> A
             commit_id: head.commit_id.clone(),
             dialog: None,
         },
+    )
+}
+
+/// Asking whether to update a stale working copy, which jj refuses to
+/// read the repo until.
+pub fn ask_update_stale_workspace(config: JjConfig) -> AppAction {
+    confirm(
+        config,
+        "Stale working copy",
+        Text::from(vec![
+            Line::from("The working copy is stale: the repo has moved on since it was last"),
+            Line::from("updated, and jj reads nothing here until it is updated."),
+            Line::from(""),
+            Line::from("Update it now?"),
+        ]),
+        Command::UpdateStaleWorkspace,
     )
 }
 

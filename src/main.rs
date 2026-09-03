@@ -4,6 +4,7 @@ use std::env::current_dir;
 use std::fs::OpenOptions;
 use std::fs::canonicalize;
 use std::io::ErrorKind;
+use std::io::Write;
 use std::io::{self};
 use std::process::Command;
 use std::time::Duration;
@@ -44,6 +45,7 @@ mod ui;
 use crate::app::App;
 use crate::app::Handled;
 use crate::commander::Commander;
+use crate::commander::new_commander;
 use crate::env::Env;
 use crate::env::set_env;
 use crate::interrupt::catch_interrupts;
@@ -74,6 +76,12 @@ struct Args {
 fn main() -> Result<()> {
     // Setup environment
     set_env(init_env()?);
+
+    // A stale working copy has to be dealt with before anything can
+    // read the repo.
+    if !update_stale_workspace()? {
+        return Ok(());
+    }
 
     // Setup app
     let mut app = App::new()?;
@@ -166,6 +174,29 @@ fn init_env() -> Result<Env> {
 
     // Return initialized environment
     Ok(env)
+}
+
+/// Offer to update the working copy if it is stale, which jj refuses to
+/// read the repo until, and report whether the app can go on.
+fn update_stale_workspace() -> Result<bool> {
+    let commander = new_commander();
+    if !commander.is_workspace_stale() {
+        return Ok(true);
+    }
+
+    println!("The working copy is stale: the repo has moved on since it was last updated.");
+    print!("Update it now? [y/N] ");
+    io::stdout().flush()?;
+
+    let mut answer = String::new();
+    io::stdin().read_line(&mut answer)?;
+    if !matches!(answer.trim(), "y" | "Y" | "yes") {
+        return Ok(false);
+    }
+
+    print!("{}", commander.update_stale_workspace()?);
+
+    Ok(true)
 }
 
 fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
