@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `blazingjj.editor-url`, like `jj://$revision/$file`, adds opening the file
     at the revision shown to that question, for an editor that reads a
     revision itself, such as neovim with jj.nvim
+- The settings tab's `blazingjj.commands` row opens the commands of your own,
+  where `Enter` changes what one runs, `l` what a menu calls it, `i` whether
+  the terminal is handed over to it, `n` adds one and `x` takes one out of
+  your config
 - `blazingjj.commands` adds commands of your own, which name what a tab has
   selected by the same placeholders the command popup takes and go in a
   context menu by being listed in `blazingjj.context-menu`. A command has its

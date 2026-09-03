@@ -43,6 +43,16 @@ pub enum Menu {
 }
 
 impl Menu {
+    /// Every menu there is, in the order the tabs they belong to come
+    /// in.
+    pub const ALL: [Self; 5] = [
+        Self::Log,
+        Self::Files,
+        Self::Bookmarks,
+        Self::Evolog,
+        Self::OpLog,
+    ];
+
     /// The key under `blazingjj.context-menu` it is configured by.
     pub fn key(self) -> &'static str {
         match self {
@@ -238,15 +248,6 @@ mod tests {
     use crate::commander::log::Head;
     use crate::env::set_test_env;
 
-    /// Every menu there is, for the tests that hold for all of them.
-    const ALL: [Menu; 5] = [
-        Menu::Log,
-        Menu::Files,
-        Menu::Bookmarks,
-        Menu::Evolog,
-        Menu::OpLog,
-    ];
-
     /// An item naming itself, so that a test can tell which ones a menu
     /// holds and in which order.
     fn item(id: &'static str) -> Item {
@@ -317,7 +318,7 @@ mod tests {
     fn every_item_a_menu_comes_holding_is_one_it_can_build() {
         set_test_env();
 
-        for menu in ALL {
+        for menu in Menu::ALL {
             let items = menu.items().iter().copied().map(item).collect();
             let popup = context_menu(
                 &JjConfig::default(),

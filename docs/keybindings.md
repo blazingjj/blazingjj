@@ -225,3 +225,15 @@ disable = "shift+x"
 unset = "x"
 back = "esc"
 ```
+
+### Commands tab
+
+```toml
+[blazingjj.keybinds.commands-tab]
+change-command-line = "enter"
+change-label = "l"
+toggle-interactive = "i"
+add = "n"
+unset = "x"
+back = "esc"
+```

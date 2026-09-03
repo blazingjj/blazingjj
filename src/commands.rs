@@ -23,6 +23,8 @@ show-marked = ["jj", "show", "$marked"]
 
 use std::collections::BTreeMap;
 
+use anyhow::Result;
+use anyhow::anyhow;
 use serde::Deserialize;
 
 use crate::commander::program::Program;
@@ -101,6 +103,99 @@ impl CustomCommand {
 
         Ok(Program::new(&self.program, env.root.clone()).args(selection.substitute(&self.args)?))
     }
+
+    /// The config key it is configured under, for the name it goes by.
+    pub fn key(name: &str) -> String {
+        format!("blazingjj.commands.{name}")
+    }
+
+    /// The command line as it reads: the program and its arguments, a
+    /// space between each, the way a configured pager reads.
+    pub fn command_line(&self) -> String {
+        let mut words = vec![self.program.as_str()];
+        words.extend(self.args.iter().map(String::as_str));
+
+        words.join(" ")
+    }
+
+    /// What a menu holding it says, or None to go by its name.
+    pub fn configured_label(&self) -> Option<&str> {
+        self.label.as_deref()
+    }
+
+    /// The command running `command_line`, with nothing else said about
+    /// it: a command captures its output and goes by its name until it
+    /// says otherwise.
+    pub fn to_run(command_line: &str) -> Result<Self> {
+        Self {
+            program: String::new(),
+            args: Vec::new(),
+            label: None,
+            interactive: false,
+        }
+        .with_command_line(command_line)
+    }
+
+    /// The command with `command_line` to run, which is taken apart at
+    /// whitespace, so an argument that holds any has to be written in
+    /// the config file itself. A command line with no program to run is
+    /// refused.
+    pub fn with_command_line(&self, command_line: &str) -> Result<Self> {
+        let words: Vec<String> = command_line.split_whitespace().map(str::to_owned).collect();
+        let (program, args) = ConfiguredCommandLine::CommandLine(words)
+            .split()
+            .map_err(|err| anyhow!("{err}"))?;
+
+        Ok(Self {
+            program,
+            args,
+            ..self.clone()
+        })
+    }
+
+    /// The command a menu says `label` for, going by its name again
+    /// where `label` says nothing.
+    pub fn with_label(&self, label: &str) -> Self {
+        Self {
+            label: Some(label.trim().to_owned()).filter(|label| !label.is_empty()),
+            ..self.clone()
+        }
+    }
+
+    /// The command run the other way round: with the terminal handed
+    /// over to it if its output was captured, and the other way about.
+    pub fn toggled_interactive(&self) -> Self {
+        Self {
+            interactive: !self.interactive,
+            ..self.clone()
+        }
+    }
+
+    /// The TOML expression it is written as, which is the command line
+    /// on its own where there is nothing else to say about it.
+    pub fn value(&self) -> String {
+        let command_line = toml::Value::Array(
+            std::iter::once(&self.program)
+                .chain(self.args.iter())
+                .map(|word| toml::Value::String(word.clone()))
+                .collect(),
+        );
+
+        let mut table = toml::Table::new();
+        table.insert("command".to_owned(), command_line.clone());
+        if let Some(label) = self.label.as_ref() {
+            table.insert("label".to_owned(), toml::Value::String(label.clone()));
+        }
+        if self.interactive {
+            table.insert("interactive".to_owned(), toml::Value::Boolean(true));
+        }
+
+        if table.len() == 1 {
+            return command_line.to_string();
+        }
+
+        toml::Value::Table(table).to_string()
+    }
 }
 
 /// A command of your own to run, and what a tab had selected when it
@@ -125,6 +220,11 @@ impl CustomCommands {
     /// name.
     pub fn get(&self, name: &str) -> Option<&CustomCommand> {
         self.0.get(name)
+    }
+
+    /// Every command there is, by name, in the order the names sort in.
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &CustomCommand)> {
+        self.0.iter()
     }
 }
 

@@ -146,7 +146,9 @@ configuration says now, whichever file it comes from, and writes to the user
 config file; a setting that comes from anywhere else has to be changed there.
 Its `blazingjj.keybinds` row opens the keybindings, which are changed there one
 action at a time; [docs/keybindings.md](docs/keybindings.md) says what they are
-and how to write them out yourself.
+and how to write them out yourself. Its `blazingjj.commands` row opens the
+commands of your own, which are added and changed there one at a time; see
+[docs/commands.md](docs/commands.md).
 
 ## Usage
 
