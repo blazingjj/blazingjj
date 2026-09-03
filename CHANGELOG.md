@@ -214,6 +214,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A stale working copy no longer makes the app fail to start: it asks whether
   to update it, and quits if you would rather do it yourself
+- A working copy that goes stale while the app is running now puts the same
+  question up, rather than taking the app down or leaving jj's error where
+  the panels should be. Saying no leaves the tabs where they are until the
+  next refresh
 - `@` in the bookmarks tab now goes to the bookmark on the working copy, or to
   the one it is standing on, rather than doing nothing while the help offers it
 - A keybinding on Home, End or the space bar now shows the key's name rather

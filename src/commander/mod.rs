@@ -37,6 +37,7 @@ pub mod revset;
 
 use std::ffi::OsStr;
 use std::ffi::OsString;
+use std::fmt;
 use std::io;
 use std::io::Read;
 use std::io::Write;
@@ -132,6 +133,12 @@ pub struct Commander {
     // Used for testing
     pub jj_config_toml: Option<Vec<String>>,
     pub force_no_color: bool,
+}
+
+/// Whether a command failed because jj refuses to read the repo until
+/// the working copy is updated.
+pub fn is_stale_working_copy(err: &impl fmt::Display) -> bool {
+    format!("{err:#}").contains(STALE_WORKING_COPY)
 }
 
 /// Initialize a new [Commander] using [get_env]
@@ -263,7 +270,7 @@ impl Commander {
         // answer with.
         let read = self.jj(["log", "-r", "@", "--no-graph", "-T", "''"]).run();
 
-        matches!(read, Err(CommandError::Status(err, _)) if err.contains(STALE_WORKING_COPY))
+        read.err().is_some_and(|err| is_stale_working_copy(&err))
     }
 
     /// Update a stale working copy to the revision the repo has the
@@ -702,6 +709,18 @@ pub mod tests {
 
         repo.jj(["op", "restore", &before]).run_void()?;
         assert!(workspace.is_workspace_stale());
+
+        // A read that fails on it says so, wherever it is made from, and
+        // a failure of any other kind is not taken for it.
+        let stale = workspace
+            .get_current_head()
+            .expect_err("jj will not read a stale workspace");
+        assert!(is_stale_working_copy(&stale), "{stale:#}");
+        let refused = repo
+            .jj(["log", "-r", "nosuchrevision"])
+            .run()
+            .expect_err("the revset names nothing");
+        assert!(!is_stale_working_copy(&refused), "{refused:#}");
 
         workspace.update_stale_workspace()?;
         assert!(!workspace.is_workspace_stale());
