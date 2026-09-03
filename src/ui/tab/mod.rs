@@ -2,6 +2,7 @@
  */
 
 pub mod bookmarks;
+mod commands;
 mod evolog;
 pub mod files;
 mod keybindings;
@@ -11,6 +12,7 @@ mod settings;
 mod styles;
 
 pub use bookmarks::BookmarksTab;
+pub use commands::CommandsTab;
 pub use evolog::EvologTab;
 pub use files::FilesTab;
 pub use keybindings::KeybindingsTab;

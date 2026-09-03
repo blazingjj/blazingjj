@@ -80,5 +80,15 @@ not picked in its place; [context-menus.md](context-menus.md) lists the names
 every menu already has. A name that is neither an item nor a command of your
 own is listed under the menu in red.
 
-The settings tab (`0`) does the same from within blazingjj, on the
-`blazingjj.commands` row.
+## From within blazingjj
+
+The settings tab (`0`) does all of this from within blazingjj. Its
+`blazingjj.commands` row opens the list of your commands, which says what each
+one runs, how it is run and which menus hold it, and what the placeholders
+stand for. There, `Enter` changes what a command runs, `l` what a menu calls
+it, `i` whether the terminal is handed over to it, `n` adds one under a name
+you give and `x` takes one out of your config.
+
+A command is one config key holding more than any one thing to type, so what
+is written is the whole of it every time: changing what a command runs keeps
+its label and leaves it as interactive as it was.
