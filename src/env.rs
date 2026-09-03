@@ -115,6 +115,7 @@ pub struct JjConfig {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case", default)]
 pub struct JjConfigBlazingjj {
+    #[serde(deserialize_with = "deserialize_highlight_color")]
     highlight_color: Color,
     describe_mode: DescribeMode,
     diff_format: Option<ConfiguredDiffFormat>,
@@ -159,24 +160,44 @@ impl Default for JjConfigBlazingjj {
     }
 }
 
+/// Reads a colour, of which ratatui says only that it failed to parse
+/// one, leaving out what one looks like.
+fn deserialize_highlight_color<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Color, D::Error> {
+    let text = String::deserialize(deserializer)?;
+
+    text.parse().map_err(|_| {
+        de::Error::custom(format!(
+            "{text:?} is neither a colour name nor a #rrggbb code"
+        ))
+    })
+}
+
 /// Reads a share of a tab, which is refused above the whole of it: a
 /// share the panels cannot be divided in is one to say something about
 /// where it is set rather than one to make what we can of.
 fn deserialize_layout_percent<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u16, D::Error> {
-    let percent = u16::deserialize(deserializer)?;
-    if percent > 100 {
-        return Err(de::Error::custom("a share of a tab is 100 percent at most"));
-    }
-
-    Ok(percent)
+    // Whichever way a number misses, what to say about it is the same,
+    // so we read it as a value and say the range rather than letting
+    // serde report the type it does not fit in.
+    toml::Value::deserialize(deserializer)?
+        .as_integer()
+        .and_then(|percent| u16::try_from(percent).ok())
+        .filter(|percent| *percent <= 100)
+        .ok_or_else(|| de::Error::custom("a share of a tab is a whole number from 0 to 100"))
 }
 
 /// Reads a number of seconds, of which zero means never checking.
 fn deserialize_poll_interval<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Duration>, D::Error> {
-    let seconds = f64::deserialize(deserializer)?;
-    let interval = Duration::try_from_secs_f64(seconds).map_err(de::Error::custom)?;
+    let seconds = toml::Value::deserialize(deserializer)?;
+    let interval = seconds
+        .as_float()
+        .or_else(|| seconds.as_integer().map(|seconds| seconds as f64))
+        .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
+        .ok_or_else(|| de::Error::custom("an interval is a number of seconds, 0 or more"))?;
 
     Ok(Some(interval).filter(|interval| !interval.is_zero()))
 }
@@ -825,6 +846,34 @@ mod tests {
         // that names nothing the setting can be.
         assert!(check_config_value("blazingjj.layout-percent", "\"40\"").is_err());
         assert!(check_config_value("blazingjj.layout", "\"sideways\"").is_err());
+    }
+
+    /// A value is refused for what the setting takes rather than for the
+    /// type it is read into, that being what whoever typed it can do
+    /// something about.
+    #[test]
+    fn a_refused_value_says_what_the_setting_takes() {
+        let refusal = |key, value| {
+            let error = check_config_value(key, value).expect_err("the value is refused");
+
+            format!("{error:#}")
+        };
+
+        for percent in ["40.5", "-3", "101"] {
+            assert_eq!(
+                refusal("blazingjj.layout-percent", percent),
+                "The setting cannot take that value: a share of a tab is a whole number from 0 to 100",
+                "{percent}"
+            );
+        }
+        assert_eq!(
+            refusal("blazingjj.poll-interval", "-1"),
+            "The setting cannot take that value: an interval is a number of seconds, 0 or more"
+        );
+        assert_eq!(
+            refusal("blazingjj.highlight-color", "\"chartreuse\""),
+            "The setting cannot take that value: \"chartreuse\" is neither a colour name nor a #rrggbb code"
+        );
     }
 
     #[test]
