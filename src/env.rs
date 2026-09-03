@@ -28,6 +28,7 @@ use crate::commander::MIN_SETTABLE_WIDTH;
 use crate::commander::RemoveEndLine;
 use crate::commander::get_output_args;
 use crate::keybinds::KeybindsConfig;
+use crate::menus::ContextMenus;
 
 /// Singleton holding application environment.
 ///
@@ -132,6 +133,7 @@ pub struct JjConfigBlazingjj {
     #[serde(deserialize_with = "deserialize_layout_percent")]
     layout_percent: u16,
     keybinds: Option<KeybindsConfig>,
+    context_menu: ContextMenus,
     /// How long to wait between checks for work done outside the app, or
     /// None to only check when one is asked for.
     #[serde(deserialize_with = "deserialize_poll_interval")]
@@ -156,6 +158,7 @@ impl Default for JjConfigBlazingjj {
             bookmark_template: None,
             layout: JJLayout::default(),
             keybinds: None,
+            context_menu: ContextMenus::default(),
         }
     }
 }
@@ -312,6 +315,12 @@ impl JjConfig {
 
     pub fn keybinds(&self) -> Option<&KeybindsConfig> {
         self.blazingjj.keybinds.as_ref()
+    }
+
+    /// What the context menus hold, of which a menu the configuration
+    /// says nothing about holds every item the app has.
+    pub fn context_menu(&self) -> &ContextMenus {
+        &self.blazingjj.context_menu
     }
 
     pub fn poll_interval(&self) -> Option<Duration> {

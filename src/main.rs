@@ -40,6 +40,7 @@ mod env;
 mod event;
 mod interrupt;
 mod keybinds;
+mod menus;
 mod selection;
 mod settings;
 mod ui;
