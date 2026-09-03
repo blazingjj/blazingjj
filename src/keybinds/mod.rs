@@ -5,6 +5,8 @@ pub use bookmark_set_popup::BookmarkSetPopupEvent;
 pub use bookmark_set_popup::BookmarkSetPopupKeybinds;
 pub use bookmarks_tab::BookmarksTabEvent;
 pub use bookmarks_tab::BookmarksTabKeybinds;
+pub use commands_tab::CommandsTabEvent;
+pub use commands_tab::CommandsTabKeybinds;
 pub use config::Keybind;
 pub use config::KeybindsConfig;
 pub use confirm_popup::ConfirmPopupEvent;
@@ -39,6 +41,7 @@ use crate::env::keybinds_config;
 
 mod bookmark_set_popup;
 mod bookmarks_tab;
+mod commands_tab;
 mod config;
 mod confirm_popup;
 mod details_panel;
@@ -121,6 +124,7 @@ pub enum Context {
     SettingsTab,
     KeybindingsTab,
     StylesTab,
+    CommandsTab,
     DetailsPanel,
     Popup,
     TextPopup,
@@ -131,7 +135,7 @@ pub enum Context {
 
 impl Context {
     /// Every context, in the order the keybindings are listed in
-    pub const ORDER: [Self; 15] = [
+    pub const ORDER: [Self; 16] = [
         Self::Global,
         Self::LogTab,
         Self::FilesTab,
@@ -141,6 +145,7 @@ impl Context {
         Self::SettingsTab,
         Self::KeybindingsTab,
         Self::StylesTab,
+        Self::CommandsTab,
         Self::DetailsPanel,
         Self::Popup,
         Self::TextPopup,
@@ -160,6 +165,7 @@ impl Context {
             Self::SettingsTab => "Settings tab",
             Self::KeybindingsTab => "Keybindings tab",
             Self::StylesTab => "Styles tab",
+            Self::CommandsTab => "Commands tab",
             Self::DetailsPanel => "Details panel",
             Self::Popup => "Popups",
             Self::TextPopup => "Popups holding a text field",
@@ -183,6 +189,7 @@ impl Context {
             Self::SettingsTab => Some("settings-tab"),
             Self::KeybindingsTab => Some("keybindings-tab"),
             Self::StylesTab => Some("styles-tab"),
+            Self::CommandsTab => Some("commands-tab"),
             Self::DetailsPanel => Some("details-panel"),
             Self::Popup => Some("popup"),
             Self::TextPopup => Some("text-popup"),
@@ -214,7 +221,7 @@ impl Context {
             Context::EvologTab,
             Context::OpLogTab,
         ];
-        const IN_A_TAB: [Context; 8] = [
+        const IN_A_TAB: [Context; 9] = [
             Context::LogTab,
             Context::FilesTab,
             Context::BookmarksTab,
@@ -222,6 +229,7 @@ impl Context {
             Context::OpLogTab,
             Context::SettingsTab,
             Context::KeybindingsTab,
+            Context::CommandsTab,
             Context::DetailsPanel,
         ];
         const IN_A_POPUP: [Context; 4] = [
@@ -242,7 +250,9 @@ impl Context {
             | Self::EvologTab
             | Self::OpLogTab => &[Self::Global, Self::DetailsPanel],
             // The tabs about the app have no details panel beside them.
-            Self::SettingsTab | Self::KeybindingsTab | Self::StylesTab => &[Self::Global],
+            Self::SettingsTab | Self::KeybindingsTab | Self::StylesTab | Self::CommandsTab => {
+                &[Self::Global]
+            }
             Self::Popup => &IN_A_POPUP,
             Self::ConfirmPopup | Self::BookmarkSetPopup | Self::RebasePopup => &[Self::Popup],
             Self::TextPopup => &[],
@@ -266,6 +276,7 @@ impl Context {
             Self::SettingsTab => SettingsTabKeybinds::from_config(config).bindings(),
             Self::KeybindingsTab => KeybindingsTabKeybinds::from_config(config).bindings(),
             Self::StylesTab => StylesTabKeybinds::from_config(config).bindings(),
+            Self::CommandsTab => CommandsTabKeybinds::from_config(config).bindings(),
             Self::DetailsPanel => DetailsPanelKeybinds::from_config(config).bindings(),
             Self::Popup => PopupKeybinds::dialog_from_config(config).bindings(),
             Self::TextPopup => PopupKeybinds::text_from_config(config).text_bindings(),
