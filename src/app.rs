@@ -3,6 +3,7 @@ mod repo_watch;
 
 use core::fmt;
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -25,6 +26,7 @@ use tracing::warn;
 
 use crate::app::command::ask_update_stale_workspace;
 use crate::app::command::refuse_outdated_view;
+use crate::app::command::refused;
 use crate::app::repo_watch::Check;
 use crate::app::repo_watch::Moment;
 use crate::app::repo_watch::Moved;
@@ -36,8 +38,10 @@ use crate::background_tasks::TaskSlot;
 use crate::commander::ids::OperationId;
 use crate::commander::is_stale_working_copy;
 use crate::commander::new_commander;
+use crate::env::Env;
 use crate::env::get_env;
 use crate::env::reload_env;
+use crate::env::set_env;
 use crate::event::AppEvent;
 use crate::event::Clicks;
 use crate::event::EventSource;
@@ -582,6 +586,54 @@ impl<'a> App<'a> {
         self.pending_interactive.take()
     }
 
+    /// Work in the workspace at `root` from now on: every command of
+    /// ours goes there, and everything on screen is read again from it.
+    fn work_in(&mut self, root: &str) -> Result<()> {
+        let env = get_env();
+        let moved_to = Env::new(
+            PathBuf::from(root),
+            env.default_revset.clone(),
+            env.jj_bin.clone(),
+        );
+        let moved_to = match moved_to {
+            Ok(moved_to) => moved_to,
+            // We are still in the workspace we were in.
+            Err(err) => return self.handle_action(refused("Switch", err)),
+        };
+        set_env(moved_to);
+        // What is in flight answers for the workspace we have left, the
+        // repo check included, uninterruptible as it is.
+        self.background_tasks.cancel_interruptible();
+        self.background_tasks.cancel(&TaskSlot::RepoOpId);
+
+        // Our own move, so catch up rather than leave the tabs stale.
+        self.repo_watch
+            .set_interval(get_env().jj_config.poll_interval());
+        self.repo_watch.catching_up();
+        self.repo_watch.ask_check(Check {
+            snapshot: true,
+            ours: true,
+        });
+        // Whatever the workspace we have left had to say about its
+        // working copy is nothing to go by here.
+        self.stale_workspace = false;
+        // The workspace has a configuration of its own.
+        self.config_changed();
+        self.drop_all_caches();
+        self.mark_all_stale();
+        // The working copy is what the two workspaces differ in, so it
+        // is what the log goes to. Being the one thing we read right
+        // away, it is also where a stale workspace first refuses us.
+        if let Err(err) = self.log.focus_current() {
+            if !is_stale_working_copy(&err) {
+                return Err(err);
+            }
+            self.ask_about_stale_workspace()?;
+        }
+
+        Ok(())
+    }
+
     /// Have every tab read the repo again.
     pub fn catch_up_with_repo(&mut self) -> Result<()> {
         self.handle_action(AppAction::MarkTabsStale)
@@ -651,6 +703,9 @@ impl<'a> App<'a> {
             }
             AppAction::RunInteractive(interactive) => {
                 self.pending_interactive = Some(interactive);
+            }
+            AppAction::WorkIn(root) => {
+                self.work_in(&root)?;
             }
             AppAction::ConfigChanged => {
                 // The environment we are leaving stays where it is, so

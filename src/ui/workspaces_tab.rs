@@ -233,6 +233,11 @@ impl WorkspacesTab {
                     return Ok(Some(command::ask_forget_workspace(workspace)));
                 }
             }
+            WorkspacesTabEvent::Switch => {
+                if let Some(workspace) = self.selected_workspace() {
+                    return Ok(Some(command::switch_workspace(workspace)));
+                }
+            }
             // Not an operation of its own; the key handler deals with it.
             WorkspacesTabEvent::Unbound => {}
         }
@@ -433,13 +438,20 @@ impl Component for WorkspacesTab {
             MouseInput::Select(index) => {
                 self.select_line(index);
             }
+            // A double click is the second of two presses that selected
+            // the workspace, so it only has the switch left to ask for.
+            MouseInput::Activate => {
+                if let Some(workspace) = self.selected_workspace() {
+                    return Ok(Some(command::switch_workspace(workspace)).into());
+                }
+            }
             MouseInput::Copy(text) => return Ok(copy_marked(text)),
             MouseInput::Context(index) => {
                 if self.select_line(index) {
                     return Ok(Some(self.context_menu(Some(mouse.position()))).into());
                 }
             }
-            MouseInput::Activate | MouseInput::Handled => {}
+            MouseInput::Handled => {}
             MouseInput::NotHandled => return Ok(ComponentInputResult::NotHandled),
         }
 

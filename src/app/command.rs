@@ -1117,6 +1117,29 @@ pub fn ask_forget_workspace(workspace: &Workspace) -> AppAction {
     )
 }
 
+/// Work in `workspace` from now on, or say why we cannot: it is the one
+/// we are in, or we do not know its directory.
+pub fn switch_workspace(workspace: &Workspace) -> AppAction {
+    if workspace.current {
+        return message(
+            "Switch",
+            "This is the workspace blazingjj is already running in.",
+        );
+    }
+    let Some(root) = workspace.root.clone() else {
+        return message(
+            "Switch",
+            format!(
+                "{}, so there is nowhere for us to run. Start blazingjj in that \
+                 directory to work in it.",
+                unknown_root(&workspace.name)
+            ),
+        );
+    };
+
+    AppAction::WorkIn(root)
+}
+
 /// How a refusal opens where the repo does not say what directory the
 /// workspace of this name is in.
 fn unknown_root(name: &str) -> String {
@@ -1205,7 +1228,7 @@ fn message(title: &'static str, text: impl Into<String>) -> AppAction {
 
 /// What jj said when it would not do what `operation` asked. Its answer
 /// is laid out as it wrote it, being several lines as often as not.
-fn refused(operation: &'static str, err: impl Display) -> AppAction {
+pub fn refused(operation: &'static str, err: impl Display) -> AppAction {
     AppAction::SetPopup(Box::new(
         MessagePopup::new(operation, format!("{err:#}"))
             .text_align(Alignment::Left)
@@ -1635,5 +1658,23 @@ mod tests {
         let lost = workspace(None, false);
 
         assert!(says(ask_rename_workspace(&lost), "does not say where"));
+    }
+
+    #[test]
+    fn only_another_workspace_with_a_directory_is_switched_to() {
+        set_test_env();
+
+        assert!(says(
+            switch_workspace(&workspace(Some("/tmp/ours"), true)),
+            "already running in"
+        ));
+        assert!(says(
+            switch_workspace(&workspace(None, false)),
+            "does not say where"
+        ));
+        assert!(matches!(
+            switch_workspace(&workspace(Some("/tmp/other"), false)),
+            AppAction::WorkIn(root) if root == "/tmp/other"
+        ));
     }
 }

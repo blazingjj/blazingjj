@@ -201,6 +201,8 @@ pub struct OpLogTabKeybindsConfig {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct WorkspacesTabKeybindsConfig {
+    pub switch: Option<Keybind>,
+
     pub add: Option<Keybind>,
     pub rename: Option<Keybind>,
     pub forget: Option<Keybind>,
