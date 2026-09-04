@@ -273,7 +273,7 @@ impl StylesTab {
             .unwrap_or_default();
 
         let asked = key.clone();
-        Some(AppAction::SetPopup(Box::new(SettingValuePopup::for_key(
+        Some(AppAction::SetPopup(Box::new(SettingValuePopup::of_key(
             key,
             styles.taken_out_by(role, channel.key()),
             current,

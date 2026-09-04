@@ -140,6 +140,24 @@ impl ChoicePopup {
         matches!(self.items.get(index), Some(Some(_)))
     }
 
+    /// What every choice says, for a test checking which ones a popup
+    /// holds.
+    #[cfg(test)]
+    pub(crate) fn labels(&self) -> Vec<String> {
+        self.items
+            .iter()
+            .flatten()
+            .map(|item| item.label.to_string())
+            .collect()
+    }
+
+    /// What the rows under the choices say, for a test checking what a
+    /// popup has to report about itself.
+    #[cfg(test)]
+    pub(crate) fn footnote_text(&self) -> Vec<String> {
+        self.footnote.iter().map(Line::to_string).collect()
+    }
+
     fn scroll(&mut self, delta: isize) {
         let mut index = self
             .list_state

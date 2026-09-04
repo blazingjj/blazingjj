@@ -3,6 +3,7 @@ mod repo_watch;
 
 use core::fmt;
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -25,6 +26,7 @@ use tracing::warn;
 
 use crate::app::command::ask_update_stale_workspace;
 use crate::app::command::refuse_outdated_view;
+use crate::app::command::refused;
 use crate::app::repo_watch::Check;
 use crate::app::repo_watch::Moment;
 use crate::app::repo_watch::Moved;
@@ -36,8 +38,10 @@ use crate::background_tasks::TaskSlot;
 use crate::commander::ids::OperationId;
 use crate::commander::is_stale_working_copy;
 use crate::commander::new_commander;
+use crate::env::Env;
 use crate::env::get_env;
 use crate::env::reload_env;
+use crate::env::set_env;
 use crate::event::AppEvent;
 use crate::event::Clicks;
 use crate::event::EventSource;
@@ -55,6 +59,7 @@ use crate::ui::Interactive;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::bookmarks_tab::BookmarksTab;
+use crate::ui::commands_tab::CommandsTab;
 use crate::ui::dialog::CommandMode;
 use crate::ui::dialog::CommandPopup;
 use crate::ui::dialog::HelpPopup;
@@ -62,6 +67,7 @@ use crate::ui::evolog_tab::EvologTab;
 use crate::ui::files_tab::FilesTab;
 use crate::ui::keybindings_tab::KeybindingsTab;
 use crate::ui::log_tab::LogTab;
+use crate::ui::menus_tab::MenusTab;
 use crate::ui::op_log_tab::OpLogTab;
 use crate::ui::settings_tab::SettingsTab;
 use crate::ui::status_bar;
@@ -69,6 +75,7 @@ use crate::ui::status_bar::Status;
 use crate::ui::styles::paint;
 use crate::ui::styles::panel_title;
 use crate::ui::styles_tab::StylesTab;
+use crate::ui::workspaces_tab::WorkspacesTab;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum TabId {
@@ -77,6 +84,7 @@ pub enum TabId {
     Bookmarks,
     Evolog,
     OpLog,
+    Workspaces,
     Settings,
     /// The keybindings, which the settings tab opens and which has no
     /// place of its own in the tab bar.
@@ -84,6 +92,12 @@ pub enum TabId {
     /// The styles, which the settings tab opens and which has no place
     /// of its own in the tab bar.
     Styles,
+    /// The commands of your own, which the settings tab opens and which
+    /// has no place of its own in the tab bar.
+    Commands,
+    /// What the context menus hold, which the settings tab opens and
+    /// which has no place of its own in the tab bar.
+    Menus,
 }
 
 impl fmt::Display for TabId {
@@ -94,33 +108,40 @@ impl fmt::Display for TabId {
             TabId::Bookmarks => write!(f, "Bookmarks"),
             TabId::Evolog => write!(f, "Evolog"),
             TabId::OpLog => write!(f, "Op log"),
+            TabId::Workspaces => write!(f, "Workspaces"),
             TabId::Settings => write!(f, "Settings"),
             TabId::Keybindings => write!(f, "Keybindings"),
             TabId::Styles => write!(f, "Styles"),
+            TabId::Commands => write!(f, "Commands"),
+            TabId::Menus => write!(f, "Context menus"),
         }
     }
 }
 
 impl TabId {
     /// Every tab there is, the transient one included
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 11] = [
         TabId::Log,
         TabId::Files,
         TabId::Bookmarks,
         TabId::Evolog,
         TabId::OpLog,
+        TabId::Workspaces,
         TabId::Settings,
         TabId::Keybindings,
         TabId::Styles,
+        TabId::Commands,
+        TabId::Menus,
     ];
 
     /// The tabs the tab bar lists, in the order it lists them
-    pub const VALUES: [Self; 6] = [
+    pub const VALUES: [Self; 7] = [
         TabId::Log,
         TabId::Files,
         TabId::Bookmarks,
         TabId::Evolog,
         TabId::OpLog,
+        TabId::Workspaces,
         TabId::Settings,
     ];
 
@@ -128,7 +149,7 @@ impl TabId {
     /// place of its own is the place of the tab that opens it.
     pub fn in_tab_bar(self) -> Self {
         match self {
-            TabId::Keybindings | TabId::Styles => TabId::Settings,
+            TabId::Keybindings | TabId::Styles | TabId::Commands | TabId::Menus => TabId::Settings,
             tab => tab,
         }
     }
@@ -138,12 +159,17 @@ impl TabId {
     /// come first by their number and last in the bar.
     pub fn number(self) -> usize {
         match self {
-            TabId::Settings | TabId::Keybindings | TabId::Styles => 0,
+            TabId::Settings
+            | TabId::Keybindings
+            | TabId::Styles
+            | TabId::Commands
+            | TabId::Menus => 0,
             TabId::Log => 1,
             TabId::Files => 2,
             TabId::Bookmarks => 3,
             TabId::Evolog => 4,
             TabId::OpLog => 5,
+            TabId::Workspaces => 6,
         }
     }
 }
@@ -250,9 +276,12 @@ pub struct App<'a> {
     pub bookmarks: BookmarksTab,
     pub evolog: EvologTab<'a>,
     pub op_log: OpLogTab<'a>,
+    pub workspaces: WorkspacesTab,
     pub settings: SettingsTab,
     pub keybindings: KeybindingsTab,
     pub styles: StylesTab,
+    pub commands: CommandsTab,
+    pub menus: MenusTab,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     /// Where the tabs overview was last drawn, for mouse input.
@@ -302,9 +331,12 @@ impl<'a> App<'a> {
             bookmarks: BookmarksTab::new(background_tasks.clone()),
             evolog: EvologTab::new(&current_head, background_tasks.clone()),
             op_log: OpLogTab::new(background_tasks.clone()),
+            workspaces: WorkspacesTab::new(background_tasks.clone()),
             settings: SettingsTab::new(),
             keybindings: KeybindingsTab::new(),
             styles: StylesTab::new(),
+            commands: CommandsTab::new(),
+            menus: MenusTab::new(),
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
@@ -562,9 +594,12 @@ impl<'a> App<'a> {
             TabId::Bookmarks => &mut self.bookmarks,
             TabId::Evolog => &mut self.evolog,
             TabId::OpLog => &mut self.op_log,
+            TabId::Workspaces => &mut self.workspaces,
             TabId::Settings => &mut self.settings,
             TabId::Keybindings => &mut self.keybindings,
             TabId::Styles => &mut self.styles,
+            TabId::Commands => &mut self.commands,
+            TabId::Menus => &mut self.menus,
         }
     }
 
@@ -573,9 +608,83 @@ impl<'a> App<'a> {
         self.pending_interactive.take()
     }
 
+    /// Work in the workspace at `root` from now on: every command of
+    /// ours goes there, and everything on screen is read again from it.
+    fn work_in(&mut self, root: &str) -> Result<()> {
+        let env = get_env();
+        let moved_to = Env::new(
+            PathBuf::from(root),
+            env.default_revset.clone(),
+            env.jj_bin.clone(),
+        );
+        let moved_to = match moved_to {
+            Ok(moved_to) => moved_to,
+            // We are still in the workspace we were in.
+            Err(err) => return self.handle_action(refused("Switch", err)),
+        };
+        set_env(moved_to);
+        // What is in flight answers for the workspace we have left, the
+        // repo check included, uninterruptible as it is.
+        self.background_tasks.cancel_interruptible();
+        self.background_tasks.cancel(&TaskSlot::RepoOpId);
+
+        // Our own move, so catch up rather than leave the tabs stale.
+        self.repo_watch
+            .set_interval(get_env().jj_config.poll_interval());
+        self.repo_watch.catching_up();
+        self.repo_watch.ask_check(Check {
+            snapshot: true,
+            ours: true,
+        });
+        // Whatever the workspace we have left had to say about its
+        // working copy is nothing to go by here.
+        self.stale_workspace = false;
+        // The workspace has a configuration of its own.
+        self.config_changed();
+        self.drop_all_caches();
+        self.mark_all_stale();
+        // The working copy is what the two workspaces differ in, so it
+        // is what the log goes to. Being the one thing we read right
+        // away, it is also where a stale workspace first refuses us.
+        if let Err(err) = self.log.focus_current() {
+            if !is_stale_working_copy(&err) {
+                return Err(err);
+            }
+            self.ask_about_stale_workspace()?;
+        }
+
+        Ok(())
+    }
+
     /// Have every tab read the repo again.
     pub fn catch_up_with_repo(&mut self) -> Result<()> {
         self.handle_action(AppAction::MarkTabsStale)
+    }
+
+    fn current_tab_ref(&self) -> &dyn Component {
+        match self.current_tab {
+            TabId::Log => &self.log,
+            TabId::Files => &self.files,
+            TabId::Bookmarks => &self.bookmarks,
+            TabId::Evolog => &self.evolog,
+            TabId::OpLog => &self.op_log,
+            TabId::Workspaces => &self.workspaces,
+            TabId::Settings => &self.settings,
+            TabId::Keybindings => &self.keybindings,
+            TabId::Styles => &self.styles,
+            TabId::Commands => &self.commands,
+            TabId::Menus => &self.menus,
+        }
+    }
+
+    pub fn is_dragging(&self) -> bool {
+        self.log.is_dragging()
+    }
+
+    /// True if any active component (popup or current tab) needs the
+    /// main loop to tick at a steady rate (animations, auto-scroll).
+    pub fn wants_tick(&self) -> bool {
+        self.popup.as_ref().is_some_and(|p| p.wants_tick()) || self.current_tab_ref().wants_tick()
     }
 
     /// When a component wants the app to do something,
@@ -642,6 +751,9 @@ impl<'a> App<'a> {
             }
             AppAction::RunInteractive(interactive) => {
                 self.pending_interactive = Some(interactive);
+            }
+            AppAction::WorkIn(root) => {
+                self.work_in(&root)?;
             }
             AppAction::ConfigChanged => {
                 // The environment we are leaving stays where it is, so
@@ -825,7 +937,7 @@ impl<'a> App<'a> {
     /// Whether something on screen counts up on its own, so that the main
     /// loop has to come back on a timer rather than only on an event.
     pub fn needs_periodic_redraw(&mut self) -> bool {
-        self.popup.is_some() || self.get_current_tab().needs_periodic_redraw()
+        self.popup.is_some() || self.get_current_tab().needs_periodic_redraw() || self.wants_tick()
     }
 
     /// Hand the output of a finished task to whoever asked for it
@@ -1021,6 +1133,7 @@ impl<'a> App<'a> {
                             GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks),
                             GlobalEvent::EvologTab => self.set_tab(TabId::Evolog),
                             GlobalEvent::OpLogTab => self.set_tab(TabId::OpLog),
+                            GlobalEvent::WorkspacesTab => self.set_tab(TabId::Workspaces),
                             GlobalEvent::SettingsTab => self.set_tab(TabId::Settings),
                             GlobalEvent::OpenContextMenu => {
                                 if let Some(action) = self.get_current_tab().open_context_menu()? {

@@ -1,11 +1,13 @@
 /*! All user interface components, such as tabs, panels and dialogs.
  */
 pub mod bookmarks_tab;
+pub mod commands_tab;
 pub mod dialog;
 pub mod evolog_tab;
 pub mod files_tab;
 pub mod keybindings_tab;
 pub mod log_tab;
+pub mod menus_tab;
 pub mod op_log_tab;
 pub mod panel;
 pub mod settings_tab;
@@ -13,6 +15,7 @@ pub mod status_bar;
 pub mod styles;
 pub mod styles_tab;
 pub mod utils;
+pub mod workspaces_tab;
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
@@ -56,6 +59,9 @@ pub enum AppAction {
     /// The configuration has changed, so the app reads it again and
     /// everything that goes by it takes up what it now says.
     ConfigChanged,
+    /// Work in the workspace at this path from now on: every command of
+    /// ours goes there, and everything on screen is read again from it.
+    WorkIn(String),
     /// Run this operation and do whatever it asks for in turn. Whoever
     /// raises one has named it in full, so the app can run it without
     /// asking anything of the component the request came from.
@@ -152,6 +158,13 @@ pub trait Component {
     /// until a component takes it.
     fn input_mouse(&mut self, _mouse: Mouse) -> Result<ComponentInputResult> {
         Ok(ComponentInputResult::NotHandled)
+    }
+
+    /// True if the component needs `update()` calls on a steady tick
+    /// (e.g. an in-flight drag auto-scroll). Drives the input poll
+    /// timeout in the main loop.
+    fn wants_tick(&self) -> bool {
+        false
     }
 }
 

@@ -153,6 +153,21 @@ impl BackgroundTasks {
         cancelled.cancel.cancel();
     }
 
+    /// Give up on every task in flight that may be killed, as [Self::cancel]
+    /// does. Uninterruptible tasks are left to finish.
+    pub fn cancel_interruptible(&self) {
+        let cancelled: Vec<RunningTask> = self
+            .lock()
+            .tasks
+            .extract_if(.., |task| task.evictable)
+            .collect();
+
+        for task in cancelled {
+            debug!("Cancelling task: {:?}", task.slot);
+            task.cancel.cancel();
+        }
+    }
+
     /// Take the first task `predicate` accepts out of the registry.
     fn take(&self, predicate: impl Fn(&RunningTask) -> bool) -> Option<RunningTask> {
         let mut running = self.lock();
@@ -508,6 +523,24 @@ mod tests {
         assert_eq!(tasks.running_count(), 0);
 
         drop(gate);
+        assert!(receiver.recv_timeout(SILENCE_TIMEOUT).is_err());
+    }
+
+    #[test]
+    fn cancelling_the_interruptible_tasks_leaves_the_others_to_finish() {
+        let (tasks, receiver) = tasks();
+        let (evictable_gate, evictable) = gated_task();
+        tasks.submit(slot(0), move |_cancel| evictable());
+        let (push_gate, push) = gated_task();
+        tasks.submit_uninterruptible(TaskSlot::GitPush, push);
+
+        tasks.cancel_interruptible();
+        assert!(!tasks.is_running(&slot(0)));
+        assert!(tasks.is_running(&TaskSlot::GitPush));
+
+        drop(evictable_gate);
+        drop(push_gate);
+        assert_eq!(next_result(&receiver).slot, TaskSlot::GitPush);
         assert!(receiver.recv_timeout(SILENCE_TIMEOUT).is_err());
     }
 

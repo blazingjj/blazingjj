@@ -61,6 +61,10 @@ impl LoaderPopup {
 }
 
 impl Component for LoaderPopup {
+    fn wants_tick(&self) -> bool {
+        true
+    }
+
     /// Advance the animation
     fn update(&mut self) -> Result<Option<AppAction>> {
         if self.last_animation_update.elapsed() >= Duration::from_millis(100) {

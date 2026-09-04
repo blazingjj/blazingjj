@@ -14,7 +14,6 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use tracing::instrument;
 
-use crate::app::TabId;
 use crate::app::command::Command;
 use crate::commander::config::config_value;
 use crate::commander::new_commander;
@@ -122,16 +121,22 @@ impl SettingsTab {
     /// it takes, when it only takes one of a few, or what it is to be.
     fn change_selected(&self) -> Option<AppAction> {
         let setting = self.selected()?;
+        if let Some(tab) = setting.kind.tab() {
+            return Some(AppAction::ViewTab(tab));
+        }
+
         match setting.kind {
-            SettingKind::Keybindings => return Some(AppAction::ViewTab(TabId::Keybindings)),
-            SettingKind::Styles => return Some(AppAction::ViewTab(TabId::Styles)),
             SettingKind::Toggle(now) => {
                 return Some(AppAction::Run(Command::SetSetting {
                     key: setting.key.to_owned(),
                     value: setting.value_of(&(!now()).to_string()).ok()?,
                 }));
             }
-            SettingKind::Choice(_)
+            SettingKind::Keybindings
+            | SettingKind::Styles
+            | SettingKind::Commands
+            | SettingKind::ContextMenus
+            | SettingKind::Choice(_)
             | SettingKind::Text
             | SettingKind::Number
             | SettingKind::CommandLine => {}
@@ -139,10 +144,9 @@ impl SettingsTab {
 
         let values = self.values.as_ref().ok()?;
         let Some(choices) = setting.choices() else {
-            return Some(AppAction::SetPopup(Box::new(SettingValuePopup::new(
-                setting,
-                values.value(setting).unwrap_or_default(),
-            ))));
+            return Some(AppAction::SetPopup(Box::new(
+                SettingValuePopup::of_setting(setting, values.value(setting).unwrap_or_default()),
+            )));
         };
 
         let items: Vec<_> = choices
@@ -181,10 +185,10 @@ impl SettingsTab {
     /// whatever the rest of the configuration says.
     fn unset_selected(&self) -> Option<AppAction> {
         let setting = self.selected()?;
-        // Taking the keybindings or the styles out would be taking out
-        // every one of them at once, which the tab that opens is what
-        // does one at a time.
-        if matches!(setting.kind, SettingKind::Keybindings | SettingKind::Styles) {
+        // Taking the keybindings, the styles or the commands out would
+        // be taking out every one of them at once, which the tab that
+        // opens is what does one at a time.
+        if setting.kind.tab().is_some() {
             return None;
         }
 

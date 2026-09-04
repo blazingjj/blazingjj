@@ -36,11 +36,15 @@ use crate::commander::new_commander;
 use crate::commander::operation::Operation;
 use crate::commander::program::Program;
 use crate::commander::revset::Revset;
+use crate::commander::workspace::Workspace;
+use crate::commands::CustomCommand;
+use crate::commands::CustomRun;
 use crate::env::Editor;
 use crate::env::EditorMode;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::PushScope;
+use crate::selection::Selection;
 use crate::ui::AppAction;
 use crate::ui::Interactive;
 use crate::ui::dialog::BookmarkNameMode;
@@ -53,6 +57,8 @@ use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
 use crate::ui::dialog::RebaseSources;
+use crate::ui::dialog::WorkspaceMode;
+use crate::ui::dialog::WorkspacePopup;
 use crate::ui::dialog::describe_action;
 use crate::ui::dialog::new_insert;
 use crate::ui::dialog::push_menu;
@@ -225,6 +231,22 @@ pub enum Command {
     /// Update the working copy jj refuses to read the repo until it is
     /// updated.
     UpdateStaleWorkspace,
+    /// Run a command of your own against what the tab it was picked
+    /// from had selected, which the placeholders of the command stand
+    /// for.
+    RunCustom(Box<CustomRun>),
+    /// Make a workspace in this directory, named after it.
+    AddWorkspace {
+        destination: String,
+    },
+    /// Stop tracking the working-copy commit of the workspace of this
+    /// name, leaving what is on disk alone.
+    ForgetWorkspace(String),
+    /// Rename the workspace whose root is `root`.
+    RenameWorkspace {
+        root: String,
+        new_name: String,
+    },
 }
 
 impl Command {
@@ -509,8 +531,82 @@ impl Command {
                 Ok(()) => Ok(Some(AppAction::ConfigChanged)),
                 Err(err) => Ok(Some(refused("Unset", err))),
             },
+            Command::RunCustom(run) => {
+                Ok(Some(run_custom(&run.name, &run.command, &run.selection)))
+            }
+            Command::AddWorkspace { destination } => {
+                match new_commander().run_workspace_add(&destination) {
+                    // The new workspace holds a change of its own, so
+                    // the repo is not where any tab last read it.
+                    Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                    // Put the question back up with what was typed.
+                    Err(err) => Ok(Some(AppAction::SetPopup(Box::new(
+                        WorkspacePopup::refused(WorkspaceMode::Add, destination, err),
+                    )))),
+                }
+            }
+            Command::ForgetWorkspace(name) => match new_commander().run_workspace_forget(&name) {
+                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                Err(err) => Ok(Some(refused("Forget", err))),
+            },
+            Command::RenameWorkspace { root, new_name } => {
+                match new_commander().run_workspace_rename(&root, &new_name) {
+                    Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                    Err(err) => Ok(Some(AppAction::SetPopup(Box::new(
+                        WorkspacePopup::refused(WorkspaceMode::Rename { root }, new_name, err),
+                    )))),
+                }
+            }
         }
     }
+}
+
+/// Run `command`, which is configured as `name`, against `selection`:
+/// with the terminal handed over to it, or with what it writes captured
+/// and put up.
+fn run_custom(name: &str, command: &CustomCommand, selection: &Selection) -> AppAction {
+    let said = |text: String| {
+        AppAction::SetPopup(Box::new(
+            MessagePopup::new(name.to_owned(), text).text_align(Alignment::Left),
+        ))
+    };
+
+    let (program, uses_marks) = match command.program(selection) {
+        Ok(program) => program,
+        Err(missing) => {
+            return said(format!("Nothing to run the command against\n\n{missing}"));
+        }
+    };
+
+    if command.is_interactive() {
+        return AppAction::RunInteractive(Interactive {
+            program,
+            hold_screen: true,
+            on_success: uses_marks
+                .then_some(AppAction::ClearLogMarks)
+                .into_iter()
+                .collect(),
+        });
+    }
+
+    let mut ran = true;
+    let report = match program.run_captured() {
+        Ok(written) if written.trim().is_empty() => None,
+        Ok(written) => Some(written),
+        Err(err) => {
+            ran = false;
+            Some(format!("Failed to run the command\n\n{err}"))
+        }
+    };
+    // The command may have moved the repo whatever it had to say about
+    // it, so the tabs read it again either way.
+    let mut actions = vec![AppAction::MarkTabsStale];
+    if ran && uses_marks {
+        actions.push(AppAction::ClearLogMarks);
+    }
+    actions.extend(report.map(said));
+
+    AppAction::Multiple(actions)
 }
 
 /// Open `file` in the configured editor, having taken the working copy
@@ -1070,6 +1166,87 @@ pub fn ask_set_bookmark(bookmark: &Bookmark, head: &Head) -> AppAction {
     )
 }
 
+/// Asking where to make a workspace.
+pub fn ask_add_workspace() -> AppAction {
+    AppAction::SetPopup(Box::new(WorkspacePopup::new_add()))
+}
+
+/// Asking what to call `workspace`, or saying why we cannot rename it
+/// where we do not know its directory.
+pub fn ask_rename_workspace(workspace: &Workspace) -> AppAction {
+    let Some(root) = workspace.root.clone() else {
+        return message(
+            "Rename",
+            format!(
+                "{}, and jj renames the workspace a command runs in. \
+                 Run `jj workspace rename <new-name>` in that directory yourself.",
+                unknown_root(&workspace.name)
+            ),
+        );
+    };
+
+    AppAction::SetPopup(Box::new(WorkspacePopup::new_rename(
+        root,
+        workspace.name.clone(),
+    )))
+}
+
+/// Asking to forget `workspace`, or refusing to when it is the one we
+/// are running in.
+pub fn ask_forget_workspace(workspace: &Workspace) -> AppAction {
+    if workspace.current {
+        return message(
+            "Forget",
+            "This is the workspace blazingjj is running in. Switch to another one \
+             to forget it from there.",
+        );
+    }
+
+    confirm(
+        "Forget",
+        Text::from(vec![
+            Line::from(format!(
+                "Are you sure you want to forget the {} workspace?",
+                workspace.name
+            )),
+            Line::from("Whatever is in its directory is left alone."),
+        ]),
+        Command::ForgetWorkspace(workspace.name.clone()),
+    )
+}
+
+/// Work in `workspace` from now on, or say why we cannot: it is the one
+/// we are in, or we do not know its directory.
+pub fn switch_workspace(workspace: &Workspace) -> AppAction {
+    if workspace.current {
+        return message(
+            "Switch",
+            "This is the workspace blazingjj is already running in.",
+        );
+    }
+    let Some(root) = workspace.root.clone() else {
+        return message(
+            "Switch",
+            format!(
+                "{}, so there is nowhere for us to run. Start blazingjj in that \
+                 directory to work in it.",
+                unknown_root(&workspace.name)
+            ),
+        );
+    };
+
+    AppAction::WorkIn(root)
+}
+
+/// How a refusal opens where the repo does not say what directory the
+/// workspace of this name is in.
+fn unknown_root(name: &str) -> String {
+    format!(
+        "The repo does not say where the {name} workspace is -- it was added before jj \
+         recorded that, or its directory has been moved or deleted since"
+    )
+}
+
 /// Turning down an operation asked for on a view the repo has moved on
 /// from, which it would be carried out against.
 pub fn refuse_outdated_view() -> AppAction {
@@ -1149,7 +1326,7 @@ fn message(title: &'static str, text: impl Into<String>) -> AppAction {
 
 /// What jj said when it would not do what `operation` asked. Its answer
 /// is laid out as it wrote it, being several lines as often as not.
-fn refused(operation: &'static str, err: impl Display) -> AppAction {
+pub fn refused(operation: &'static str, err: impl Display) -> AppAction {
     AppAction::SetPopup(Box::new(
         MessagePopup::new(operation, format!("{err:#}"))
             .text_align(Alignment::Left)
@@ -1558,6 +1735,49 @@ mod tests {
         assert!(says(
             ask_abandon(&head("a", true), marked),
             "because it is immutable"
+        ));
+    }
+
+    fn workspace(root: Option<&str>, current: bool) -> Workspace {
+        Workspace {
+            name: "other".to_owned(),
+            root: root.map(str::to_owned),
+            target: head("a", false),
+            current,
+        }
+    }
+
+    #[test]
+    fn the_workspace_we_are_in_is_not_forgotten() {
+        set_test_env();
+        let ours = workspace(Some("/tmp/ours"), true);
+
+        assert!(says(ask_forget_workspace(&ours), "running in"));
+    }
+
+    #[test]
+    fn a_workspace_without_a_directory_is_not_renamed() {
+        set_test_env();
+        let lost = workspace(None, false);
+
+        assert!(says(ask_rename_workspace(&lost), "does not say where"));
+    }
+
+    #[test]
+    fn only_another_workspace_with_a_directory_is_switched_to() {
+        set_test_env();
+
+        assert!(says(
+            switch_workspace(&workspace(Some("/tmp/ours"), true)),
+            "already running in"
+        ));
+        assert!(says(
+            switch_workspace(&workspace(None, false)),
+            "does not say where"
+        ));
+        assert!(matches!(
+            switch_workspace(&workspace(Some("/tmp/other"), false)),
+            AppAction::WorkIn(root) if root == "/tmp/other"
         ));
     }
 }
