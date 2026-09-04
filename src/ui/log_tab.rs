@@ -34,8 +34,8 @@ use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::log_context_menu;
-use crate::ui::dialog::parent_select;
 use crate::ui::dialog::push_menu;
+use crate::ui::dialog::relative_select;
 use crate::ui::panel::CommitShowPanel;
 use crate::ui::panel::LogPanel;
 use crate::ui::panel::MouseInput;
@@ -204,8 +204,9 @@ impl<'a> LogTab<'a> {
                 self.set_head(parents.remove(0).head);
                 Ok(None)
             }
-            _ => Ok(Some(AppAction::SetPopup(Box::new(parent_select(
+            _ => Ok(Some(AppAction::SetPopup(Box::new(relative_select(
                 get_env().jj_config.clone(),
+                "Select parent",
                 &parents,
                 &out_of_view,
             ))))),

@@ -36,12 +36,13 @@ pub struct Head {
     pub immutable: bool,
 }
 
-/// A parent of a commit, as [parents_template] describes it.
+/// A commit next to another one in the graph, as [relative_fields]
+/// describes it.
 #[derive(Clone, PartialEq, Eq, Debug, Deserialize)]
-pub struct Parent {
+pub struct Relative {
     #[serde(flatten)]
     pub head: Head,
-    /// The first line of the parent's description, empty if it has none.
+    /// The first line of the commit's description, empty if it has none.
     pub description: String,
 }
 
@@ -143,17 +144,25 @@ fn head_template_nl() -> String {
     format!(r#"{head} ++ "\n""#)
 }
 
-/// Template writing one [Parent] per line for the parents of the commit
-/// in context, in the order the commit names them.
-fn parents_template() -> String {
-    let fields = head_fields("parent");
+/// The fields [Relative] holds, for the commit `commit` names, without
+/// the braces around them.
+fn relative_fields(commit: &str) -> String {
+    let head = head_fields(commit);
     format!(
         r#"
-    self.parents().map(|parent|
-        '{{' ++ {fields}
-        ++ ',"description":' ++ parent.description().first_line().escape_json()
-        ++ '}}'
-    ).join("\n")
+    {head}
+    ++ ',"description":' ++ {commit}.description().first_line().escape_json()
+"#
+    )
+}
+
+/// Template writing one [Relative] per line for the parents of the
+/// commit in context, in the order the commit names them.
+fn parents_template() -> String {
+    let fields = relative_fields("parent");
+    format!(
+        r#"
+    self.parents().map(|parent| '{{' ++ {fields} ++ '}}').join("\n")
 "#
     )
 }
@@ -417,7 +426,7 @@ impl Commander {
     /// root commit has none.
     /// Maps to `jj log -r <revision> -T 'self.parents()...'`
     #[instrument(level = "trace", skip(self))]
-    pub fn get_commit_parents(&self, commit_id: &CommitId) -> Result<Vec<Parent>> {
+    pub fn get_commit_parents(&self, commit_id: &CommitId) -> Result<Vec<Relative>> {
         self.execute_jj_log_one(commit_id, &parents_template())
             .with_context(|| format!("Failed getting commit parents: {commit_id}"))?
             .lines()
@@ -672,11 +681,11 @@ mod tests {
         assert_eq!(
             test_repo.commander.get_commit_parents(&merge.commit_id)?,
             vec![
-                Parent {
+                Relative {
                     head: left,
                     description: "left".to_owned()
                 },
-                Parent {
+                Relative {
                     head: right,
                     description: "right".to_owned()
                 },

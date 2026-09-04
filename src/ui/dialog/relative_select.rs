@@ -1,5 +1,5 @@
-/*! The parents of a change, as the choices for moving the log's
-selection onto one of them.
+/*! The parents or children of a change, as the choices for moving the
+log's selection onto one of them.
 */
 
 use ratatui::style::Color;
@@ -7,13 +7,14 @@ use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Span;
 
-use crate::commander::log::Parent;
+use crate::commander::log::Relative;
 use crate::env::JjConfig;
 use crate::ui::AppAction;
 use crate::ui::dialog::ChoicePopup;
 
-/// The row a parent gets in the list, dimmed when it cannot be selected.
-fn parent_line(parent: &Parent, dimmed: bool) -> Line<'static> {
+/// The row a relative gets in the list, dimmed when it cannot be
+/// selected.
+fn relative_line(relative: &Relative, dimmed: bool) -> Line<'static> {
     let dim = Style::default().fg(Color::DarkGray);
     let (change_id_style, description_style) = if dimmed {
         (dim, dim)
@@ -21,27 +22,32 @@ fn parent_line(parent: &Parent, dimmed: bool) -> Line<'static> {
         (Style::default().fg(Color::Magenta), Style::default())
     };
 
-    let change_id: String = parent.head.change_id.as_str().chars().take(8).collect();
-    let description = if parent.description.is_empty() {
+    let change_id: String = relative.head.change_id.as_str().chars().take(8).collect();
+    let description = if relative.description.is_empty() {
         Span::styled(" (no description)", dim)
     } else {
-        Span::styled(format!(" {}", parent.description), description_style)
+        Span::styled(format!(" {}", relative.description), description_style)
     };
 
     Line::from(vec![Span::styled(change_id, change_id_style), description])
 }
 
-/// A popup offering the `parents` to pick from. Those `out_of_view` are
-/// listed underneath so that the merge is shown in full, but cannot be
-/// picked.
-pub fn parent_select(config: JjConfig, parents: &[Parent], out_of_view: &[Parent]) -> ChoicePopup {
-    let items = parents.iter().map(|parent| {
+/// A popup titled `title` offering the `relatives` to pick from. Those
+/// `out_of_view` are listed underneath so that the change's place in the
+/// graph is shown in full, but cannot be picked.
+pub fn relative_select(
+    config: JjConfig,
+    title: &'static str,
+    relatives: &[Relative],
+    out_of_view: &[Relative],
+) -> ChoicePopup {
+    let items = relatives.iter().map(|relative| {
         (
-            parent_line(parent, false),
-            AppAction::ViewLog(parent.head.clone()),
+            relative_line(relative, false),
+            AppAction::ViewLog(relative.head.clone()),
         )
     });
-    let popup = ChoicePopup::new(config, None, "Select parent", items);
+    let popup = ChoicePopup::new(config, None, title, items);
 
     if out_of_view.is_empty() {
         return popup;
@@ -54,7 +60,11 @@ pub fn parent_select(config: JjConfig, parents: &[Parent], out_of_view: &[Parent
             Style::default().fg(Color::DarkGray),
         )),
     ];
-    footnote.extend(out_of_view.iter().map(|parent| parent_line(parent, true)));
+    footnote.extend(
+        out_of_view
+            .iter()
+            .map(|relative| relative_line(relative, true)),
+    );
 
     popup.footnote(footnote)
 }
@@ -75,24 +85,29 @@ mod tests {
     use crate::ui::ComponentInputResult;
     use crate::ui::dialog::choice::tests::picked;
 
-    fn parents(range: std::ops::Range<usize>) -> Vec<Parent> {
+    fn relatives(range: std::ops::Range<usize>) -> Vec<Relative> {
         range
-            .map(|i| Parent {
+            .map(|i| Relative {
                 head: Head {
                     change_id: ChangeId(format!("change{i}")),
                     commit_id: CommitId(format!("commit{i}")),
                     divergent: false,
                     immutable: false,
                 },
-                description: format!("parent {i}"),
+                description: format!("relative {i}"),
             })
             .collect()
     }
 
     fn popup(in_view: usize, out_of_view: usize) -> ChoicePopup {
-        let all = parents(0..in_view + out_of_view);
+        let all = relatives(0..in_view + out_of_view);
 
-        parent_select(JjConfig::default(), &all[..in_view], &all[in_view..])
+        relative_select(
+            JjConfig::default(),
+            "Select parent",
+            &all[..in_view],
+            &all[in_view..],
+        )
     }
 
     /// The change the popup asked the log to move to, if it asked at all.
@@ -127,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn picking_a_parent_moves_the_log_to_it() {
+    fn picking_a_relative_moves_the_log_to_it() {
         let mut popup = popup(3, 0);
 
         press(&mut popup, KeyCode::Char('j'));
@@ -139,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn parents_out_of_view_are_listed_below_a_separator() {
+    fn relatives_out_of_view_are_listed_below_a_separator() {
         let mut popup = popup(2, 1);
 
         let buffer = render(&mut popup);
@@ -158,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn parents_out_of_view_cannot_be_picked() {
+    fn relatives_out_of_view_cannot_be_picked() {
         let mut popup = popup(2, 2);
 
         for _ in 0..5 {
@@ -172,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn nothing_is_listed_below_the_parents_when_they_are_all_in_view() {
+    fn nothing_is_listed_below_the_relatives_when_they_are_all_in_view() {
         let mut popup = popup(2, 0);
 
         let buffer = render(&mut popup);
@@ -185,10 +200,10 @@ mod tests {
     }
 
     #[test]
-    fn a_parent_without_a_description_says_so() {
-        let mut parent = parents(0..1);
-        parent[0].description = String::new();
-        let mut popup = parent_select(JjConfig::default(), &parent, &[]);
+    fn a_relative_without_a_description_says_so() {
+        let mut relative = relatives(0..1);
+        relative[0].description = String::new();
+        let mut popup = relative_select(JjConfig::default(), "Select parent", &relative, &[]);
 
         let buffer = render(&mut popup);
 
