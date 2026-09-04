@@ -1,5 +1,11 @@
-/*! A popup taking the value of one setting, which it hands on as the
-operation that writes it to the user's config.
+/*! A popup taking one line of the configuration, which it hands on as
+whatever the caller makes of what was typed: the operation writing an
+option to the user's config, for the value of one of those.
+
+A key holding more than any one thing to type, as a command of your own
+does, is written whole from the one part of it that was asked for. What
+was typed may also be no more than the next thing to ask about, as the
+name of a command to add is.
 */
 
 use anyhow::Result;
@@ -31,18 +37,21 @@ use crate::ui::styles::popup_text_width;
 use crate::ui::styles::wrapped_height;
 use crate::ui::utils::centered_rect_line_height;
 
-type ValueOf = Box<dyn Fn(&str) -> Result<String>>;
+/// What the text that was typed asks for, or what is wrong with it.
+type Accept = Box<dyn Fn(&str) -> Result<AppAction>>;
 
 pub struct SettingValuePopup<'a> {
-    /// The config key the value is written to, which the popup is also
-    /// titled by.
-    key: String,
+    /// What the popup goes up under, which is the config key it is
+    /// asking about.
+    title: String,
     /// The config key clearing the field takes out, where there is one
-    /// to take out. It is the key written to unless what is written is
-    /// only part of a value that was set as a whole.
+    /// to take out. It is the key asked about unless what is written is
+    /// only part of a value that was set as a whole. Without one, an
+    /// empty field is text like any other.
     taken_out: Option<String>,
-    /// What the typed text is written as, or why it cannot be.
-    value_of: ValueOf,
+    /// What the text that was typed asks for, which is also what
+    /// refuses a text that cannot be read.
+    accept: Accept,
     textarea: TextArea<'a>,
     /// What was said about the value that was typed, if it was refused.
     error: Option<anyhow::Error>,
@@ -50,43 +59,62 @@ pub struct SettingValuePopup<'a> {
 }
 
 impl SettingValuePopup<'static> {
-    /// Ask for the value of `setting`, starting from `value` as it reads
-    /// on screen rather than as the TOML it is written as.
-    pub fn new(setting: &'static Setting, value: String) -> Self {
-        let key = setting.key.to_owned();
-
-        Self::for_key(key.clone(), Some(key), value, |input| {
-            setting.value_of(input)
-        })
-    }
-
-    /// Ask for what `key` is to be set to, starting from `value`, with
-    /// `value_of` saying what the typed text is written as and
-    /// `taken_out` the key clearing the field takes out, if any. For a
-    /// key that is no option of the settings tab's.
-    pub fn for_key(
-        key: String,
-        taken_out: Option<String>,
-        value: String,
-        value_of: impl Fn(&str) -> Result<String> + 'static,
+    /// Ask about `title`, starting from `text`, and do whatever `accept`
+    /// makes of what was typed.
+    pub fn new(
+        title: impl Into<String>,
+        text: String,
+        accept: impl Fn(&str) -> Result<AppAction> + 'static,
     ) -> Self {
-        let mut textarea = TextArea::new(vec![value]);
+        let mut textarea = TextArea::new(vec![text]);
         textarea.move_cursor(CursorMove::End);
 
         Self {
-            key,
-            taken_out,
-            value_of: Box::new(value_of),
+            title: title.into(),
+            taken_out: None,
+            accept: Box::new(accept),
             textarea,
             error: None,
             keybinds: PopupKeybinds::text_line(),
         }
     }
+
+    /// Ask for the value of `key`, starting from `value` as it reads on
+    /// screen rather than as the TOML it is written as, which `value_of`
+    /// turns it back into. `taken_out` is the key clearing the field
+    /// takes out, if any.
+    pub fn of_key(
+        key: impl Into<String>,
+        taken_out: Option<String>,
+        value: String,
+        value_of: impl Fn(&str) -> Result<String> + 'static,
+    ) -> Self {
+        let key = key.into();
+        let asked = key.clone();
+
+        Self {
+            taken_out,
+            ..Self::new(key, value, move |text| {
+                Ok(AppAction::Run(Command::SetSetting {
+                    key: asked.clone(),
+                    value: value_of(text)?,
+                }))
+            })
+        }
+    }
+
+    /// Ask for the value of `setting`, starting from `value` as it reads
+    /// on screen.
+    pub fn of_setting(setting: &'static Setting, value: String) -> Self {
+        Self::of_key(setting.key, Some(setting.key.to_owned()), value, |text| {
+            setting.value_of(text)
+        })
+    }
 }
 
 impl Component for SettingValuePopup<'_> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        let block = create_popup_block(&self.key);
+        let block = create_popup_block(&self.title);
 
         let error_lines = self
             .error
@@ -138,26 +166,21 @@ impl Component for SettingValuePopup<'_> {
             match self.keybinds.match_event(key) {
                 PopupEvent::Accept => {
                     let typed = self.textarea.lines().join("\n");
-                    let key = self.key.clone();
 
                     // Clearing the field is asking for the option to be
                     // taken out rather than for it to be set to nothing:
                     // there is no value that stands for "as if it were
-                    // never set", so what says so is saying nothing. An
-                    // option nothing has set is already out.
-                    let command = if typed.trim().is_empty() {
-                        let Some(key) = self.taken_out.clone() else {
-                            return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
-                        };
-
-                        Command::UnsetSetting { key }
+                    // never set", so what says so is saying nothing.
+                    let asked = if let Some(key) =
+                        self.taken_out.clone().filter(|_| typed.trim().is_empty())
+                    {
+                        AppAction::Run(Command::UnsetSetting { key })
                     } else {
-                        // A value the setting cannot be read from is one
-                        // to correct rather than one to give up on, so
-                        // the question stays up with what was said about
-                        // it.
-                        match (self.value_of)(&typed) {
-                            Ok(value) => Command::SetSetting { key, value },
+                        // A text that cannot be read is one to correct
+                        // rather than one to give up on, so the question
+                        // stays up with what was said about it.
+                        match (self.accept)(&typed) {
+                            Ok(asked) => asked,
                             Err(err) => {
                                 self.error = Some(err);
                                 return Ok(ComponentInputResult::Handled);
@@ -166,7 +189,7 @@ impl Component for SettingValuePopup<'_> {
                     };
 
                     return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                        vec![AppAction::ClosePopup, AppAction::Run(command)],
+                        vec![AppAction::ClosePopup, asked],
                     )));
                 }
                 PopupEvent::Cancel => {
@@ -200,7 +223,7 @@ mod tests {
     /// What accepting the popup asks for, having started from `value`.
     fn accepted(key: &str, value: &str) -> Command {
         set_test_env();
-        let mut popup = SettingValuePopup::new(setting(key), value.to_owned());
+        let mut popup = SettingValuePopup::of_setting(setting(key), value.to_owned());
 
         let result = popup
             .input(Event::Key(KeyEvent::from(KeyCode::Enter)))

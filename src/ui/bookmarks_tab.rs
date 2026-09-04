@@ -281,6 +281,7 @@ impl BookmarksTab {
     fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(bookmarks_context_menu(
             anchor,
+            &self.selection(),
             self.selected_target(),
         ))))
     }
