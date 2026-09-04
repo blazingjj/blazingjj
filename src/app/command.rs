@@ -34,11 +34,15 @@ use crate::commander::new_commander;
 use crate::commander::operation::Operation;
 use crate::commander::program::Program;
 use crate::commander::revset::Revset;
+use crate::commander::workspace::Workspace;
+use crate::commands::CustomCommand;
+use crate::commands::CustomRun;
 use crate::env::Editor;
 use crate::env::EditorMode;
 use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::PushScope;
+use crate::selection::Selection;
 use crate::ui::AppAction;
 use crate::ui::Interactive;
 use crate::ui::dialog::BookmarkNameMode;
@@ -50,6 +54,8 @@ use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
+use crate::ui::dialog::WorkspaceMode;
+use crate::ui::dialog::WorkspacePopup;
 use crate::ui::dialog::describe_action;
 use crate::ui::dialog::new_insert;
 use crate::ui::styles::AnsiText;
@@ -180,6 +186,22 @@ pub enum Command {
     /// Update the working copy jj refuses to read the repo until it is
     /// updated.
     UpdateStaleWorkspace,
+    /// Run a command of your own against what the tab it was picked
+    /// from had selected, which the placeholders of the command stand
+    /// for.
+    RunCustom(Box<CustomRun>),
+    /// Make a workspace in this directory, which jj names it after.
+    AddWorkspace {
+        destination: String,
+    },
+    /// Stop tracking the working-copy commit of the workspace of this
+    /// name, leaving what is on disk alone.
+    ForgetWorkspace(String),
+    /// Rename the workspace whose root is `root`.
+    RenameWorkspace {
+        root: String,
+        new_name: String,
+    },
 }
 
 impl Command {
@@ -439,8 +461,84 @@ impl Command {
                 Ok(()) => Ok(Some(AppAction::ConfigChanged)),
                 Err(err) => Ok(Some(refused("Unset", err))),
             },
+            Command::RunCustom(run) => {
+                Ok(Some(run_custom(&run.name, &run.command, &run.selection)))
+            }
+            Command::AddWorkspace { destination } => {
+                match new_commander().run_workspace_add(&destination, None) {
+                    // The new workspace holds a change of its own, so
+                    // the repo is not where any tab last read it.
+                    Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                    // A destination that will not do is usually one to
+                    // correct rather than one to give up on, so the
+                    // question comes back with what was typed.
+                    Err(err) => Ok(Some(AppAction::SetPopup(Box::new(
+                        WorkspacePopup::refused(WorkspaceMode::Add, destination, err),
+                    )))),
+                }
+            }
+            Command::ForgetWorkspace(name) => match new_commander().run_workspace_forget(&name) {
+                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                Err(err) => Ok(Some(refused("Forget", err))),
+            },
+            Command::RenameWorkspace { root, new_name } => {
+                match new_commander().run_workspace_rename(&root, &new_name) {
+                    Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                    Err(err) => Ok(Some(AppAction::SetPopup(Box::new(
+                        WorkspacePopup::refused(WorkspaceMode::Rename { root }, new_name, err),
+                    )))),
+                }
+            }
         }
     }
+}
+
+/// Run `command`, which is configured as `name`, against `selection`:
+/// with the terminal handed over to it, or with what it writes captured
+/// and put up.
+fn run_custom(name: &str, command: &CustomCommand, selection: &Selection) -> AppAction {
+    let said = |text: String| {
+        AppAction::SetPopup(Box::new(
+            MessagePopup::new(name.to_owned(), text).text_align(Alignment::Left),
+        ))
+    };
+
+    let (program, uses_marks) = match command.program(selection) {
+        Ok(program) => program,
+        Err(missing) => {
+            return said(format!("Nothing to run the command against\n\n{missing}"));
+        }
+    };
+
+    if command.is_interactive() {
+        return AppAction::RunInteractive(Interactive {
+            program,
+            hold_screen: true,
+            on_success: uses_marks
+                .then_some(AppAction::ClearLogMarks)
+                .into_iter()
+                .collect(),
+        });
+    }
+
+    let mut ran = true;
+    let report = match program.run_captured() {
+        Ok(written) if written.trim().is_empty() => None,
+        Ok(written) => Some(written),
+        Err(err) => {
+            ran = false;
+            Some(format!("Failed to run the command\n\n{err}"))
+        }
+    };
+    // The command may have moved the repo whatever it had to say about
+    // it, so the tabs read it again either way.
+    let mut actions = vec![AppAction::MarkTabsStale];
+    if ran && uses_marks {
+        actions.push(AppAction::ClearLogMarks);
+    }
+    actions.extend(report.map(said));
+
+    AppAction::Multiple(actions)
 }
 
 /// Open `file` in the configured editor, having taken the working copy
@@ -949,6 +1047,92 @@ pub fn ask_set_bookmark(bookmark: &Bookmark, head: &Head) -> AppAction {
             commit_id: head.commit_id.clone(),
             dialog: None,
         },
+    )
+}
+
+/// Asking where to make a workspace.
+pub fn ask_add_workspace() -> AppAction {
+    AppAction::SetPopup(Box::new(WorkspacePopup::new_add()))
+}
+
+/// Asking what to call `workspace`, which is only ours to rename where
+/// we know the directory it is in: jj renames the workspace a command
+/// runs in, so that is where the rename has to run.
+pub fn ask_rename_workspace(workspace: &Workspace) -> AppAction {
+    let Some(root) = workspace.root.clone() else {
+        return message(
+            "Rename",
+            format!(
+                "{}, and jj renames the workspace a command runs in. \
+                 Run `jj workspace rename <new-name>` in that directory yourself.",
+                unknown_root(&workspace.name)
+            ),
+        );
+    };
+
+    AppAction::SetPopup(Box::new(WorkspacePopup::new_rename(
+        root,
+        workspace.name.clone(),
+    )))
+}
+
+/// Asking to forget `workspace`, which is not ours to forget while we
+/// are running in it: jj would leave us in a workspace the repo no
+/// longer knows.
+pub fn ask_forget_workspace(workspace: &Workspace) -> AppAction {
+    if workspace.current {
+        return message(
+            "Forget",
+            "This is the workspace blazingjj is running in. Switch to another one \
+             to forget it from there.",
+        );
+    }
+
+    confirm(
+        "Forget",
+        Text::from(vec![
+            Line::from(format!(
+                "Are you sure you want to forget the {} workspace?",
+                workspace.name
+            )),
+            Line::from("Whatever is in its directory is left alone."),
+        ]),
+        Command::ForgetWorkspace(workspace.name.clone()),
+    )
+}
+
+/// Work in `workspace` from now on, which is nothing but where we run:
+/// a workspace the repo records no directory for is one we cannot run
+/// in, and so cannot work in.
+pub fn switch_workspace(workspace: &Workspace) -> AppAction {
+    if workspace.current {
+        return message(
+            "Switch",
+            "This is the workspace blazingjj is already running in.",
+        );
+    }
+    let Some(root) = workspace.root.clone() else {
+        return message(
+            "Switch",
+            format!(
+                "{}, so there is nowhere for us to run. Start blazingjj in that \
+                 directory to work in it.",
+                unknown_root(&workspace.name)
+            ),
+        );
+    };
+
+    AppAction::WorkIn(root)
+}
+
+/// How a question opens where the repo does not say what directory the
+/// workspace of this name is in. There is no putting that right from
+/// here: jj records where a workspace is when it is added, from 0.38 on,
+/// and has nothing that records it afterwards.
+fn unknown_root(name: &str) -> String {
+    format!(
+        "The repo does not say where the {name} workspace is -- it was added before jj \
+         recorded that, or its directory has been moved or deleted since"
     )
 }
 

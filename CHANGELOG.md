@@ -109,6 +109,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `+` (`goto-child`) moves the log tab selection to the child of the selected
   change, asking which one when it has several in the log view, the way `-`
   does for its parents
+- Workspaces tab, listing the working copies attached to the repo and showing
+  the change the selected one holds; opened from the tab bar with `6`, and the
+  workspace the app is running in marked with a `*`. `a` adds a workspace in a
+  directory you name, `r` renames the selected one, `x` forgets it and `Enter`
+  works in it from now on, every command of ours going there; the context menu
+  holds the same, and takes the change a workspace holds to the log. The keys
+  are configurable under `[blazingjj.keybinds.workspaces-tab]`
 - Text in the details panel can be marked by dragging the mouse over it,
   by double clicking a word or by triple clicking a line, and goes to the
   system clipboard when the button comes up. A line the panel wrapped or
@@ -124,6 +131,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `blazingjj.editor-url`, like `jj://$revision/$file`, adds opening the file
     at the revision shown to that question, for an editor that reads a
     revision itself, such as neovim with jj.nvim
+- The settings tab's `blazingjj.context-menu` row opens what every context
+  menu holds, where `Enter` puts an item in its menu or takes it out,
+  `Shift+j` and `Shift+k` move it along the menu and `x` takes the whole menu
+  out of your config
+- The settings tab's `blazingjj.commands` row opens the commands of your own,
+  where `Enter` changes what one runs, `l` what a menu calls it, `i` whether
+  the terminal is handed over to it, `n` adds one and `x` takes one out of
+  your config
+- `blazingjj.commands` adds commands of your own, which name what a tab has
+  selected by the same placeholders the command popup takes and go in a
+  context menu by being listed in `blazingjj.context-menu`. A command has its
+  output captured and put up, or takes the terminal over with
+  `interactive = true`; see [docs/commands.md](docs/commands.md)
+- What a tab's context menu holds and the order it holds it in is
+  `blazingjj.context-menu`, one key per menu. A menu the configuration says
+  nothing about holds every item the app comes with, which `defaults` stands
+  for in a menu of your own; see
+  [docs/context-menus.md](docs/context-menus.md)
 - A command typed into the command popup (`:`) or run interactively (`!`) can
   name what the tab has selected by a placeholder: `$selected` (`$s`) for
   whatever the tab is about, `$marked` (`$m`) for the changes the log has

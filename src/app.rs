@@ -2,6 +2,7 @@ pub mod command;
 mod repo_watch;
 
 use core::fmt;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -32,8 +33,10 @@ use crate::background_tasks::TaskSlot;
 use crate::commander::ids::OperationId;
 use crate::commander::is_stale_working_copy;
 use crate::commander::new_commander;
+use crate::env::Env;
 use crate::env::get_env;
 use crate::env::reload_env;
+use crate::env::set_env;
 use crate::event::AppEvent;
 use crate::event::Clicks;
 use crate::event::EventSource;
@@ -51,13 +54,16 @@ use crate::ui::Interactive;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::bookmarks_tab::BookmarksTab;
+use crate::ui::commands_tab::CommandsTab;
 use crate::ui::dialog::CommandMode;
 use crate::ui::dialog::CommandPopup;
 use crate::ui::dialog::HelpPopup;
+use crate::ui::dialog::MessagePopup;
 use crate::ui::evolog_tab::EvologTab;
 use crate::ui::files_tab::FilesTab;
 use crate::ui::keybindings_tab::KeybindingsTab;
 use crate::ui::log_tab::LogTab;
+use crate::ui::menus_tab::MenusTab;
 use crate::ui::op_log_tab::OpLogTab;
 use crate::ui::settings_tab::SettingsTab;
 use crate::ui::status_bar;
@@ -65,6 +71,7 @@ use crate::ui::status_bar::Status;
 use crate::ui::styles::paint;
 use crate::ui::styles::panel_title;
 use crate::ui::styles_tab::StylesTab;
+use crate::ui::workspaces_tab::WorkspacesTab;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum TabId {
@@ -73,6 +80,7 @@ pub enum TabId {
     Bookmarks,
     Evolog,
     OpLog,
+    Workspaces,
     Settings,
     /// The keybindings, which the settings tab opens and which has no
     /// place of its own in the tab bar.
@@ -80,6 +88,12 @@ pub enum TabId {
     /// The styles, which the settings tab opens and which has no place
     /// of its own in the tab bar.
     Styles,
+    /// The commands of your own, which the settings tab opens and which
+    /// has no place of its own in the tab bar.
+    Commands,
+    /// What the context menus hold, which the settings tab opens and
+    /// which has no place of its own in the tab bar.
+    Menus,
 }
 
 impl fmt::Display for TabId {
@@ -90,33 +104,40 @@ impl fmt::Display for TabId {
             TabId::Bookmarks => write!(f, "Bookmarks"),
             TabId::Evolog => write!(f, "Evolog"),
             TabId::OpLog => write!(f, "Op log"),
+            TabId::Workspaces => write!(f, "Workspaces"),
             TabId::Settings => write!(f, "Settings"),
             TabId::Keybindings => write!(f, "Keybindings"),
             TabId::Styles => write!(f, "Styles"),
+            TabId::Commands => write!(f, "Commands"),
+            TabId::Menus => write!(f, "Context menus"),
         }
     }
 }
 
 impl TabId {
     /// Every tab there is, the transient one included
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 11] = [
         TabId::Log,
         TabId::Files,
         TabId::Bookmarks,
         TabId::Evolog,
         TabId::OpLog,
+        TabId::Workspaces,
         TabId::Settings,
         TabId::Keybindings,
         TabId::Styles,
+        TabId::Commands,
+        TabId::Menus,
     ];
 
     /// The tabs the tab bar lists, in the order it lists them
-    pub const VALUES: [Self; 6] = [
+    pub const VALUES: [Self; 7] = [
         TabId::Log,
         TabId::Files,
         TabId::Bookmarks,
         TabId::Evolog,
         TabId::OpLog,
+        TabId::Workspaces,
         TabId::Settings,
     ];
 
@@ -124,7 +145,7 @@ impl TabId {
     /// place of its own is the place of the tab that opens it.
     pub fn in_tab_bar(self) -> Self {
         match self {
-            TabId::Keybindings | TabId::Styles => TabId::Settings,
+            TabId::Keybindings | TabId::Styles | TabId::Commands | TabId::Menus => TabId::Settings,
             tab => tab,
         }
     }
@@ -134,12 +155,17 @@ impl TabId {
     /// come first by their number and last in the bar.
     pub fn number(self) -> usize {
         match self {
-            TabId::Settings | TabId::Keybindings | TabId::Styles => 0,
+            TabId::Settings
+            | TabId::Keybindings
+            | TabId::Styles
+            | TabId::Commands
+            | TabId::Menus => 0,
             TabId::Log => 1,
             TabId::Files => 2,
             TabId::Bookmarks => 3,
             TabId::Evolog => 4,
             TabId::OpLog => 5,
+            TabId::Workspaces => 6,
         }
     }
 }
@@ -246,9 +272,12 @@ pub struct App<'a> {
     pub bookmarks: BookmarksTab,
     pub evolog: EvologTab<'a>,
     pub op_log: OpLogTab<'a>,
+    pub workspaces: WorkspacesTab,
     pub settings: SettingsTab,
     pub keybindings: KeybindingsTab,
     pub styles: StylesTab,
+    pub commands: CommandsTab,
+    pub menus: MenusTab,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     /// Where the tabs overview was last drawn, for mouse input.
@@ -295,9 +324,12 @@ impl<'a> App<'a> {
             bookmarks: BookmarksTab::new(background_tasks.clone()),
             evolog: EvologTab::new(&current_head, background_tasks.clone()),
             op_log: OpLogTab::new(background_tasks.clone()),
+            workspaces: WorkspacesTab::new(background_tasks.clone()),
             settings: SettingsTab::new(),
             keybindings: KeybindingsTab::new(),
             styles: StylesTab::new(),
+            commands: CommandsTab::new(),
+            menus: MenusTab::new(),
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
@@ -525,15 +557,70 @@ impl<'a> App<'a> {
             TabId::Bookmarks => &mut self.bookmarks,
             TabId::Evolog => &mut self.evolog,
             TabId::OpLog => &mut self.op_log,
+            TabId::Workspaces => &mut self.workspaces,
             TabId::Settings => &mut self.settings,
             TabId::Keybindings => &mut self.keybindings,
             TabId::Styles => &mut self.styles,
+            TabId::Commands => &mut self.commands,
+            TabId::Menus => &mut self.menus,
         }
     }
 
     /// Take the interactive command a component has asked for, if any.
     pub fn take_pending_interactive(&mut self) -> Option<Interactive> {
         self.pending_interactive.take()
+    }
+
+    /// Work in the workspace at `root` from now on: every command of
+    /// ours goes there, and everything on screen is read again from it.
+    ///
+    /// Two workspaces of a repo differ in their working copy alone, so
+    /// nothing a tab is showing has gone anywhere; it is only out of
+    /// date. What we have in flight was to answer about the workspace we
+    /// are leaving, and holds the slot a newer read needs, so it is
+    /// given up on rather than waited for.
+    fn work_in(&mut self, root: &str) -> Result<()> {
+        let env = get_env();
+        let moved_to = Env::new(
+            PathBuf::from(root),
+            env.default_revset.clone(),
+            env.jj_bin.clone(),
+        );
+        let moved_to = match moved_to {
+            Ok(moved_to) => moved_to,
+            // The repo is still the one we were reading, so there is
+            // nothing to do about the failure but report it.
+            Err(err) => {
+                return self.handle_action(AppAction::SetPopup(Box::new(
+                    MessagePopup::new("Switch", format!("{err:#}"))
+                        .text_align(Alignment::Left)
+                        .wrapped(),
+                )));
+            }
+        };
+        set_env(moved_to);
+        self.background_tasks.cancel_all();
+        self.workspace = read_workspace();
+
+        // The move is ours, so the tabs are caught up with it rather
+        // than left stale for the user to ask.
+        self.repo_watch.catching_up();
+        self.repo_watch.ask_check(Check {
+            snapshot: true,
+            ours: true,
+        });
+        // Whatever the workspace we have left had to say about its
+        // working copy is nothing to go by here.
+        self.stale_workspace = false;
+        for tab in TabId::ALL {
+            self.get_tab(tab).drop_caches();
+        }
+        self.mark_all_stale();
+        // The working copy is what the two workspaces differ in, so it
+        // is what the log goes to.
+        self.log.focus_current()?;
+
+        Ok(())
     }
 
     /// Have every tab read the repo again.
@@ -548,9 +635,12 @@ impl<'a> App<'a> {
             TabId::Bookmarks => &self.bookmarks,
             TabId::Evolog => &self.evolog,
             TabId::OpLog => &self.op_log,
+            TabId::Workspaces => &self.workspaces,
             TabId::Settings => &self.settings,
             TabId::Keybindings => &self.keybindings,
             TabId::Styles => &self.styles,
+            TabId::Commands => &self.commands,
+            TabId::Menus => &self.menus,
         }
     }
 
@@ -626,6 +716,9 @@ impl<'a> App<'a> {
             }
             AppAction::RunInteractive(interactive) => {
                 self.pending_interactive = Some(interactive);
+            }
+            AppAction::WorkIn(root) => {
+                self.work_in(&root)?;
             }
             AppAction::ConfigChanged => {
                 // The environment we are leaving stays where it is, so
@@ -1004,6 +1097,7 @@ impl<'a> App<'a> {
                             GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks),
                             GlobalEvent::EvologTab => self.set_tab(TabId::Evolog),
                             GlobalEvent::OpLogTab => self.set_tab(TabId::OpLog),
+                            GlobalEvent::WorkspacesTab => self.set_tab(TabId::Workspaces),
                             GlobalEvent::SettingsTab => self.set_tab(TabId::Settings),
                             GlobalEvent::OpenContextMenu => {
                                 if let Some(action) = self.get_current_tab().open_context_menu()? {

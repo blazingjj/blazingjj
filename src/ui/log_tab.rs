@@ -340,6 +340,7 @@ impl<'a> LogTab<'a> {
         Ok(Some(AppAction::SetPopup(Box::new(log_context_menu(
             get_env().jj_config.clone(),
             anchor,
+            &self.selection(),
             &self.head,
             &self.marked(),
         )?))))
@@ -579,9 +580,12 @@ impl Tab for LogTab<'_> {
     }
 
     fn selection(&self) -> Selection {
+        // A command naming "$marked" asks for the marks itself, so it
+        // needs no prefix key to hand them over.
+        let marked: Vec<_> = self.log_panel.marked.iter().cloned().collect();
         Selection::default()
             .revision(&self.head, false)
-            .marked(&self.marked())
+            .marked(&marked)
     }
 
     fn main_panel_bindings(&self) -> Vec<Binding> {
