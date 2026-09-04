@@ -15,7 +15,6 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::prelude::*;
-use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::symbols;
 use ratatui::widgets::*;
@@ -62,6 +61,8 @@ use crate::ui::keybindings_tab::KeybindingsTab;
 use crate::ui::log_tab::LogTab;
 use crate::ui::op_log_tab::OpLogTab;
 use crate::ui::settings_tab::SettingsTab;
+use crate::ui::status_bar;
+use crate::ui::status_bar::Status;
 use crate::ui::workspaces_tab::WorkspacesTab;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
@@ -142,19 +143,16 @@ impl TabId {
     }
 }
 
-/// The line of hints in the header, in the two pieces the refresh key
-/// is lit up on its own in.
-const HINTS_BEFORE_REFRESH: &str = "q: quit | ?: help | ";
-const HINTS_REFRESH: &str = "R: refresh";
-
-/// How much of the right of the header the runtime is drawn over. It is
-/// a count of milliseconds, which takes a column more every tenfold, so
-/// this is room for a session of days rather than a fixed width.
-const RUNTIME_WIDTH: usize = 12;
-
-/// How wide the hints are with their border and the runtime beside them.
-const HINTS_WIDTH: u16 =
-    (HINTS_BEFORE_REFRESH.len() + HINTS_REFRESH.len() + 2 + RUNTIME_WIDTH) as u16;
+/// What the status bar calls the workspace we are running in, which is
+/// nothing at all where the repo names none and reading it failed.
+fn read_workspace() -> Option<String> {
+    new_commander()
+        .get_current_workspace()
+        .inspect_err(|err| warn!("Could not read what workspace we are in: {err}"))
+        .ok()
+        .flatten()
+        .map(|workspace| workspace.name)
+}
 
 /// Where each tab's title sits in the tab bar and how wide it is: one
 /// cell of padding on either side of a title, then a one cell divider.
@@ -257,6 +255,9 @@ pub struct App<'a> {
     /// The workspace the app is to be started again in, once the main
     /// loop has come down.
     pending_restart: Option<String>,
+    /// What the status bar calls the workspace we are running in, as far
+    /// as the repo names it.
+    workspace: Option<String>,
 
     // event handling
     running: Arc<AtomicBool>,
@@ -297,6 +298,7 @@ impl<'a> App<'a> {
             stale_workspace: false,
             pending_interactive: None,
             pending_restart: None,
+            workspace: read_workspace(),
 
             running,
             clicks: Clicks::default(),
@@ -477,6 +479,22 @@ impl<'a> App<'a> {
         for tab in TabId::ALL {
             self.get_tab(tab).mark_stale();
         }
+
+        // A workspace can be renamed like anything else in the repo, so
+        // what the status bar calls this one is read again with the rest.
+        self.workspace = read_workspace();
+    }
+
+    /// What the status bar says, as the app has it now.
+    fn status(&self) -> Status<'_> {
+        Status {
+            workspace: self.workspace.as_deref(),
+            root: &get_env().root,
+            revset: self.log.revset(),
+            marked: self.log.marks(),
+            stale: self.repo_watch.waiting_for_refresh(),
+            elapsed: self.stats.start_time.elapsed(),
+        }
     }
 
     pub fn get_tab(&mut self, tab: TabId) -> &mut dyn Tab {
@@ -619,15 +637,12 @@ impl<'a> App<'a> {
     pub fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(1)])
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(1),
+                Constraint::Length(1),
+            ])
             .split(area);
-
-        // The hints are the same however wide the window is, so the tab
-        // bar is given everything they do not need.
-        let header_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Fill(1), Constraint::Max(HINTS_WIDTH)])
-            .split(chunks[0]);
 
         {
             let titles: Vec<String> = TabId::VALUES
@@ -641,60 +656,25 @@ impl<'a> App<'a> {
                 .unwrap_or(0);
 
             let block = Block::bordered()
-                .title(" Tabs ")
+                .title(" blazingjj ")
                 .border_type(BorderType::Rounded);
-            let area = block.inner(header_chunks[0]);
+            let inner = block.inner(chunks[0]);
 
-            let scroll = tab_bar_scroll(&titles, selected, area.width);
-            self.record_tab_hits(header_chunks[0], area, &titles, scroll);
+            let scroll = tab_bar_scroll(&titles, selected, inner.width);
+            self.record_tab_hits(chunks[0], inner, &titles, scroll);
 
             let tabs = Paragraph::new(tab_bar_line(&titles, selected))
                 .block(block)
                 .scroll((0, scroll));
 
-            f.render_widget(tabs, header_chunks[0]);
-        }
-        {
-            // The app is not going to pick it up, so light up the key
-            // that does.
-            let refresh_style = if self.repo_watch.waiting_for_refresh() {
-                Style::default().fg(Color::Red)
-            } else {
-                Style::default()
-            };
-
-            let hints = Paragraph::new(Line::from(vec![
-                Span::raw(HINTS_BEFORE_REFRESH),
-                Span::styled(HINTS_REFRESH, refresh_style),
-            ]))
-            .fg(Color::DarkGray)
-            .block(
-                Block::bordered()
-                    .title(" blazingjj ")
-                    .border_type(BorderType::Rounded)
-                    .fg(Color::default()),
-            );
-
-            f.render_widget(hints, header_chunks[1]);
+            f.render_widget(tabs, chunks[0]);
         }
 
         self.get_current_tab().draw(f, chunks[1])?;
+        status_bar::draw(f, chunks[2], &self.status());
 
         if let Some(popup) = self.popup.as_mut() {
             popup.draw(f, area)?;
-        }
-
-        {
-            let paragraph =
-                Paragraph::new(format!("{}ms", self.stats.start_time.elapsed().as_millis()))
-                    .alignment(Alignment::Right);
-            let position = Rect {
-                x: 0,
-                y: 1,
-                height: 1,
-                width: area.width - 1,
-            };
-            f.render_widget(paragraph, position);
         }
 
         Ok(())

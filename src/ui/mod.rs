@@ -9,6 +9,7 @@ pub mod log_tab;
 pub mod op_log_tab;
 pub mod panel;
 pub mod settings_tab;
+pub mod status_bar;
 pub mod styles;
 pub mod utils;
 pub mod workspaces_tab;

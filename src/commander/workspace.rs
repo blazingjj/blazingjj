@@ -133,6 +133,24 @@ impl Commander {
         Ok(workspaces)
     }
 
+    /// The workspace we are running in, which is none where the repo
+    /// records no directory for any of them and none holds the change
+    /// the working copy is on. Leaves the working copy alone.
+    /// Maps to `jj workspace list --ignore-working-copy`
+    #[instrument(level = "trace", skip(self))]
+    pub fn get_current_workspace(&self) -> Result<Option<Workspace>, CommandError> {
+        let current = self
+            .jj(["workspace", "list", "-T", &workspace_template()])
+            .ignore_working_copy()
+            .run()?
+            .lines()
+            .filter_map(parse_workspace)
+            .map(|record| self.reading(record))
+            .find(|workspace| workspace.current);
+
+        Ok(current)
+    }
+
     /// The workspace `record` describes, with whether we are running in
     /// it settled.
     ///

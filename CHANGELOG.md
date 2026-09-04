@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Status bar along the foot of the window, saying which workspace the app is
+  working in and where it is, the revset the log is showing and how many
+  changes it has marked. It has taken over the `q`/`?`/`R` hints and the
+  runtime counter from the header, which now holds the tab bar alone
 - `+` (`goto-child`) moves the log tab selection to the child of the selected
   change, asking which one when it has several in the log view, the way `-`
   does for its parents
