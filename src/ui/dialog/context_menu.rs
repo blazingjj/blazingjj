@@ -201,6 +201,10 @@ pub fn workspaces_context_menu(
     if let Some(workspace) = selected {
         items.extend([
             (
+                Line::raw("Work in this workspace"),
+                command::switch_workspace(workspace),
+            ),
+            (
                 Line::raw("Rename"),
                 command::ask_rename_workspace(workspace),
             ),

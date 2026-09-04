@@ -218,6 +218,8 @@ copy-id = "shift+y"
 
 ```toml
 [blazingjj.keybinds.workspaces-tab]
+switch = "enter"
+
 add = "a"
 rename = "r"
 forget = "x"

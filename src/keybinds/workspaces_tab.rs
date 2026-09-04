@@ -24,6 +24,7 @@ pub enum WorkspacesTabEvent {
     Add,
     Forget,
     Rename,
+    Switch,
 
     Unbound,
 }
@@ -36,6 +37,7 @@ impl Default for WorkspacesTabKeybinds {
             WorkspacesTabEvent::Add => "a",
             WorkspacesTabEvent::Forget => "x",
             WorkspacesTabEvent::Rename => "r",
+            WorkspacesTabEvent::Switch => "enter",
         );
         Self { keys }
     }
@@ -62,6 +64,7 @@ impl WorkspacesTabKeybinds {
             WorkspacesTabEvent::Add => config.add,
             WorkspacesTabEvent::Forget => config.forget,
             WorkspacesTabEvent::Rename => config.rename,
+            WorkspacesTabEvent::Switch => config.switch,
         );
     }
 
@@ -74,6 +77,7 @@ impl WorkspacesTabKeybinds {
     pub fn bindings(&self) -> Vec<Binding> {
         make_bindings!(
             self.keys, Self::default().keys, Context::WorkspacesTab,
+            WorkspacesTabEvent::Switch => "switch", Some(Section::Workspaces), "work in this workspace from now on",
             WorkspacesTabEvent::Add => "add", Some(Section::Workspaces), "add a workspace",
             WorkspacesTabEvent::Rename => "rename", Some(Section::Workspaces), "rename this workspace",
             WorkspacesTabEvent::Forget => "forget", Some(Section::Workspaces), "forget this workspace",
