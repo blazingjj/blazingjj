@@ -167,6 +167,14 @@ fn parents_template() -> String {
     )
 }
 
+/// Template writing the [Relative] of the commit in context, with a
+/// newline behind it so that output holding more than one has one object
+/// per line.
+fn relative_template_nl() -> String {
+    let fields = relative_fields("self");
+    format!(r#"'{{' ++ {fields} ++ '}}' ++ "\n""#)
+}
+
 /// Template rendering an evolog entry the way `builtin_evolog_compact`
 /// does, except that the operation always takes a line of its own. The
 /// builtin leaves it out for an entry recorded before jj tracked which
@@ -434,6 +442,18 @@ impl Commander {
             .collect()
     }
 
+    /// Get a commit's children, newest first. A commit nothing was built
+    /// on has none.
+    /// Maps to `jj log -r 'children(<revision>)'`
+    #[instrument(level = "trace", skip(self))]
+    pub fn get_commit_children(&self, commit_id: &CommitId) -> Result<Vec<Relative>> {
+        self.execute_jj_log(Revset::children(commit_id), &relative_template_nl())
+            .with_context(|| format!("Failed getting commit children: {commit_id}"))?
+            .lines()
+            .map(parse_record)
+            .collect()
+    }
+
     /// Get a commit's first parent.
     #[instrument(level = "trace", skip(self))]
     pub fn get_commit_parent(&self, commit_id: &CommitId) -> Result<Head> {
@@ -690,6 +710,51 @@ mod tests {
                     description: "right".to_owned()
                 },
             ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn get_commit_children() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        test_repo.commander.jj(["describe", "-m", "base"]).run()?;
+        let base = test_repo.commander.get_current_head()?;
+
+        test_repo
+            .commander
+            .jj(["new", base.commit_id.as_str(), "-m", "first"])
+            .run()?;
+        let first = test_repo.commander.get_current_head()?;
+
+        test_repo
+            .commander
+            .jj(["new", base.commit_id.as_str(), "-m", "second"])
+            .run()?;
+        let second = test_repo.commander.get_current_head()?;
+
+        let children = test_repo.commander.get_commit_children(&base.commit_id)?;
+
+        assert_eq!(
+            children
+                .iter()
+                .map(|child| (child.head.commit_id.as_str(), child.description.as_str()))
+                .sorted()
+                .collect::<Vec<_>>(),
+            [
+                (first.commit_id.as_str(), "first"),
+                (second.commit_id.as_str(), "second")
+            ]
+            .into_iter()
+            .sorted()
+            .collect::<Vec<_>>()
+        );
+        assert!(
+            test_repo
+                .commander
+                .get_commit_children(&second.commit_id)?
+                .is_empty()
         );
 
         Ok(())

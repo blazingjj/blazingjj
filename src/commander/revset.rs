@@ -29,6 +29,11 @@ impl Revset {
         Self(format!("change_id({id})"))
     }
 
+    /// The commits that have the given one as a parent.
+    pub fn children(id: &CommitId) -> Self {
+        Self(format!("children({id})"))
+    }
+
     /// The union of the given revsets, or [None] if there are none.
     pub fn union(revsets: impl IntoIterator<Item = impl Into<Revset>>) -> Option<Self> {
         let expressions: Vec<_> = revsets.into_iter().map(|revset| revset.into().0).collect();

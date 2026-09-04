@@ -15,7 +15,7 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Create new changes from selected change with `n`, as its child or spliced
     in before or after it
   - Mark several changes with `Space` to make them the parents of a new change
-  - Go to a change's parent with `-`
+  - Go to a change's parent with `-` or its child with `+`
   - Edit changes with `e`/`E`
   - Describe changes with `d`
   - Abandon changes with `a`
@@ -182,8 +182,8 @@ See all key mappings for the current tab with `?`.
 - View change files in files tab with `Enter`
 - View how the change evolved in the evolog tab with `v`
 - Go to the top/bottom of the visible log with `Ctrl+Home`/`Ctrl+End`
-- Go to the highlighted change's parent with `-`, choosing which one when a
-  merge has more than one in view
+- Go to the highlighted change's parent with `-` or to its child with `+`,
+  choosing which one when there is more than one in view
 - Mark the highlighted change with `Space`, to give a new change several parents
 - Display different revset with `r` (`jj log -r`)
 - Create new change with `n`, choosing whether it becomes a child of the

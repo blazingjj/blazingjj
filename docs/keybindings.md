@@ -124,6 +124,7 @@ toggle-wrap = "shift+w"
 [blazingjj.keybinds.log-tab]
 mark-head = "space"
 goto-parent = "-"
+goto-child = "+"
 
 create-new = "n"
 create-new-describe = "shift+n"

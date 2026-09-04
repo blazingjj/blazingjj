@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyEventKind;
@@ -16,6 +18,7 @@ use crate::background_tasks::TaskSlot;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::log::LOG_LINES_PER_ITEM;
+use crate::commander::log::Relative;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
 use crate::env::get_env;
@@ -27,6 +30,7 @@ use crate::keybinds::LogTabEvent;
 use crate::keybinds::LogTabKeybinds;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
+use crate::keybinds::Relation;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -149,6 +153,43 @@ impl<'a> LogTab<'a> {
     }
 }
 
+impl Relation {
+    /// The relatives of the commit in this direction, in the order to
+    /// offer them in.
+    fn of(self, commit_id: &CommitId) -> Result<Vec<Relative>> {
+        let commander = new_commander();
+        match self {
+            Self::Parent => commander.get_commit_parents(commit_id),
+            Self::Child => commander.get_commit_children(commit_id),
+        }
+    }
+
+    /// The title of a popup saying why the move did not happen.
+    fn goto_title(self) -> &'static str {
+        match self {
+            Self::Parent => "Go to parent",
+            Self::Child => "Go to child",
+        }
+    }
+
+    /// The title of the popup asking which relative to move to.
+    fn select_title(self) -> &'static str {
+        match self {
+            Self::Parent => "Select parent",
+            Self::Child => "Select child",
+        }
+    }
+}
+
+impl Display for Relation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parent => write!(f, "parent"),
+            Self::Child => write!(f, "child"),
+        }
+    }
+}
+
 /**
 # Event handling
 [`LogTab::handle_event`] turns an event into the request it stands for,
@@ -172,42 +213,42 @@ impl<'a> LogTab<'a> {
         )?))))
     }
 
-    /// Move the selection to the parent of the current head, asking which
-    /// one unless there is a single parent to go to.
-    fn handle_goto_parent(&mut self) -> Result<Option<AppAction>> {
-        let message = |text: &str| {
+    /// Move the selection the way `relation` points, asking which
+    /// relative to go to unless there is a single one.
+    fn handle_goto(&mut self, relation: Relation) -> Result<Option<AppAction>> {
+        let message = |text: String| {
             Ok(Some(AppAction::SetPopup(Box::new(MessagePopup::new(
-                "Go to parent",
+                relation.goto_title(),
                 text,
             )))))
         };
 
-        let parents = match new_commander().get_commit_parents(&self.head.commit_id) {
-            Ok(parents) => parents,
-            Err(err) => return message(&err.to_string()),
+        let relatives = match relation.of(&self.head.commit_id) {
+            Ok(relatives) => relatives,
+            Err(err) => return message(err.to_string()),
         };
 
-        if parents.is_empty() {
-            return message("The root commit has no parent");
+        if relatives.is_empty() {
+            return message(format!("This change has no {relation}"));
         }
 
         // Selecting a change the log does not hold would leave the list
         // without a highlight, and the next scroll would start over at its
         // first change.
-        let (mut parents, out_of_view): (Vec<_>, Vec<_>) = parents
+        let (mut relatives, out_of_view): (Vec<_>, Vec<_>) = relatives
             .into_iter()
-            .partition(|parent| self.log_panel.shows_item(&parent.head));
+            .partition(|relative| self.log_panel.shows_item(&relative.head));
 
-        match parents.len() {
-            0 => message("The log holds no parent of this change"),
+        match relatives.len() {
+            0 => message(format!("The log holds no {relation} of this change")),
             1 => {
-                self.set_head(parents.remove(0).head);
+                self.set_head(relatives.remove(0).head);
                 Ok(None)
             }
             _ => Ok(Some(AppAction::SetPopup(Box::new(relative_select(
                 get_env().jj_config.clone(),
-                "Select parent",
-                &parents,
+                relation.select_title(),
+                &relatives,
                 &out_of_view,
             ))))),
         }
@@ -312,8 +353,8 @@ impl<'a> LogTab<'a> {
             LogTabEvent::Fetch { all_remotes } => {
                 return Ok(Some(AppAction::Run(Command::Fetch { all_remotes })));
             }
-            LogTabEvent::GotoParent => {
-                return self.handle_goto_parent();
+            LogTabEvent::Goto(relation) => {
+                return self.handle_goto(relation);
             }
 
             LogTabEvent::Unbound => {}
