@@ -14,7 +14,6 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use tracing::instrument;
 
-use crate::app::TabId;
 use crate::app::command::Command;
 use crate::commander::config::config_value;
 use crate::commander::new_commander;
@@ -25,7 +24,6 @@ use crate::keybinds::SettingsTabEvent;
 use crate::keybinds::SettingsTabKeybinds;
 use crate::settings::SETTINGS;
 use crate::settings::Setting;
-use crate::settings::SettingKind;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -117,16 +115,15 @@ impl SettingsTab {
     /// it takes, when it only takes one of a few, or what it is to be.
     fn change_selected(&self) -> Option<AppAction> {
         let setting = self.selected()?;
-        if matches!(setting.kind, SettingKind::Keybindings) {
-            return Some(AppAction::ViewTab(TabId::Keybindings));
+        if let Some(tab) = setting.kind.tab() {
+            return Some(AppAction::ViewTab(tab));
         }
 
         let values = self.values.as_ref().ok()?;
         let Some(choices) = setting.choices() else {
-            return Some(AppAction::SetPopup(Box::new(SettingValuePopup::new(
-                setting,
-                values.value(setting).unwrap_or_default(),
-            ))));
+            return Some(AppAction::SetPopup(Box::new(
+                SettingValuePopup::of_setting(setting, values.value(setting).unwrap_or_default()),
+            )));
         };
 
         let items: Vec<_> = choices
@@ -166,9 +163,10 @@ impl SettingsTab {
     /// whatever the rest of the configuration says.
     fn unset_selected(&self) -> Option<AppAction> {
         let setting = self.selected()?;
-        // Taking the keybindings out would be taking out every binding
-        // at once, which is the keybindings tab's to do one at a time.
-        if matches!(setting.kind, SettingKind::Keybindings) {
+        // Taking the keybindings or the commands out would be taking out
+        // every one of them at once, which is the tab that lists them
+        // to do one at a time.
+        if setting.kind.tab().is_some() {
             return None;
         }
 

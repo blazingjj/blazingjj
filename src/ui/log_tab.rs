@@ -36,6 +36,7 @@ use crate::keybinds::LogTabKeybinds;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::keybinds::Relation;
+use crate::selection::Selection;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -125,6 +126,17 @@ impl<'a> LogTab<'a> {
 
             stale: true,
         }
+    }
+
+    /// The revset the log is showing, where it is showing one of its own
+    /// rather than what jj lists by default.
+    pub fn revset(&self) -> Option<&str> {
+        self.log_revset.as_deref()
+    }
+
+    /// How many changes the log has marked.
+    pub fn marks(&self) -> usize {
+        self.log_panel.marked.len()
     }
 
     /// Stop marking the changes that were marked, whatever they were
@@ -300,6 +312,7 @@ impl<'a> LogTab<'a> {
         Ok(Some(AppAction::SetPopup(Box::new(log_context_menu(
             get_env().jj_config.clone(),
             anchor,
+            &self.selection(),
             &self.head,
             &self.marked(),
         )?))))
@@ -537,6 +550,12 @@ impl Tab for LogTab<'_> {
 
     fn open_context_menu(&self) -> Result<Option<AppAction>> {
         self.context_menu(self.log_panel.selected_position())
+    }
+
+    fn selection(&self) -> Selection {
+        Selection::default()
+            .revision(&self.head, false)
+            .marked(&self.marked())
     }
 
     fn main_panel_bindings(&self) -> Vec<Binding> {

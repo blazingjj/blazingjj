@@ -27,6 +27,7 @@ use crate::keybinds::BookmarksTabEvent;
 use crate::keybinds::BookmarksTabKeybinds;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
+use crate::selection::Selection;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -278,6 +279,7 @@ impl BookmarksTab {
         Some(AppAction::SetPopup(Box::new(bookmarks_context_menu(
             get_env().jj_config.clone(),
             anchor,
+            &self.selection(),
             self.selected_target(),
         ))))
     }
@@ -442,6 +444,19 @@ impl Tab for BookmarksTab {
             self.get_current_bookmark_index()
                 .and_then(|index| self.bookmarks_pane.item_anchor(index, 1)),
         ))
+    }
+
+    /// The tab is about the bookmark, which points at a change, so a
+    /// command run here can name either. A line that is no bookmark to
+    /// operate on names neither.
+    fn selection(&self) -> Selection {
+        let Some((bookmark, head)) = self.selected_target() else {
+            return Selection::default();
+        };
+
+        Selection::default()
+            .revision(head, false)
+            .bookmark(&bookmark.to_string())
     }
 
     fn main_panel_bindings(&self) -> Vec<Binding> {

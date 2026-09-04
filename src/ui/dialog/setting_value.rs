@@ -1,5 +1,11 @@
-/*! A popup taking the value of one setting, which it hands on as the
-operation that writes it to the user's config.
+/*! A popup taking one line of the configuration, which it hands on as
+whatever the caller makes of what was typed: the operation writing an
+option to the user's config, for the value of one of those.
+
+A key holding more than any one thing to type, as a command of your own
+does, is written whole from the one part of it that was asked for. What
+was typed may also be no more than the next thing to ask about, as the
+name of a command to add is.
 */
 
 use ansi_to_tui::IntoText;
@@ -32,8 +38,16 @@ use crate::ui::styles::popup_text_width;
 use crate::ui::styles::wrapped_height;
 use crate::ui::utils::centered_rect_line_height;
 
+/// What the text that was typed asks for, or what is wrong with it.
+type Accept = Box<dyn Fn(&str) -> Result<AppAction>>;
+
 pub struct SettingValuePopup<'a> {
-    setting: &'static Setting,
+    /// What the popup goes up under, which is the config key it is
+    /// asking about.
+    title: String,
+    /// What the text that was typed asks for, which is also what
+    /// refuses a text that cannot be read.
+    accept: Accept,
     textarea: TextArea<'a>,
     /// What was said about the value that was typed, if it was refused.
     error: Option<anyhow::Error>,
@@ -41,24 +55,53 @@ pub struct SettingValuePopup<'a> {
 }
 
 impl SettingValuePopup<'static> {
-    /// Ask for the value of `setting`, starting from `value` as it reads
-    /// on screen rather than as the TOML it is written as.
-    pub fn new(setting: &'static Setting, value: String) -> Self {
-        let mut textarea = TextArea::new(vec![value]);
+    /// Ask about `title`, starting from `text`, and do whatever `accept`
+    /// makes of what was typed.
+    pub fn new(
+        title: impl Into<String>,
+        text: String,
+        accept: impl Fn(&str) -> Result<AppAction> + 'static,
+    ) -> Self {
+        let mut textarea = TextArea::new(vec![text]);
         textarea.move_cursor(CursorMove::End);
 
         Self {
-            setting,
+            title: title.into(),
+            accept: Box::new(accept),
             textarea,
             error: None,
             keybinds: PopupKeybinds::text_line(),
         }
     }
+
+    /// Ask for the value of `key`, starting from `value` as it reads on
+    /// screen rather than as the TOML it is written as, which `value_of`
+    /// turns it back into.
+    pub fn of_key(
+        key: impl Into<String>,
+        value: String,
+        value_of: impl Fn(&str) -> Result<String> + 'static,
+    ) -> Self {
+        let key = key.into();
+
+        Self::new(key.clone(), value, move |text| {
+            Ok(AppAction::Run(Command::SetSetting {
+                key: key.clone(),
+                value: value_of(text)?,
+            }))
+        })
+    }
+
+    /// Ask for the value of `setting`, starting from `value` as it reads
+    /// on screen.
+    pub fn of_setting(setting: &'static Setting, value: String) -> Self {
+        Self::of_key(setting.key, value, |text| setting.value_of(text))
+    }
 }
 
 impl Component for SettingValuePopup<'_> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        let block = create_popup_block(self.setting.key);
+        let block = create_popup_block(&self.title);
 
         let error_lines = self
             .error
@@ -107,11 +150,11 @@ impl Component for SettingValuePopup<'_> {
         {
             match self.keybinds.match_event(key) {
                 PopupEvent::Accept => {
-                    // A value the setting cannot be read from is one to
-                    // correct rather than one to give up on, so the
-                    // question stays up with what was said about it.
-                    let value = match self.setting.value_of(&self.textarea.lines().join("\n")) {
-                        Ok(value) => value,
+                    // A text that cannot be read is one to correct
+                    // rather than one to give up on, so the question
+                    // stays up with what was said about it.
+                    let asked = match (self.accept)(&self.textarea.lines().join("\n")) {
+                        Ok(asked) => asked,
                         Err(err) => {
                             self.error = Some(err);
                             return Ok(ComponentInputResult::Handled);
@@ -119,13 +162,7 @@ impl Component for SettingValuePopup<'_> {
                     };
 
                     return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                        vec![
-                            AppAction::ClosePopup,
-                            AppAction::Run(Command::SetSetting {
-                                key: self.setting.key.to_owned(),
-                                value,
-                            }),
-                        ],
+                        vec![AppAction::ClosePopup, asked],
                     )));
                 }
                 PopupEvent::Cancel => {

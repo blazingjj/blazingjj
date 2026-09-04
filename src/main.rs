@@ -1,6 +1,8 @@
 extern crate thiserror;
 
 use std::env::current_dir;
+use std::env::current_exe;
+use std::ffi::OsString;
 use std::fs::OpenOptions;
 use std::fs::canonicalize;
 use std::io::ErrorKind;
@@ -36,10 +38,13 @@ use tracing_subscriber::layer::SubscriberExt;
 mod app;
 mod background_tasks;
 mod commander;
+mod commands;
 mod env;
 mod event;
 mod interrupt;
 mod keybinds;
+mod menus;
+mod selection;
 mod settings;
 mod ui;
 use crate::app::App;
@@ -94,9 +99,72 @@ fn main() -> Result<()> {
     // Run app
     let res = run_app(&mut terminal, &mut app);
     restore_terminal()?;
-    res?;
+
+    if let Some(root) = res? {
+        restart_in(&root)?;
+    }
 
     Ok(())
+}
+
+/// Run in the workspace at `root` in place of this run, which is what
+/// working in another workspace comes to: every command of ours goes to
+/// the workspace we were started in, as does the working copy the tabs
+/// show, so we start again rather than take another one over.
+fn restart_in(root: &str) -> Result<()> {
+    let program = current_exe().context("Could not find the program to start again")?;
+    let mut command = Command::new(program);
+    command
+        .arg("--path")
+        .arg(root)
+        .args(args_beside_path(std::env::args_os().skip(1)));
+
+    #[cfg(unix)]
+    {
+        // Nothing of ours is worth keeping around for the workspace we
+        // are leaving, so the new run takes this process over.
+        use std::os::unix::process::CommandExt;
+
+        Err(command.exec().into())
+    }
+    #[cfg(not(unix))]
+    {
+        // Without exec we stay around until the new run is done, having
+        // handed it the terminal.
+        let status = command.status().context("Could not start again")?;
+
+        std::process::exit(status.code().unwrap_or(0));
+    }
+}
+
+/// The arguments we were given, without the one naming the workspace:
+/// the workspace to start in takes its place. Both spellings of the
+/// option go, as does the value of one given as an argument of its own.
+fn args_beside_path(args: impl Iterator<Item = OsString>) -> Vec<OsString> {
+    let mut kept = Vec::new();
+    let mut drop_value = false;
+
+    for arg in args {
+        if drop_value {
+            drop_value = false;
+            continue;
+        }
+        if arg == "--path" || arg == "-p" {
+            drop_value = true;
+            continue;
+        }
+
+        // A value given with the option is part of the same argument,
+        // which for the short option is whatever follows it.
+        let text = arg.to_string_lossy();
+        if text.starts_with("--path=") || text.starts_with("-p") {
+            continue;
+        }
+
+        kept.push(arg);
+    }
+
+    kept
 }
 
 /// Examine environment variables and command line arguments
@@ -199,7 +267,9 @@ fn update_stale_workspace() -> Result<bool> {
     Ok(true)
 }
 
-fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
+/// Run the app until it is done, and report the workspace it is to be
+/// started again in, if it was asked to move to one.
+fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<Option<String>> {
     app.launch_input_channel();
     let mut quiet = false;
     let kbd_enhanced = supports_keyboard_enhancement()?;
@@ -208,6 +278,12 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
         let mut changed = app.update()?;
 
         changed |= app.refresh_view()?;
+
+        // Working in another workspace is the app coming down, so it
+        // leaves the loop rather than drawing anything else.
+        if let Some(root) = app.take_pending_restart() {
+            return Ok(Some(root));
+        }
 
         // Before the wait below, which anything but user input may be a
         // long time coming to.
@@ -231,7 +307,7 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut App) -> Result<()> {
                 if drag_flags_pushed {
                     execute!(io::stdout(), PopKeyboardEnhancementFlags)?;
                 }
-                return Ok(());
+                return Ok(None);
             }
             Handled::Redraw => quiet = false,
             Handled::Nothing => quiet = true,
@@ -389,4 +465,29 @@ fn install_panic_hook() {
         }
         original_hook(info);
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn beside_path(args: &[&str]) -> Vec<String> {
+        args_beside_path(args.iter().map(OsString::from))
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// The workspace we start again in is the one we were asked for, so
+    /// the path we were started with goes, however it was given.
+    #[test]
+    fn starting_again_keeps_every_argument_but_the_path() {
+        assert_eq!(
+            beside_path(&["--path", "/repo", "-r", "@", "--ignore-jj-version"]),
+            ["-r", "@", "--ignore-jj-version"]
+        );
+        assert_eq!(beside_path(&["-p", "/repo", "-r", "@"]), ["-r", "@"]);
+        assert_eq!(beside_path(&["--path=/repo", "-r", "@"]), ["-r", "@"]);
+        assert_eq!(beside_path(&["-p/repo", "-r", "@"]), ["-r", "@"]);
+    }
 }

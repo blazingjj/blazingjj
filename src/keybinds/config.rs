@@ -28,8 +28,11 @@ pub struct KeybindsConfig {
     pub bookmarks_tab: Option<BookmarksTabKeybindsConfig>,
     pub evolog_tab: Option<EvologTabKeybindsConfig>,
     pub op_log_tab: Option<OpLogTabKeybindsConfig>,
+    pub workspaces_tab: Option<WorkspacesTabKeybindsConfig>,
     pub settings_tab: Option<SettingsTabKeybindsConfig>,
     pub keybindings_tab: Option<KeybindingsTabKeybindsConfig>,
+    pub commands_tab: Option<CommandsTabKeybindsConfig>,
+    pub menus_tab: Option<MenusTabKeybindsConfig>,
     pub details_panel: Option<DetailsPanelKeybindsConfig>,
     pub popup: Option<PopupKeybindsConfig>,
     pub text_popup: Option<TextPopupKeybindsConfig>,
@@ -199,6 +202,16 @@ pub struct OpLogTabKeybindsConfig {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
+pub struct WorkspacesTabKeybindsConfig {
+    pub switch: Option<Keybind>,
+
+    pub add: Option<Keybind>,
+    pub rename: Option<Keybind>,
+    pub forget: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct SettingsTabKeybindsConfig {
     pub change: Option<Keybind>,
     pub unset: Option<Keybind>,
@@ -210,6 +223,27 @@ pub struct KeybindingsTabKeybindsConfig {
     pub bind: Option<Keybind>,
     pub bind_besides: Option<Keybind>,
     pub disable: Option<Keybind>,
+    pub unset: Option<Keybind>,
+    pub back: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct CommandsTabKeybindsConfig {
+    pub change_command_line: Option<Keybind>,
+    pub change_label: Option<Keybind>,
+    pub toggle_interactive: Option<Keybind>,
+    pub add: Option<Keybind>,
+    pub unset: Option<Keybind>,
+    pub back: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct MenusTabKeybindsConfig {
+    pub toggle: Option<Keybind>,
+    pub move_up: Option<Keybind>,
+    pub move_down: Option<Keybind>,
     pub unset: Option<Keybind>,
     pub back: Option<Keybind>,
 }

@@ -26,6 +26,7 @@ use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::EvologTabEvent;
 use crate::keybinds::EvologTabKeybinds;
+use crate::selection::Selection;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -120,6 +121,7 @@ impl<'a> EvologTab<'a> {
         Some(AppAction::SetPopup(Box::new(evolog_context_menu(
             get_env().jj_config.clone(),
             anchor,
+            &self.selection(),
             &self.entry_panel.selected,
             &self.change,
         ))))
@@ -200,6 +202,13 @@ impl Tab for EvologTab<'_> {
 
     fn open_context_menu(&self) -> Result<Option<AppAction>> {
         Ok(self.context_menu(self.entry_panel.selected_position()))
+    }
+
+    /// A version of a change is only to be found by its commit id,
+    /// which is what the tab is about rather than the change it belongs
+    /// to.
+    fn selection(&self) -> Selection {
+        Selection::default().revision(&self.entry_panel.selected, true)
     }
 
     fn main_panel_bindings(&self) -> Vec<Binding> {

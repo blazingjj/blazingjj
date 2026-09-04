@@ -15,9 +15,7 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::prelude::*;
-use ratatui::style::Color;
 use ratatui::style::Style;
-use ratatui::symbols;
 use ratatui::widgets::*;
 use tracing::info;
 use tracing::instrument;
@@ -53,6 +51,7 @@ use crate::ui::Interactive;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::bookmarks_tab::BookmarksTab;
+use crate::ui::commands_tab::CommandsTab;
 use crate::ui::dialog::CommandMode;
 use crate::ui::dialog::CommandPopup;
 use crate::ui::dialog::HelpPopup;
@@ -60,8 +59,12 @@ use crate::ui::evolog_tab::EvologTab;
 use crate::ui::files_tab::FilesTab;
 use crate::ui::keybindings_tab::KeybindingsTab;
 use crate::ui::log_tab::LogTab;
+use crate::ui::menus_tab::MenusTab;
 use crate::ui::op_log_tab::OpLogTab;
 use crate::ui::settings_tab::SettingsTab;
+use crate::ui::status_bar;
+use crate::ui::status_bar::Status;
+use crate::ui::workspaces_tab::WorkspacesTab;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum TabId {
@@ -70,10 +73,17 @@ pub enum TabId {
     Bookmarks,
     Evolog,
     OpLog,
+    Workspaces,
     Settings,
     /// The keybindings, which the settings tab opens and which has no
     /// place of its own in the tab bar.
     Keybindings,
+    /// The commands of your own, which the settings tab opens and which
+    /// has no place of its own in the tab bar.
+    Commands,
+    /// What the context menus hold, which the settings tab opens and
+    /// which has no place of its own in the tab bar.
+    Menus,
 }
 
 impl fmt::Display for TabId {
@@ -84,31 +94,38 @@ impl fmt::Display for TabId {
             TabId::Bookmarks => write!(f, "Bookmarks"),
             TabId::Evolog => write!(f, "Evolog"),
             TabId::OpLog => write!(f, "Op log"),
+            TabId::Workspaces => write!(f, "Workspaces"),
             TabId::Settings => write!(f, "Settings"),
             TabId::Keybindings => write!(f, "Keybindings"),
+            TabId::Commands => write!(f, "Commands"),
+            TabId::Menus => write!(f, "Context menus"),
         }
     }
 }
 
 impl TabId {
     /// Every tab there is, the transient one included
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 10] = [
         TabId::Log,
         TabId::Files,
         TabId::Bookmarks,
         TabId::Evolog,
         TabId::OpLog,
+        TabId::Workspaces,
         TabId::Settings,
         TabId::Keybindings,
+        TabId::Commands,
+        TabId::Menus,
     ];
 
     /// The tabs the tab bar lists, in the order it lists them
-    pub const VALUES: [Self; 6] = [
+    pub const VALUES: [Self; 7] = [
         TabId::Log,
         TabId::Files,
         TabId::Bookmarks,
         TabId::Evolog,
         TabId::OpLog,
+        TabId::Workspaces,
         TabId::Settings,
     ];
 
@@ -116,7 +133,7 @@ impl TabId {
     /// place of its own is the place of the tab that opens it.
     pub fn in_tab_bar(self) -> Self {
         match self {
-            TabId::Keybindings => TabId::Settings,
+            TabId::Keybindings | TabId::Commands | TabId::Menus => TabId::Settings,
             tab => tab,
         }
     }
@@ -126,59 +143,85 @@ impl TabId {
     /// come first by their number and last in the bar.
     pub fn number(self) -> usize {
         match self {
-            TabId::Settings | TabId::Keybindings => 0,
+            TabId::Settings | TabId::Keybindings | TabId::Commands | TabId::Menus => 0,
             TabId::Log => 1,
             TabId::Files => 2,
             TabId::Bookmarks => 3,
             TabId::Evolog => 4,
             TabId::OpLog => 5,
+            TabId::Workspaces => 6,
         }
     }
 }
 
-/// The line of hints in the header, in the two pieces the refresh key
-/// is lit up on its own in.
-const HINTS_BEFORE_REFRESH: &str = "q: quit | ?: help | ";
-const HINTS_REFRESH: &str = "R: refresh";
+/// What the status bar calls the workspace we are running in, which is
+/// nothing at all where the repo names none and reading it failed.
+fn read_workspace() -> Option<String> {
+    new_commander()
+        .get_current_workspace()
+        .inspect_err(|err| warn!("Could not read what workspace we are in: {err}"))
+        .ok()
+        .flatten()
+        .map(|workspace| workspace.name)
+}
 
-/// How much of the right of the header the runtime is drawn over. It is
-/// a count of milliseconds, which takes a column more every tenfold, so
-/// this is room for a session of days rather than a fixed width.
-const RUNTIME_WIDTH: usize = 12;
+/// What the app calls itself in the corner it sits in.
+const APP_NAME: &str = " blazingjj ";
 
-/// How wide the hints are with their border and the runtime beside them.
-const HINTS_WIDTH: u16 =
-    (HINTS_BEFORE_REFRESH.len() + HINTS_REFRESH.len() + 2 + RUNTIME_WIDTH) as u16;
+/// What points at the tab showing, from either side of it. They stand
+/// in the cell of padding the tab has anyway, so marking a tab moves
+/// nothing along the bar.
+const POINTS_RIGHT: &str = "▶";
+const POINTS_LEFT: &str = "◀";
+
+/// How the tab bar names a tab: the number it is picked by and what it
+/// shows.
+fn tab_title(tab: TabId) -> String {
+    format!("{} {tab}", tab.number())
+}
 
 /// Where each tab's title sits in the tab bar and how wide it is: one
-/// cell of padding on either side of a title, then a one cell divider.
-/// The padding counts as part of the title, so that clicking next to a
-/// name still hits it.
+/// cell of padding on either side of a title. The padding counts as part
+/// of the title, so that clicking next to a name still hits it, and two
+/// titles are a cell of it apart.
 fn tab_bar_layout(titles: &[String]) -> impl Iterator<Item = (u16, u16)> {
     titles.iter().scan(0, |x, title| {
         let start = *x;
         let width = Line::raw(title).width() as u16 + 2;
-        *x += width + 1;
+        *x += width;
         Some((start, width))
     })
 }
 
-/// The whole tab bar, however much of it shows, with the selected tab
-/// highlighted.
+/// The whole tab bar, however much of it shows, with the tab showing
+/// pointed at from either side. The number a tab is reached by is
+/// dimmed: it is there to be found when it is wanted rather than read
+/// along with the names.
 fn tab_bar_line(titles: &[String], selected: usize) -> Line<'static> {
-    let highlight = get_env().jj_config.highlight_color();
+    let pointer = Style::default().fg(Color::Cyan);
 
     let mut spans = Vec::new();
     for (i, title) in titles.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::raw(symbols::line::VERTICAL));
-        }
-        let title = format!(" {title} ");
-        spans.push(if i == selected {
-            Span::styled(title, Style::default().bg(highlight))
+        let showing = i == selected;
+        let (before, name, after) = if showing {
+            (
+                Span::styled(POINTS_RIGHT, pointer),
+                Style::default().bold(),
+                Span::styled(POINTS_LEFT, pointer),
+            )
         } else {
-            Span::raw(title)
-        });
+            (Span::raw(" "), Style::default(), Span::raw(" "))
+        };
+        // The number leads the title, which is nothing else's to hold.
+        let (number, title) = title.split_once(' ').unwrap_or(("", title));
+
+        spans.extend([
+            before,
+            Span::styled(number.to_owned(), Style::default().fg(Color::DarkGray)),
+            Span::raw(" "),
+            Span::styled(title.to_owned(), name),
+            after,
+        ]);
     }
 
     Line::from(spans)
@@ -226,8 +269,11 @@ pub struct App<'a> {
     pub bookmarks: BookmarksTab,
     pub evolog: EvologTab<'a>,
     pub op_log: OpLogTab<'a>,
+    pub workspaces: WorkspacesTab,
     pub settings: SettingsTab,
     pub keybindings: KeybindingsTab,
+    pub commands: CommandsTab,
+    pub menus: MenusTab,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     /// Where the tabs overview was last drawn, for mouse input.
@@ -247,6 +293,12 @@ pub struct App<'a> {
     /// Interactive command queued by a component for the main loop to run
     /// after restoring the terminal.
     pending_interactive: Option<Interactive>,
+    /// The workspace the app is to be started again in, once the main
+    /// loop has come down.
+    pending_restart: Option<String>,
+    /// What the status bar calls the workspace we are running in, as far
+    /// as the repo names it.
+    workspace: Option<String>,
 
     // event handling
     running: Arc<AtomicBool>,
@@ -271,8 +323,11 @@ impl<'a> App<'a> {
             bookmarks: BookmarksTab::new(background_tasks.clone()),
             evolog: EvologTab::new(&current_head, background_tasks.clone()),
             op_log: OpLogTab::new(background_tasks.clone()),
+            workspaces: WorkspacesTab::new(background_tasks.clone()),
             settings: SettingsTab::new(),
             keybindings: KeybindingsTab::new(),
+            commands: CommandsTab::new(),
+            menus: MenusTab::new(),
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
@@ -285,6 +340,8 @@ impl<'a> App<'a> {
             repo_watch: RepoWatch::new(get_env().jj_config.poll_interval(), Instant::now()),
             stale_workspace: false,
             pending_interactive: None,
+            pending_restart: None,
+            workspace: read_workspace(),
 
             running,
             clicks: Clicks::default(),
@@ -465,6 +522,22 @@ impl<'a> App<'a> {
         for tab in TabId::ALL {
             self.get_tab(tab).mark_stale();
         }
+
+        // A workspace can be renamed like anything else in the repo, so
+        // what the status bar calls this one is read again with the rest.
+        self.workspace = read_workspace();
+    }
+
+    /// What the status bar says, as the app has it now.
+    fn status(&self) -> Status<'_> {
+        Status {
+            workspace: self.workspace.as_deref(),
+            root: &get_env().root,
+            revset: self.log.revset(),
+            marked: self.log.marks(),
+            stale: self.repo_watch.waiting_for_refresh(),
+            elapsed: self.stats.start_time.elapsed(),
+        }
     }
 
     pub fn get_tab(&mut self, tab: TabId) -> &mut dyn Tab {
@@ -474,14 +547,23 @@ impl<'a> App<'a> {
             TabId::Bookmarks => &mut self.bookmarks,
             TabId::Evolog => &mut self.evolog,
             TabId::OpLog => &mut self.op_log,
+            TabId::Workspaces => &mut self.workspaces,
             TabId::Settings => &mut self.settings,
             TabId::Keybindings => &mut self.keybindings,
+            TabId::Commands => &mut self.commands,
+            TabId::Menus => &mut self.menus,
         }
     }
 
     /// Take the interactive command a component has asked for, if any.
     pub fn take_pending_interactive(&mut self) -> Option<Interactive> {
         self.pending_interactive.take()
+    }
+
+    /// Take the workspace the app is to be started again in, if one has
+    /// been asked for.
+    pub fn take_pending_restart(&mut self) -> Option<String> {
+        self.pending_restart.take()
     }
 
     /// Have every tab read the repo again.
@@ -496,8 +578,11 @@ impl<'a> App<'a> {
             TabId::Bookmarks => &self.bookmarks,
             TabId::Evolog => &self.evolog,
             TabId::OpLog => &self.op_log,
+            TabId::Workspaces => &self.workspaces,
             TabId::Settings => &self.settings,
             TabId::Keybindings => &self.keybindings,
+            TabId::Commands => &self.commands,
+            TabId::Menus => &self.menus,
         }
     }
 
@@ -574,6 +659,10 @@ impl<'a> App<'a> {
             AppAction::RunInteractive(interactive) => {
                 self.pending_interactive = Some(interactive);
             }
+            AppAction::RestartIn(root) => {
+                self.pending_restart = Some(root);
+                self.running.store(false, Ordering::Relaxed);
+            }
             AppAction::ConfigChanged => {
                 // Whatever went wrong reading it, the app goes on with
                 // the configuration it has rather than coming down.
@@ -618,82 +707,50 @@ impl<'a> App<'a> {
     pub fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(1)])
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(1),
+                Constraint::Length(1),
+            ])
             .split(area);
 
-        // The hints are the same however wide the window is, so the tab
-        // bar is given everything they do not need.
-        let header_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Fill(1), Constraint::Max(HINTS_WIDTH)])
-            .split(chunks[0]);
-
         {
-            let titles: Vec<String> = TabId::VALUES
-                .iter()
-                .map(|tab| format!("[{}] {}", tab.number(), tab))
-                .collect();
+            let titles: Vec<String> = TabId::VALUES.iter().copied().map(tab_title).collect();
 
             let selected = TabId::VALUES
                 .iter()
                 .position(|tab| *tab == self.current_tab.in_tab_bar())
                 .unwrap_or(0);
 
-            let block = Block::bordered()
-                .title(" Tabs ")
-                .border_type(BorderType::Rounded);
-            let area = block.inner(header_chunks[0]);
+            // The name stays where it is however far the tabs are
+            // scrolled, so they are given the rest of the row.
+            let header = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Length(APP_NAME.len() as u16),
+                    Constraint::Fill(1),
+                ])
+                .split(chunks[0]);
 
-            let scroll = tab_bar_scroll(&titles, selected, area.width);
-            self.record_tab_hits(header_chunks[0], area, &titles, scroll);
-
-            let tabs = Paragraph::new(tab_bar_line(&titles, selected))
-                .block(block)
-                .scroll((0, scroll));
-
-            f.render_widget(tabs, header_chunks[0]);
-        }
-        {
-            // The app is not going to pick it up, so light up the key
-            // that does.
-            let refresh_style = if self.repo_watch.waiting_for_refresh() {
-                Style::default().fg(Color::Red)
-            } else {
-                Style::default()
-            };
-
-            let hints = Paragraph::new(Line::from(vec![
-                Span::raw(HINTS_BEFORE_REFRESH),
-                Span::styled(HINTS_REFRESH, refresh_style),
-            ]))
-            .fg(Color::DarkGray)
-            .block(
-                Block::bordered()
-                    .title(" blazingjj ")
-                    .border_type(BorderType::Rounded)
-                    .fg(Color::default()),
+            f.render_widget(
+                Paragraph::new(Span::styled(APP_NAME, Style::default().bold())),
+                header[0],
             );
 
-            f.render_widget(hints, header_chunks[1]);
+            let scroll = tab_bar_scroll(&titles, selected, header[1].width);
+            self.record_tab_hits(chunks[0], header[1], &titles, scroll);
+
+            f.render_widget(
+                Paragraph::new(tab_bar_line(&titles, selected)).scroll((0, scroll)),
+                header[1],
+            );
         }
 
         self.get_current_tab().draw(f, chunks[1])?;
+        status_bar::draw(f, chunks[2], &self.status());
 
         if let Some(popup) = self.popup.as_mut() {
             popup.draw(f, area)?;
-        }
-
-        {
-            let paragraph =
-                Paragraph::new(format!("{}ms", self.stats.start_time.elapsed().as_millis()))
-                    .alignment(Alignment::Right);
-            let position = Rect {
-                x: 0,
-                y: 1,
-                height: 1,
-                width: area.width - 1,
-            };
-            f.render_widget(paragraph, position);
         }
 
         Ok(())
@@ -971,6 +1028,7 @@ impl<'a> App<'a> {
                             GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks),
                             GlobalEvent::EvologTab => self.set_tab(TabId::Evolog),
                             GlobalEvent::OpLogTab => self.set_tab(TabId::OpLog),
+                            GlobalEvent::WorkspacesTab => self.set_tab(TabId::Workspaces),
                             GlobalEvent::SettingsTab => self.set_tab(TabId::Settings),
                             GlobalEvent::OpenContextMenu => {
                                 if let Some(action) = self.get_current_tab().open_context_menu()? {
@@ -978,12 +1036,18 @@ impl<'a> App<'a> {
                                 }
                             }
                             GlobalEvent::CommandPopup => {
-                                self.popup =
-                                    Some(Box::new(CommandPopup::new(CommandMode::Capture)));
+                                let selection = self.get_current_tab().selection();
+                                self.popup = Some(Box::new(CommandPopup::new(
+                                    CommandMode::Capture,
+                                    selection,
+                                )));
                             }
                             GlobalEvent::InteractiveCommandPopup => {
-                                self.popup =
-                                    Some(Box::new(CommandPopup::new(CommandMode::Interactive)));
+                                let selection = self.get_current_tab().selection();
+                                self.popup = Some(Box::new(CommandPopup::new(
+                                    CommandMode::Interactive,
+                                    selection,
+                                )));
                             }
                             GlobalEvent::ToggleLayout => self.toggle_layout(),
                             GlobalEvent::OpenHelp => self.open_help()?,
@@ -1006,8 +1070,7 @@ impl<'a> App<'a> {
 mod tests {
     use super::*;
 
-    /// Titles taking 5, 5 and 7 cells with their padding, so 19 with the
-    /// dividers between them.
+    /// Titles taking 5, 5 and 7 cells with their padding, so 17 across.
     fn titles() -> Vec<String> {
         ["one", "two", "three"]
             .into_iter()
@@ -1017,17 +1080,26 @@ mod tests {
 
     #[test]
     fn the_tab_bar_stays_at_its_front_while_every_tab_fits() {
-        assert_eq!(tab_bar_scroll(&titles(), 2, 19), 0);
+        assert_eq!(tab_bar_scroll(&titles(), 2, 17), 0);
     }
 
     #[test]
     fn a_tab_bar_wider_than_its_window_centers_the_selected_tab() {
-        assert_eq!(tab_bar_scroll(&titles(), 1, 10), 3);
+        assert_eq!(tab_bar_scroll(&titles(), 1, 10), 2);
     }
 
     #[test]
     fn the_tab_bar_scrolls_no_further_than_its_ends() {
         assert_eq!(tab_bar_scroll(&titles(), 0, 10), 0);
-        assert_eq!(tab_bar_scroll(&titles(), 2, 10), 9);
+        assert_eq!(tab_bar_scroll(&titles(), 2, 10), 7);
+    }
+
+    /// The tab showing is pointed at from either side, in the cells of
+    /// padding a tab has anyway.
+    #[test]
+    fn the_tab_bar_points_at_the_tab_showing() {
+        let titles = [TabId::Log, TabId::Files].map(tab_title).to_vec();
+
+        assert_eq!(tab_bar_line(&titles, 1).to_string(), " 1 Log ▶2 Files◀");
     }
 }

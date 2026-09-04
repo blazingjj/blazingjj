@@ -12,6 +12,7 @@ use std::str::FromStr;
 use anyhow::Result;
 use anyhow::bail;
 
+use crate::app::TabId;
 use crate::env::check_config_value;
 
 /// What kind of value an option takes, which decides both how it is
@@ -30,6 +31,27 @@ pub enum SettingKind {
     /// The keybindings, which are a table rather than a value to type,
     /// so they are changed one binding at a time in a tab of their own.
     Keybindings,
+    /// The commands of your own, which are a table rather than a value
+    /// to type, so they are changed one command at a time in a tab of
+    /// their own.
+    Commands,
+    /// What the context menus hold, which is a table of lists rather
+    /// than a value to type, so they are changed one menu at a time in
+    /// a tab of their own.
+    ContextMenus,
+}
+
+impl SettingKind {
+    /// The tab an option that is changed in one of its own is changed
+    /// in.
+    pub fn tab(&self) -> Option<TabId> {
+        match self {
+            Self::Keybindings => Some(TabId::Keybindings),
+            Self::Commands => Some(TabId::Commands),
+            Self::ContextMenus => Some(TabId::Menus),
+            _ => None,
+        }
+    }
 }
 
 /// One option the settings tab shows.
@@ -51,6 +73,8 @@ impl Setting {
     pub fn value_of(&self, input: &str) -> Result<String> {
         let value = match self.kind {
             SettingKind::Keybindings => bail!("The keybindings are not an option to type"),
+            SettingKind::Commands => bail!("The commands are not an option to type"),
+            SettingKind::ContextMenus => bail!("The context menus are not an option to type"),
             SettingKind::Number => {
                 let input = input.trim();
                 // TOML reads anything but a number here as text that
@@ -91,6 +115,19 @@ impl Setting {
             (SettingKind::Keybindings, _) => match bindings_set(value) {
                 1 => "1 binding set".to_owned(),
                 set => format!("{set} bindings set"),
+            },
+            // What the commands are is the commands tab's to say; what
+            // the settings tab says is only how many of them there are.
+            (SettingKind::Commands, toml::Value::Table(commands)) => match commands.len() {
+                1 => "1 command".to_owned(),
+                set => format!("{set} commands"),
+            },
+            // What the menus hold is the context menus tab's to say;
+            // what the settings tab says is only how many of them the
+            // configuration has anything to say about.
+            (SettingKind::ContextMenus, toml::Value::Table(menus)) => match menus.len() {
+                1 => "1 menu set".to_owned(),
+                set => format!("{set} menus set"),
             },
             (SettingKind::CommandLine, toml::Value::Array(words)) => words
                 .iter()
@@ -219,6 +256,20 @@ pub const SETTINGS: &[Setting] = &[
         doc: "Seconds between checks for work done outside the app, or 0 to only check when asked.",
         fallback: "1",
         kind: SettingKind::Number,
+    },
+    Setting {
+        key: "blazingjj.commands",
+        section: "Commands",
+        doc: "The commands of your own, each run against what a tab has selected and held by a context menu that lists its name. Opens the list of them.",
+        fallback: "no commands of your own",
+        kind: SettingKind::Commands,
+    },
+    Setting {
+        key: "blazingjj.context-menu",
+        section: "Commands",
+        doc: "What each tab's context menu holds and in which order. Opens the list of them.",
+        fallback: "every item the app comes with",
+        kind: SettingKind::ContextMenus,
     },
     Setting {
         key: "blazingjj.keybinds",
