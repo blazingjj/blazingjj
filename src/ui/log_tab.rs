@@ -119,6 +119,17 @@ impl<'a> LogTab<'a> {
         }
     }
 
+    /// The revset the log is showing, where it is showing one of its own
+    /// rather than what jj lists by default.
+    pub fn revset(&self) -> Option<&str> {
+        self.log_revset.as_deref()
+    }
+
+    /// How many changes the log has marked.
+    pub fn marks(&self) -> usize {
+        self.log_panel.marked.len()
+    }
+
     /// Stop marking the changes that were marked, whatever they were
     /// marked for having been done to them.
     pub fn clear_marks(&mut self) {

@@ -34,6 +34,7 @@ pub mod log;
 pub mod operation;
 pub mod program;
 pub mod revset;
+pub mod workspace;
 
 use std::ffi::OsStr;
 use std::ffi::OsString;
