@@ -9,6 +9,7 @@ on a [Mouse] that says how many presses in a row it belongs to.
 use std::time::Duration;
 use std::time::Instant;
 
+use ratatui::crossterm::event::KeyModifiers;
 use ratatui::crossterm::event::MouseButton;
 use ratatui::crossterm::event::MouseEvent;
 use ratatui::crossterm::event::MouseEventKind;
@@ -28,6 +29,8 @@ pub struct Mouse {
     /// own, 2 for a double click, 3 for a triple click, and 0 for an
     /// event that is not about a button at all
     clicks: u8,
+    /// Modifier keys held while it happened
+    modifiers: KeyModifiers,
 }
 
 /// The press a mouse event belongs to, as far as counting goes.
@@ -62,6 +65,7 @@ impl Mouse {
             kind,
             position,
             clicks,
+            modifiers: KeyModifiers::NONE,
         }
     }
 
@@ -79,12 +83,18 @@ impl Mouse {
         self.clicks
     }
 
+    /// The modifier keys held while the mouse did it.
+    pub fn modifiers(&self) -> KeyModifiers {
+        self.modifiers
+    }
+
     /// What `event` says the mouse did, as the `clicks`th press in a row.
     fn of(event: MouseEvent, clicks: u8) -> Self {
         Self {
             kind: event.kind,
             position: Position::new(event.column, event.row),
             clicks,
+            modifiers: event.modifiers,
         }
     }
 }

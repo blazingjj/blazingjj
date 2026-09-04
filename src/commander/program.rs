@@ -2,8 +2,9 @@
 to.
 
 A [Program] describes what to run, with what and where. It is run with
-the terminal handed over to it ([Program::run_foreground]), left running
-on its own ([Program::run_detached]), or turned into a [Command]
+the terminal handed over to it ([Program::run_foreground]), run with what
+it writes captured ([Program::run_captured]), left running on its own
+([Program::run_detached]), or turned into a [Command]
 ([Program::command]) for a caller that drives the child process itself.
 */
 
@@ -17,6 +18,10 @@ use std::process::Command;
 use std::process::ExitStatus;
 use std::process::Stdio;
 use std::thread;
+
+use crate::commander::CommandError;
+use crate::commander::cancel::CancelToken;
+use crate::commander::run_child;
 
 /// A program to run, with the arguments and the environment it is to run
 /// with.
@@ -58,6 +63,16 @@ impl Program {
         self
     }
 
+    /// The arguments it is to run with, for a test checking what a
+    /// program was built to run.
+    #[cfg(test)]
+    pub(crate) fn args_text(&self) -> Vec<String> {
+        self.args
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+    }
+
     /// The program as a command to configure and run, for a caller that
     /// handles the child process itself.
     pub fn command(&self) -> Command {
@@ -73,6 +88,18 @@ impl Program {
     /// how it exited.
     pub fn run_foreground(&self) -> io::Result<ExitStatus> {
         self.command().status()
+    }
+
+    /// Run the program and return what it wrote, on standard error after
+    /// standard output, for a caller that puts up whatever it has to say
+    /// rather than parsing it.
+    ///
+    /// Bytes that are not UTF-8 become replacement characters, so the
+    /// output is fit to put on screen but not to parse.
+    pub fn run_captured(&self) -> Result<String, CommandError> {
+        let written = run_child(self, None, Stdio::piped(), &CancelToken::new(), true)?;
+
+        Ok(String::from_utf8_lossy(&written).into_owned())
     }
 
     /// Start the program and leave it running on its own, with neither

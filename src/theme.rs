@@ -66,6 +66,10 @@ pub enum Role {
     FileDeleted,
     Conflict,
     Value,
+    DragSource,
+    DragTarget,
+    DragInsertTarget,
+    DragInsertPoint,
     DiffHeader,
     DiffFileHeader,
     DiffHunkHeader,
@@ -77,7 +81,7 @@ pub enum Role {
 
 impl Role {
     /// Every role there is, in the order the styles tab lists them.
-    pub const ALL: [Self; 34] = [
+    pub const ALL: [Self; 38] = [
         Self::Default,
         Self::Highlight,
         Self::Hint,
@@ -105,6 +109,10 @@ impl Role {
         Self::FileCopied,
         Self::FileDeleted,
         Self::Conflict,
+        Self::DragSource,
+        Self::DragTarget,
+        Self::DragInsertTarget,
+        Self::DragInsertPoint,
         Self::DiffHeader,
         Self::DiffFileHeader,
         Self::DiffHunkHeader,
@@ -150,6 +158,10 @@ impl Role {
             Self::FileDeleted => "file-deleted",
             Self::Conflict => "conflict",
             Self::Value => "value",
+            Self::DragSource => "drag-source",
+            Self::DragTarget => "drag-target",
+            Self::DragInsertTarget => "drag-insert-target",
+            Self::DragInsertPoint => "drag-insert-point",
             Self::DiffHeader => "diff-header",
             Self::DiffFileHeader => "diff-file-header",
             Self::DiffHunkHeader => "diff-hunk-header",
@@ -202,6 +214,14 @@ impl Role {
             Self::Value => {
                 "What an option or a binding is set to, where the settings and keybindings tabs list them."
             }
+            Self::DragSource => "The change being dragged.",
+            Self::DragTarget => "The change a drag would drop onto.",
+            Self::DragInsertTarget => {
+                "The change a drag would drop next to rather than onto, which the insertion point is read against."
+            }
+            Self::DragInsertPoint => {
+                "Where a drag would insert the change, ruled under the row it would land after. The foreground is the rule."
+            }
             Self::DiffHeader => "The line a diff names a file under, in the color words format.",
             Self::DiffFileHeader => {
                 "The block naming a file and what it was, above its hunks in the git format."
@@ -241,6 +261,10 @@ impl Role {
             | Self::FileCopied
             | Self::FileDeleted
             | Self::Conflict => "Files",
+            Self::DragSource
+            | Self::DragTarget
+            | Self::DragInsertTarget
+            | Self::DragInsertPoint => "Dragging",
             Self::DiffHeader
             | Self::DiffFileHeader
             | Self::DiffHunkHeader
@@ -328,6 +352,23 @@ impl Role {
                 ansi(Ansi::Red)
             }
             Self::Warning | Self::DiffHeader => ansi(Ansi::Yellow),
+            Self::DragSource => RoleStyle {
+                bg: Some(ThemeColor::Rgb(40, 80, 80)),
+                ..RoleStyle::default()
+            },
+            Self::DragTarget => RoleStyle {
+                bg: Some(ThemeColor::Rgb(120, 100, 30)),
+                ..RoleStyle::default()
+            },
+            Self::DragInsertTarget => RoleStyle {
+                bg: Some(ThemeColor::Rgb(50, 40, 15)),
+                ..RoleStyle::default()
+            },
+            Self::DragInsertPoint => RoleStyle {
+                fg: Some(ThemeColor::Ansi(Ansi::BrightCyan)),
+                bg: Some(ThemeColor::Rgb(0, 40, 50)),
+                ..RoleStyle::default()
+            },
             Self::Button => ansi(Ansi::BrightWhite),
             Self::ChangeId | Self::Bookmark => ansi(Ansi::Magenta),
         }
@@ -381,7 +422,13 @@ impl Role {
     /// foreground on the highlight would flatten jj's colouring of the
     /// selected row.
     fn keeps_off(self, channel: Channel) -> bool {
-        matches!((self, channel), (Self::Highlight, Channel::Fg))
+        matches!(
+            (self, channel),
+            (
+                Self::Highlight | Self::DragSource | Self::DragTarget | Self::DragInsertTarget,
+                Channel::Fg
+            )
+        )
     }
 }
 
