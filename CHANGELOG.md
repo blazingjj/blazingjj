@@ -180,6 +180,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The tab bar is now a single row of names, rather than a bordered box two
+  rows taller, and points at the tab showing from either side of it instead
+  of highlighting it. The keys the tabs are picked by are still in front of
+  their names, dimmed
 - The tab bar now scrolls the current tab into the middle of what it shows
   when the window is too narrow for every tab, rather than cutting off the
   tabs that do not fit. The header no longer says which numbers pick a tab,
