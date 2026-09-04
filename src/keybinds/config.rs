@@ -28,6 +28,7 @@ pub struct KeybindsConfig {
     pub bookmarks_tab: Option<BookmarksTabKeybindsConfig>,
     pub evolog_tab: Option<EvologTabKeybindsConfig>,
     pub op_log_tab: Option<OpLogTabKeybindsConfig>,
+    pub workspaces_tab: Option<WorkspacesTabKeybindsConfig>,
     pub settings_tab: Option<SettingsTabKeybindsConfig>,
     pub keybindings_tab: Option<KeybindingsTabKeybindsConfig>,
     pub details_panel: Option<DetailsPanelKeybindsConfig>,
@@ -189,6 +190,16 @@ pub struct OpLogTabKeybindsConfig {
     pub revert: Option<Keybind>,
 
     pub copy_id: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct WorkspacesTabKeybindsConfig {
+    pub switch: Option<Keybind>,
+
+    pub add: Option<Keybind>,
+    pub rename: Option<Keybind>,
+    pub forget: Option<Keybind>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

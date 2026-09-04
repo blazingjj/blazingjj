@@ -62,6 +62,7 @@ use crate::ui::keybindings_tab::KeybindingsTab;
 use crate::ui::log_tab::LogTab;
 use crate::ui::op_log_tab::OpLogTab;
 use crate::ui::settings_tab::SettingsTab;
+use crate::ui::workspaces_tab::WorkspacesTab;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum TabId {
@@ -70,6 +71,7 @@ pub enum TabId {
     Bookmarks,
     Evolog,
     OpLog,
+    Workspaces,
     Settings,
     /// The keybindings, which the settings tab opens and which has no
     /// place of its own in the tab bar.
@@ -84,6 +86,7 @@ impl fmt::Display for TabId {
             TabId::Bookmarks => write!(f, "Bookmarks"),
             TabId::Evolog => write!(f, "Evolog"),
             TabId::OpLog => write!(f, "Op log"),
+            TabId::Workspaces => write!(f, "Workspaces"),
             TabId::Settings => write!(f, "Settings"),
             TabId::Keybindings => write!(f, "Keybindings"),
         }
@@ -92,23 +95,25 @@ impl fmt::Display for TabId {
 
 impl TabId {
     /// Every tab there is, the transient one included
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         TabId::Log,
         TabId::Files,
         TabId::Bookmarks,
         TabId::Evolog,
         TabId::OpLog,
+        TabId::Workspaces,
         TabId::Settings,
         TabId::Keybindings,
     ];
 
     /// The tabs the tab bar lists, in the order it lists them
-    pub const VALUES: [Self; 6] = [
+    pub const VALUES: [Self; 7] = [
         TabId::Log,
         TabId::Files,
         TabId::Bookmarks,
         TabId::Evolog,
         TabId::OpLog,
+        TabId::Workspaces,
         TabId::Settings,
     ];
 
@@ -132,6 +137,7 @@ impl TabId {
             TabId::Bookmarks => 3,
             TabId::Evolog => 4,
             TabId::OpLog => 5,
+            TabId::Workspaces => 6,
         }
     }
 }
@@ -226,6 +232,7 @@ pub struct App<'a> {
     pub bookmarks: BookmarksTab,
     pub evolog: EvologTab<'a>,
     pub op_log: OpLogTab<'a>,
+    pub workspaces: WorkspacesTab,
     pub settings: SettingsTab,
     pub keybindings: KeybindingsTab,
     pub popup: Option<Box<dyn Component>>,
@@ -247,6 +254,9 @@ pub struct App<'a> {
     /// Interactive command queued by a component for the main loop to run
     /// after restoring the terminal.
     pending_interactive: Option<Interactive>,
+    /// The workspace the app is to be started again in, once the main
+    /// loop has come down.
+    pending_restart: Option<String>,
 
     // event handling
     running: Arc<AtomicBool>,
@@ -271,6 +281,7 @@ impl<'a> App<'a> {
             bookmarks: BookmarksTab::new(background_tasks.clone()),
             evolog: EvologTab::new(&current_head, background_tasks.clone()),
             op_log: OpLogTab::new(background_tasks.clone()),
+            workspaces: WorkspacesTab::new(background_tasks.clone()),
             settings: SettingsTab::new(),
             keybindings: KeybindingsTab::new(),
             popup: None,
@@ -285,6 +296,7 @@ impl<'a> App<'a> {
             repo_watch: RepoWatch::new(get_env().jj_config.poll_interval(), Instant::now()),
             stale_workspace: false,
             pending_interactive: None,
+            pending_restart: None,
 
             running,
             clicks: Clicks::default(),
@@ -474,6 +486,7 @@ impl<'a> App<'a> {
             TabId::Bookmarks => &mut self.bookmarks,
             TabId::Evolog => &mut self.evolog,
             TabId::OpLog => &mut self.op_log,
+            TabId::Workspaces => &mut self.workspaces,
             TabId::Settings => &mut self.settings,
             TabId::Keybindings => &mut self.keybindings,
         }
@@ -482,6 +495,12 @@ impl<'a> App<'a> {
     /// Take the interactive command a component has asked for, if any.
     pub fn take_pending_interactive(&mut self) -> Option<Interactive> {
         self.pending_interactive.take()
+    }
+
+    /// Take the workspace the app is to be started again in, if one has
+    /// been asked for.
+    pub fn take_pending_restart(&mut self) -> Option<String> {
+        self.pending_restart.take()
     }
 
     /// Have every tab read the repo again.
@@ -551,6 +570,10 @@ impl<'a> App<'a> {
             }
             AppAction::RunInteractive(interactive) => {
                 self.pending_interactive = Some(interactive);
+            }
+            AppAction::RestartIn(root) => {
+                self.pending_restart = Some(root);
+                self.running.store(false, Ordering::Relaxed);
             }
             AppAction::ConfigChanged => {
                 // Whatever went wrong reading it, the app goes on with
@@ -949,6 +972,7 @@ impl<'a> App<'a> {
                             GlobalEvent::BookmarksTab => self.set_tab(TabId::Bookmarks),
                             GlobalEvent::EvologTab => self.set_tab(TabId::Evolog),
                             GlobalEvent::OpLogTab => self.set_tab(TabId::OpLog),
+                            GlobalEvent::WorkspacesTab => self.set_tab(TabId::Workspaces),
                             GlobalEvent::SettingsTab => self.set_tab(TabId::Settings),
                             GlobalEvent::OpenContextMenu => {
                                 if let Some(action) = self.get_current_tab().open_context_menu()? {

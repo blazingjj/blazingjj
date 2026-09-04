@@ -32,6 +32,8 @@ use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyModifiers;
 pub use settings_tab::SettingsTabEvent;
 pub use settings_tab::SettingsTabKeybinds;
+pub use workspaces_tab::WorkspacesTabEvent;
+pub use workspaces_tab::WorkspacesTabKeybinds;
 
 use crate::env::keybinds_config;
 
@@ -50,6 +52,7 @@ mod op_log_tab;
 mod popup;
 pub mod rebase_popup;
 mod settings_tab;
+mod workspaces_tab;
 
 /*#[derive(Debug)]
 pub struct Keybinds {
@@ -66,6 +69,7 @@ pub enum Section {
     Changes,
     Files,
     BookmarksAndRemotes,
+    Workspaces,
     Clipboard,
     Settings,
     DetailsPanel,
@@ -75,11 +79,12 @@ pub enum Section {
 
 impl Section {
     /// Every section, in the order the help lists them
-    const ORDER: [Self; 8] = [
+    const ORDER: [Self; 9] = [
         Self::Navigation,
         Self::Changes,
         Self::Files,
         Self::BookmarksAndRemotes,
+        Self::Workspaces,
         Self::Clipboard,
         Self::Settings,
         Self::DetailsPanel,
@@ -92,6 +97,7 @@ impl Section {
             Self::Changes => "Changes",
             Self::Files => "Files",
             Self::BookmarksAndRemotes => "Bookmarks and remotes",
+            Self::Workspaces => "Workspaces",
             Self::Clipboard => "Clipboard",
             Self::Settings => "Settings",
             Self::DetailsPanel => "Details panel",
@@ -115,6 +121,7 @@ pub enum Context {
     BookmarksTab,
     EvologTab,
     OpLogTab,
+    WorkspacesTab,
     SettingsTab,
     KeybindingsTab,
     DetailsPanel,
@@ -127,13 +134,14 @@ pub enum Context {
 
 impl Context {
     /// Every context, in the order the keybindings are listed in
-    pub const ORDER: [Self; 14] = [
+    pub const ORDER: [Self; 15] = [
         Self::Global,
         Self::LogTab,
         Self::FilesTab,
         Self::BookmarksTab,
         Self::EvologTab,
         Self::OpLogTab,
+        Self::WorkspacesTab,
         Self::SettingsTab,
         Self::KeybindingsTab,
         Self::DetailsPanel,
@@ -152,6 +160,7 @@ impl Context {
             Self::BookmarksTab => "Bookmarks tab",
             Self::EvologTab => "Evolog tab",
             Self::OpLogTab => "Operation log tab",
+            Self::WorkspacesTab => "Workspaces tab",
             Self::SettingsTab => "Settings tab",
             Self::KeybindingsTab => "Keybindings tab",
             Self::DetailsPanel => "Details panel",
@@ -174,6 +183,7 @@ impl Context {
             Self::BookmarksTab => Some("bookmarks-tab"),
             Self::EvologTab => Some("evolog-tab"),
             Self::OpLogTab => Some("op-log-tab"),
+            Self::WorkspacesTab => Some("workspaces-tab"),
             Self::SettingsTab => Some("settings-tab"),
             Self::KeybindingsTab => Some("keybindings-tab"),
             Self::DetailsPanel => Some("details-panel"),
@@ -199,20 +209,22 @@ impl Context {
     fn beside(self) -> &'static [Self] {
         /// What is live with the details panel: the keys that hold
         /// everywhere and those of the tabs that have one.
-        const BESIDE_DETAILS_PANEL: [Context; 6] = [
+        const BESIDE_DETAILS_PANEL: [Context; 7] = [
             Context::Global,
             Context::LogTab,
             Context::FilesTab,
             Context::BookmarksTab,
             Context::EvologTab,
             Context::OpLogTab,
+            Context::WorkspacesTab,
         ];
-        const IN_A_TAB: [Context; 8] = [
+        const IN_A_TAB: [Context; 9] = [
             Context::LogTab,
             Context::FilesTab,
             Context::BookmarksTab,
             Context::EvologTab,
             Context::OpLogTab,
+            Context::WorkspacesTab,
             Context::SettingsTab,
             Context::KeybindingsTab,
             Context::DetailsPanel,
@@ -233,7 +245,8 @@ impl Context {
             | Self::FilesTab
             | Self::BookmarksTab
             | Self::EvologTab
-            | Self::OpLogTab => &[Self::Global, Self::DetailsPanel],
+            | Self::OpLogTab
+            | Self::WorkspacesTab => &[Self::Global, Self::DetailsPanel],
             // The tabs about the app have no details panel beside them.
             Self::SettingsTab | Self::KeybindingsTab => &[Self::Global],
             Self::Popup => &IN_A_POPUP,
@@ -256,6 +269,7 @@ impl Context {
             Self::BookmarksTab => BookmarksTabKeybinds::from_config(config).bindings(),
             Self::EvologTab => EvologTabKeybinds::from_config(config).bindings(),
             Self::OpLogTab => OpLogTabKeybinds::from_config(config).bindings(),
+            Self::WorkspacesTab => WorkspacesTabKeybinds::from_config(config).bindings(),
             Self::SettingsTab => SettingsTabKeybinds::from_config(config).bindings(),
             Self::KeybindingsTab => KeybindingsTabKeybinds::from_config(config).bindings(),
             Self::DetailsPanel => DetailsPanelKeybinds::from_config(config).bindings(),

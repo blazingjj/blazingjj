@@ -11,6 +11,7 @@ pub mod panel;
 pub mod settings_tab;
 pub mod styles;
 pub mod utils;
+pub mod workspaces_tab;
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
@@ -53,6 +54,9 @@ pub enum AppAction {
     /// The configuration has changed, so the app reads it again and
     /// everything that goes by it takes up what it now says.
     ConfigChanged,
+    /// Work in the workspace at this path from now on: the app comes
+    /// down and is started again there.
+    RestartIn(String),
     /// Run this operation and do whatever it asks for in turn. Whoever
     /// raises one has named it in full, so the app can run it without
     /// asking anything of the component the request came from.

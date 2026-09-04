@@ -35,6 +35,7 @@ use crate::commander::new_commander;
 use crate::commander::operation::Operation;
 use crate::commander::program::Program;
 use crate::commander::revset::Revset;
+use crate::commander::workspace::Workspace;
 use crate::env::Editor;
 use crate::env::EditorMode;
 use crate::env::JjConfig;
@@ -51,6 +52,8 @@ use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
+use crate::ui::dialog::WorkspaceMode;
+use crate::ui::dialog::WorkspacePopup;
 use crate::ui::dialog::describe_action;
 use crate::ui::dialog::new_insert;
 
@@ -176,6 +179,21 @@ pub enum Command {
     /// Update the working copy jj refuses to read the repo until it is
     /// updated.
     UpdateStaleWorkspace,
+    /// Make a workspace in this directory, which jj names it after.
+    AddWorkspace {
+        destination: String,
+    },
+    /// Stop tracking the working-copy commit of the workspace of this
+    /// name, leaving what is on disk alone.
+    ForgetWorkspace(String),
+    /// Rename the workspace whose root is `root`.
+    RenameWorkspace {
+        root: String,
+        new_name: String,
+    },
+    /// Work in the workspace at this path, which the app is started
+    /// again in.
+    SwitchWorkspace(String),
 }
 
 impl Command {
@@ -418,6 +436,32 @@ impl Command {
                 Ok(()) => Ok(Some(AppAction::ConfigChanged)),
                 Err(err) => Ok(Some(refused("Unset", err))),
             },
+            Command::AddWorkspace { destination } => {
+                match new_commander().run_workspace_add(&destination, None) {
+                    // The new workspace holds a change of its own, so
+                    // the repo is not where any tab last read it.
+                    Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                    // A destination that will not do is usually one to
+                    // correct rather than one to give up on, so the
+                    // question comes back with what was typed.
+                    Err(err) => Ok(Some(AppAction::SetPopup(Box::new(
+                        WorkspacePopup::refused(WorkspaceMode::Add, destination, err),
+                    )))),
+                }
+            }
+            Command::ForgetWorkspace(name) => match new_commander().run_workspace_forget(&name) {
+                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                Err(err) => Ok(Some(refused("Forget", err))),
+            },
+            Command::RenameWorkspace { root, new_name } => {
+                match new_commander().run_workspace_rename(&root, &new_name) {
+                    Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                    Err(err) => Ok(Some(AppAction::SetPopup(Box::new(
+                        WorkspacePopup::refused(WorkspaceMode::Rename { root }, new_name, err),
+                    )))),
+                }
+            }
+            Command::SwitchWorkspace(root) => Ok(Some(AppAction::RestartIn(root))),
         }
     }
 }
@@ -932,6 +976,105 @@ pub fn ask_set_bookmark(config: JjConfig, bookmark: &Bookmark, head: &Head) -> A
             commit_id: head.commit_id.clone(),
             dialog: None,
         },
+    )
+}
+
+/// Asking where to make a workspace.
+pub fn ask_add_workspace() -> AppAction {
+    AppAction::SetPopup(Box::new(WorkspacePopup::new_add()))
+}
+
+/// Asking what to call `workspace`, which is only ours to rename where
+/// we know the directory it is in: jj renames the workspace a command
+/// runs in, so that is where the rename has to run.
+pub fn ask_rename_workspace(workspace: &Workspace) -> AppAction {
+    let Some(root) = workspace.root.clone() else {
+        return message(
+            "Rename",
+            format!(
+                "{}, and jj renames the workspace a command runs in. \
+                 Run `jj workspace rename <new-name>` in that directory yourself.",
+                unknown_root(&workspace.name)
+            ),
+        );
+    };
+
+    AppAction::SetPopup(Box::new(WorkspacePopup::new_rename(
+        root,
+        workspace.name.clone(),
+    )))
+}
+
+/// Asking to forget `workspace`, which is not ours to forget while we
+/// are running in it: jj would leave us in a workspace the repo no
+/// longer knows.
+pub fn ask_forget_workspace(config: JjConfig, workspace: &Workspace) -> AppAction {
+    if workspace.current {
+        return message(
+            "Forget",
+            "This is the workspace blazingjj is running in. Switch to another one \
+             to forget it from there.",
+        );
+    }
+
+    confirm(
+        config,
+        "Forget",
+        Text::from(vec![
+            Line::from(format!(
+                "Are you sure you want to forget the {} workspace?",
+                workspace.name
+            )),
+            Line::from("Whatever is in its directory is left alone."),
+        ]),
+        Command::ForgetWorkspace(workspace.name.clone()),
+    )
+}
+
+/// Asking to work in `workspace` from now on, which the app has to be
+/// started again in its directory to do.
+pub fn ask_switch_workspace(config: JjConfig, workspace: &Workspace) -> AppAction {
+    if workspace.current {
+        return message(
+            "Switch",
+            "This is the workspace blazingjj is already running in.",
+        );
+    }
+    let Some(root) = workspace.root.clone() else {
+        return message(
+            "Switch",
+            format!(
+                "{}, so there is nowhere for us to run. Start blazingjj in that \
+                 directory to work in it.",
+                unknown_root(&workspace.name)
+            ),
+        );
+    };
+
+    confirm(
+        config,
+        "Switch",
+        Text::from(vec![
+            Line::from(format!(
+                "Working in the {} workspace means running there, so blazingjj",
+                workspace.name
+            )),
+            Line::from("starts again in it. Whatever is on screen here is left behind."),
+            Line::from(""),
+            Line::from(format!("Switch to {root}?")),
+        ]),
+        Command::SwitchWorkspace(root),
+    )
+}
+
+/// How a question opens where the repo does not say what directory the
+/// workspace of this name is in. There is no putting that right from
+/// here: jj records where a workspace is when it is added, from 0.38 on,
+/// and has nothing that records it afterwards.
+fn unknown_root(name: &str) -> String {
+    format!(
+        "The repo does not say where the {name} workspace is -- it was added before jj \
+         recorded that, or its directory has been moved or deleted since"
     )
 }
 

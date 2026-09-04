@@ -22,7 +22,7 @@ action answers to, `a` takes it as another key beside the ones it has.
 ### Global
 
 These work in every tab, and `scroll-down` and `scroll-up` scroll the
-popups as well. Selecting a tab by its number in the tab bar (`0` to `5`)
+popups as well. Selecting a tab by its number in the tab bar (`0` to `6`)
 is not configurable.
 
 ```toml
@@ -205,6 +205,17 @@ restore = "r"
 revert = "v"
 
 copy-id = "shift+y"
+```
+
+### Workspaces tab
+
+```toml
+[blazingjj.keybinds.workspaces-tab]
+switch = "enter"
+
+add = "a"
+rename = "r"
+forget = "x"
 ```
 
 ### Settings tab

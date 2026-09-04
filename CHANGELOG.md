@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `+` (`goto-child`) moves the log tab selection to the child of the selected
   change, asking which one when it has several in the log view, the way `-`
   does for its parents
+- Workspaces tab, listing the working copies attached to the repo and showing
+  the change the selected one holds; opened from the tab bar with `6`, and the
+  workspace the app is running in marked with a `*`. `a` adds a workspace in a
+  directory you name, `r` renames the selected one, `x` forgets it and `Enter`
+  works in it from now on, which blazingjj starts again in its directory to
+  do; the context menu holds the same, and takes the change a workspace holds
+  to the log. The keys are configurable under
+  `[blazingjj.keybinds.workspaces-tab]`
 - Text in the details panel can be marked by dragging the mouse over it,
   by double clicking a word or by triple clicking a line, and goes to the
   system clipboard when the button comes up. A line the panel wrapped or
