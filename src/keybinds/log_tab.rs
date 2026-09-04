@@ -24,7 +24,7 @@ pub struct LogTabKeybinds {
 pub enum LogTabEvent {
     ToggleHeadMark,
 
-    GotoParent,
+    Goto(Relation),
 
     CreateNew { describe: bool },
     Duplicate,
@@ -46,6 +46,13 @@ pub enum LogTabEvent {
     Fetch { all_remotes: bool },
 
     Unbound,
+}
+
+/// Which way along the graph a move of the selection goes.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Relation {
+    Parent,
+    Child,
 }
 
 /// Which bookmarks a push is to send.
@@ -71,7 +78,8 @@ impl Default for LogTabKeybinds {
         set_keybinds!(
             keys,
             LogTabEvent::ToggleHeadMark => "space",
-            LogTabEvent::GotoParent => "-",
+            LogTabEvent::Goto(Relation::Parent) => "-",
+            LogTabEvent::Goto(Relation::Child) => "+",
             LogTabEvent::Duplicate => "shift+d",
             LogTabEvent::CreateNew { describe: false } => "n",
             LogTabEvent::CreateNew { describe: true } => "shift+n",
@@ -125,7 +133,8 @@ impl LogTabKeybinds {
         update_keybinds!(
             self.keys,
             LogTabEvent::ToggleHeadMark => config.mark_head,
-            LogTabEvent::GotoParent => config.goto_parent,
+            LogTabEvent::Goto(Relation::Parent) => config.goto_parent,
+            LogTabEvent::Goto(Relation::Child) => config.goto_child,
             LogTabEvent::Duplicate => config.duplicate,
             LogTabEvent::CreateNew { describe: false } => config.create_new,
             LogTabEvent::CreateNew { describe: true } => config.create_new_describe,
@@ -158,7 +167,8 @@ impl LogTabKeybinds {
     pub fn bindings(&self) -> Vec<Binding> {
         make_bindings!(
             self.keys, Self::default().keys, Context::LogTab,
-            LogTabEvent::GotoParent => "goto-parent", Some(Section::Navigation), "go to parent commit",
+            LogTabEvent::Goto(Relation::Parent) => "goto-parent", Some(Section::Navigation), "go to parent commit",
+            LogTabEvent::Goto(Relation::Child) => "goto-child", Some(Section::Navigation), "go to child commit",
             LogTabEvent::OpenFiles => "open-files", Some(Section::Navigation), "see files",
             LogTabEvent::OpenEvolog => "open-evolog", Some(Section::Navigation), "see how the change evolved",
             LogTabEvent::EditRevset => "edit-revset", Some(Section::Navigation), "set revset",

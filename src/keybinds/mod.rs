@@ -22,6 +22,7 @@ pub use keybindings_tab::KeybindingsTabKeybinds;
 pub use log_tab::LogTabEvent;
 pub use log_tab::LogTabKeybinds;
 pub use log_tab::PushScope;
+pub use log_tab::Relation;
 pub use op_log_tab::OpLogTabEvent;
 pub use op_log_tab::OpLogTabKeybinds;
 pub use popup::PopupEvent;
