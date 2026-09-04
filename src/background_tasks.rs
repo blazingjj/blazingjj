@@ -153,6 +153,19 @@ impl BackgroundTasks {
         cancelled.cancel.cancel();
     }
 
+    /// Give up on every task in flight, killing the commands they wait
+    /// for and discarding whatever they have produced. For work that was
+    /// to answer about a repo we are no longer reading: a slot still
+    /// held is one nothing can be submitted to.
+    pub fn cancel_all(&self) {
+        let cancelled: Vec<RunningTask> = self.lock().tasks.drain(..).collect();
+
+        for task in cancelled {
+            debug!("Cancelling task: {:?}", task.slot);
+            task.cancel.cancel();
+        }
+    }
+
     /// Take the first task `predicate` accepts out of the registry.
     fn take(&self, predicate: impl Fn(&RunningTask) -> bool) -> Option<RunningTask> {
         let mut running = self.lock();
