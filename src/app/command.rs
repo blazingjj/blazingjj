@@ -996,14 +996,16 @@ fn show_working_copy_files() -> Result<AppAction> {
 }
 
 fn message(title: &'static str, text: impl Into<String>) -> AppAction {
-    AppAction::SetPopup(Box::new(MessagePopup::new(title, text)))
+    AppAction::SetPopup(Box::new(MessagePopup::new(title, text).wrapped()))
 }
 
 /// What jj said when it would not do what `operation` asked. Its answer
 /// is laid out as it wrote it, being several lines as often as not.
 fn refused(operation: &'static str, err: impl Display) -> AppAction {
     AppAction::SetPopup(Box::new(
-        MessagePopup::new(operation, format!("{err:#}")).text_align(Alignment::Left),
+        MessagePopup::new(operation, format!("{err:#}"))
+            .text_align(Alignment::Left)
+            .wrapped(),
     ))
 }
 

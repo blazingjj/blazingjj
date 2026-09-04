@@ -277,6 +277,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selected change, which is what makes jj track them, and says so when the
   change has none. `ctrl+shift+p` pushes all bookmarks and `shift+p` only the
   tracked ones, as they did before
+- A message popup, and the reason jj gives for refusing something, now wrap
+  over as many lines as they need and scroll, rather than being cut off where
+  a narrow popup ends. The output of a command keeps its own lines
 
 ## [0.8.0] - 2026-04-19
 

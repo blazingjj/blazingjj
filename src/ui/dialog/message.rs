@@ -11,6 +11,7 @@ use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
+use ratatui::text::Text;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
 use ratatui::widgets::Clear;
@@ -19,6 +20,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Scrollbar;
 use ratatui::widgets::ScrollbarOrientation;
 use ratatui::widgets::ScrollbarState;
+use ratatui::widgets::Wrap;
 
 use crate::event::Mouse;
 use crate::keybinds::PopupEvent;
@@ -34,7 +36,14 @@ pub struct MessagePopup<'a> {
     title: Line<'a>,
     messages: LargeString,
     text_align: Option<Alignment>,
+    /// Whether the message is broken over as many lines as the popup
+    /// takes rather than left to run past its edge. It is for what we
+    /// wrote ourselves; the output of a command has lines of its own,
+    /// which say something about how it is read.
+    wrap: bool,
     scroll: usize,
+    /// How many lines the message came to when it was last drawn, which
+    /// for a wrapped one follows from how wide the popup ended up.
     lines: usize,
     content_height: u16,
     keybinds: PopupKeybinds,
@@ -48,6 +57,7 @@ impl<'a> MessagePopup<'a> {
             title: title.into(),
             messages,
             text_align: None,
+            wrap: false,
             scroll: 0,
             lines,
             content_height: 0,
@@ -58,6 +68,39 @@ impl<'a> MessagePopup<'a> {
     pub fn text_align(mut self, align: Alignment) -> Self {
         self.text_align = Some(align);
         self
+    }
+
+    /// Have the message broken over lines of the popup's own width, for
+    /// a message that is prose rather than the output of a command.
+    pub fn wrapped(mut self) -> Self {
+        self.wrap = true;
+        self
+    }
+
+    /// The whole message, however many lines that is.
+    fn text(&self) -> Text<'_> {
+        self.messages.render(0, self.messages.lines())
+    }
+
+    /// How many lines the message takes in a popup `width` wide, which
+    /// for a wrapped message longer than that is more lines than it has.
+    /// The paragraph is asked, as only it knows where its wrapping puts
+    /// the breaks.
+    fn lines_at(&self, width: u16) -> usize {
+        if !self.wrap || width == 0 {
+            return self.messages.lines();
+        }
+
+        self.paragraph().line_count(width)
+    }
+
+    /// The message as it is rendered, which for a wrapped one is the
+    /// whole of it: what it comes to on screen is the paragraph's to
+    /// work out, so it cannot be handed the lines it has room for.
+    fn paragraph(&self) -> Paragraph<'_> {
+        Paragraph::new(self.text())
+            .wrap(Wrap { trim: false })
+            .alignment(self.text_align.unwrap_or(Alignment::Center))
     }
 
     /// Where to put the popup in `area`: centered, and no larger than the
@@ -71,7 +114,8 @@ impl<'a> MessagePopup<'a> {
         let width = (self.messages.width() as u16 + extra_width)
             .max(title_width + 2)
             .min(max.width);
-        let height = (self.lines as u16 + 2 + extra_height).min(max.height);
+        let lines = self.lines_at(width.saturating_sub(extra_width));
+        let height = (lines as u16 + 2 + extra_height).min(max.height);
 
         centered_rect_fixed(area, width, height)
     }
@@ -109,11 +153,19 @@ impl Component for MessagePopup<'_> {
         });
         self.content_height = content_rect.height;
 
-        let line_count = content_rect.height as usize;
-        let text = self.messages.render(self.scroll, line_count);
-
-        let paragraph =
-            Paragraph::new(text).alignment(self.text_align.unwrap_or(Alignment::Center));
+        // A wrapped message is scrolled by the paragraph, as only it
+        // knows what its lines came to; an unwrapped one is only ever
+        // rendered from the line it is scrolled to.
+        self.lines = self.lines_at(content_rect.width);
+        let paragraph = if self.wrap {
+            self.paragraph().scroll((self.scroll as u16, 0))
+        } else {
+            Paragraph::new(
+                self.messages
+                    .render(self.scroll, content_rect.height as usize),
+            )
+            .alignment(self.text_align.unwrap_or(Alignment::Center))
+        };
 
         f.render_widget(block, popup_rect);
         f.render_widget(paragraph, content_rect);
@@ -205,7 +257,10 @@ mod tests {
     use super::*;
 
     fn popup_rect(title: &'static str, message: &str, area: Rect) -> Rect {
-        let popup = MessagePopup::new(title, message);
+        rect_of(MessagePopup::new(title, message), title, area)
+    }
+
+    fn rect_of(popup: MessagePopup, title: &'static str, area: Rect) -> Rect {
         let block = Block::bordered().padding(Padding::horizontal(1));
         let title_width = title.chars().count() as u16 + 2;
 
@@ -227,6 +282,24 @@ mod tests {
         let rect = popup_rect("A rather long title", "hi", Rect::new(0, 0, 100, 40));
 
         assert_eq!(rect.width, 23);
+    }
+
+    /// A wrapped message takes as many lines of the popup as it needs,
+    /// rather than the one line it was written as, which a narrow window
+    /// would cut short.
+    #[test]
+    fn a_wrapped_message_takes_the_lines_its_wrapping_needs() {
+        let message = "a message of a good many words, too many for a narrow popup by far";
+        let area = Rect::new(0, 0, 40, 40);
+
+        let plain = popup_rect("New", message, area);
+        let wrapped = rect_of(MessagePopup::new("New", message).wrapped(), "New", area);
+
+        // The one line it was written as, whatever it is cut down to
+        assert_eq!(plain.height, 5);
+        // The same width, over the three lines it wraps into there
+        assert_eq!(wrapped.width, plain.width);
+        assert_eq!(wrapped.height, 7);
     }
 
     #[test]
