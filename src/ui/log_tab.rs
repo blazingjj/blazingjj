@@ -477,6 +477,9 @@ impl<'a> LogTab<'a> {
                     &self.head,
                 )));
             }
+            LogTabEvent::SwitchWorkspace => {
+                return Ok(Some(command::ask_switch_to_workspace_on(&self.head)?));
+            }
             LogTabEvent::OpenFiles => {
                 return Ok(Some(AppAction::ViewFiles(self.head.clone())));
             }

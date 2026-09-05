@@ -121,6 +121,13 @@ pub fn log_context_menu(
             Line::raw("Set bookmark"),
             command::set_bookmark(config.clone(), selected),
         ),
+    ]);
+    // A change no other workspace has its working copy on is one there
+    // is nowhere to go from, so the menu leaves the item out.
+    if let Some((label, action)) = command::switch_to_workspace_on(anchor, selected)? {
+        items.push(Item::new("switch-workspace", Line::raw(label), action));
+    }
+    items.extend([
         Item::new(
             "copy-change-id",
             Line::raw("Copy change id"),
