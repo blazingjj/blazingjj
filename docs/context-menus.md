@@ -127,8 +127,12 @@ op-log = ["restore", "revert", "copy-id"]
 
 ```toml
 [blazingjj.context-menu]
-workspaces = ["add", "switch", "rename", "forget", "view-in-log"]
+workspaces = ["add", "switch", "move-to", "rename", "forget", "view-in-log"]
 ```
 
 Every item but `add` acts on the selected workspace, so a line that names none
 offers `add` alone.
+
+`move-to` moves the selected workspace to the change the log tab has selected,
+or to a new change under it, which is the same question the log tab's
+`move-workspace` puts.

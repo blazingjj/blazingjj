@@ -225,6 +225,7 @@ copy-id = "shift+y"
 ```toml
 [blazingjj.keybinds.workspaces-tab]
 switch = "enter"
+move-to = "m"
 view-in-log = "v"
 
 add = "a"

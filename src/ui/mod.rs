@@ -26,6 +26,7 @@ use crate::app::command::Command;
 use crate::background_tasks::TaskResult;
 use crate::commander::log::Head;
 use crate::commander::program::Program;
+use crate::commander::workspace::Workspace;
 use crate::event::Mouse;
 use crate::keybinds::Binding;
 use crate::selection::Selection;
@@ -62,6 +63,10 @@ pub enum AppAction {
     /// Work in the workspace at this path from now on: every command of
     /// ours goes there, and everything on screen is read again from it.
     WorkIn(String),
+    /// Ask where on the change the log has selected to move this
+    /// workspace. Only the app knows what that change is, the selection
+    /// being the log's own.
+    AskMoveWorkspace(Box<Workspace>),
     /// Run this operation and do whatever it asks for in turn. Whoever
     /// raises one has named it in full, so the app can run it without
     /// asking anything of the component the request came from.
