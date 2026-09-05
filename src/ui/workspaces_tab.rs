@@ -29,6 +29,7 @@ use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::WorkspacesTabEvent;
 use crate::keybinds::WorkspacesTabKeybinds;
+use crate::selection::Selection;
 use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
@@ -209,6 +210,7 @@ impl WorkspacesTab {
     fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(workspaces_context_menu(
             anchor,
+            &self.selection(),
             self.selected_workspace(),
         ))))
     }
@@ -231,6 +233,11 @@ impl WorkspacesTab {
             WorkspacesTabEvent::Switch => {
                 if let Some(workspace) = self.selected_workspace() {
                     return Ok(Some(command::switch_workspace(workspace)));
+                }
+            }
+            WorkspacesTabEvent::ViewInLog => {
+                if let Some(workspace) = self.selected_workspace() {
+                    return Ok(Some(AppAction::ViewLog(workspace.target.clone())));
                 }
             }
             // Not an operation of its own; the key handler deals with it.
@@ -328,6 +335,16 @@ impl Tab for WorkspacesTab {
             self.selected_index()
                 .and_then(|index| self.workspaces_pane.item_anchor(index, 1)),
         ))
+    }
+
+    /// A command run from here is run against the change the selected
+    /// workspace holds, which is what the tab is about.
+    fn selection(&self) -> Selection {
+        let Some(workspace) = self.selected_workspace() else {
+            return Selection::default();
+        };
+
+        Selection::default().revision(&workspace.target, false)
     }
 
     fn main_panel_bindings(&self) -> Vec<Binding> {

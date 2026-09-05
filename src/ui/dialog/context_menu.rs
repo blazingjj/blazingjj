@@ -221,31 +221,46 @@ pub fn op_log_context_menu(
 /// but adding one.
 pub fn workspaces_context_menu(
     anchor: Option<Position>,
+    selection: &Selection,
     selected: Option<&Workspace>,
 ) -> ChoicePopup {
-    let mut items = vec![(Line::raw("Add workspace"), command::ask_add_workspace())];
+    let mut items = vec![Item::new(
+        "add",
+        Line::raw("Add workspace"),
+        command::ask_add_workspace(),
+    )];
     if let Some(workspace) = selected {
         items.extend([
-            (
+            Item::new(
+                "switch",
                 Line::raw("Work in this workspace"),
                 command::switch_workspace(workspace),
             ),
-            (
+            Item::new(
+                "rename",
                 Line::raw("Rename"),
                 command::ask_rename_workspace(workspace),
             ),
-            (
+            Item::new(
+                "forget",
                 Line::raw("Forget"),
                 command::ask_forget_workspace(workspace),
             ),
-            (
+            Item::new(
+                "view-in-log",
                 Line::raw("View the change it holds in the log"),
                 AppAction::ViewLog(workspace.target.clone()),
             ),
         ]);
     }
 
-    ChoicePopup::new(anchor, "Workspace actions", items)
+    context_menu(
+        &get_env().jj_config,
+        anchor,
+        Menu::Workspaces,
+        selection,
+        items,
+    )
 }
 
 /// The context menu for `selected`, the bookmark and the change its line
