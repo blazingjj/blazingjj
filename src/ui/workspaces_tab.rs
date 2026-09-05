@@ -4,7 +4,9 @@ the details panel.
 
 A workspace is worked in by running there, so switching to one is a
 matter of where every command of ours goes from now on: the app takes up
-the workspace rather than coming down and starting again in it.
+the workspace rather than coming down and starting again in it. Moving
+one to a change is run in its directory too; the change it moves to is
+the log tab's selection, which only the app knows.
 */
 
 use anyhow::Result;
@@ -233,6 +235,13 @@ impl WorkspacesTab {
             WorkspacesTabEvent::Switch => {
                 if let Some(workspace) = self.selected_workspace() {
                     return Ok(Some(command::switch_workspace(workspace)));
+                }
+            }
+            WorkspacesTabEvent::MoveTo => {
+                if let Some(workspace) = self.selected_workspace() {
+                    return Ok(Some(AppAction::AskMoveWorkspace(Box::new(
+                        workspace.clone(),
+                    ))));
                 }
             }
             WorkspacesTabEvent::ViewInLog => {

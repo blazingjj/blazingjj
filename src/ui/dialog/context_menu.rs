@@ -249,6 +249,11 @@ pub fn workspaces_context_menu(
                 command::switch_workspace(workspace),
             ),
             Item::new(
+                "move-to",
+                Line::raw("Move it to the change the log has selected"),
+                AppAction::AskMoveWorkspace(Box::new(workspace.clone())),
+            ),
+            Item::new(
                 "rename",
                 Line::raw("Rename"),
                 command::ask_rename_workspace(workspace),

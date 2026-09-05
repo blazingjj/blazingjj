@@ -138,7 +138,14 @@ impl Menu {
             ],
             Self::Evolog => &["open-files", "duplicate", "copy-rev"],
             Self::OpLog => &["restore", "revert", "copy-id"],
-            Self::Workspaces => &["add", "switch", "rename", "forget", "view-in-log"],
+            Self::Workspaces => &[
+                "add",
+                "switch",
+                "move-to",
+                "rename",
+                "forget",
+                "view-in-log",
+            ],
         }
     }
 }
