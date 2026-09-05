@@ -25,6 +25,7 @@ pub enum WorkspacesTabEvent {
     Forget,
     Rename,
     Switch,
+    ViewInLog,
 
     Unbound,
 }
@@ -38,6 +39,7 @@ impl Default for WorkspacesTabKeybinds {
             WorkspacesTabEvent::Forget => "x",
             WorkspacesTabEvent::Rename => "r",
             WorkspacesTabEvent::Switch => "enter",
+            WorkspacesTabEvent::ViewInLog => "v",
         );
         Self { keys }
     }
@@ -65,6 +67,7 @@ impl WorkspacesTabKeybinds {
             WorkspacesTabEvent::Forget => config.forget,
             WorkspacesTabEvent::Rename => config.rename,
             WorkspacesTabEvent::Switch => config.switch,
+            WorkspacesTabEvent::ViewInLog => config.view_in_log,
         );
     }
 
@@ -81,6 +84,7 @@ impl WorkspacesTabKeybinds {
             WorkspacesTabEvent::Add => "add", Some(Section::Workspaces), "add a workspace",
             WorkspacesTabEvent::Rename => "rename", Some(Section::Workspaces), "rename this workspace",
             WorkspacesTabEvent::Forget => "forget", Some(Section::Workspaces), "forget this workspace",
+            WorkspacesTabEvent::ViewInLog => "view-in-log", Some(Section::Navigation), "view the change it holds in the log",
         )
     }
 }
