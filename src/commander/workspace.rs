@@ -3,11 +3,12 @@
 
 This module has features to parse the `jj workspace list` output, as the
 [workspaces_tab][crate::ui::workspaces_tab] module shows it, and the
-commands that add, forget and rename a workspace.
+commands that add, forget, rename and move a workspace.
 */
 use std::fs::canonicalize;
 use std::path::Path;
 
+use anyhow::Result;
 use ratatui::text::Text;
 use serde::Deserialize;
 use tracing::instrument;
@@ -15,8 +16,10 @@ use tracing::instrument;
 use crate::commander::CommandError;
 use crate::commander::Commander;
 use crate::commander::ids::CommitId;
+use crate::commander::jj::NewInsertMode;
 use crate::commander::log::Head;
 use crate::commander::log::head_template;
+use crate::commander::revset::Revset;
 use crate::ui::styles::AnsiText;
 
 /// A workspace as [workspace_template] describes it. The field names are
@@ -36,6 +39,15 @@ pub struct Workspace {
     /// one every command of ours goes to.
     #[serde(skip)]
     pub current: bool,
+}
+
+/// Which change a workspace is moved onto.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoveTarget {
+    /// The change itself, which the workspace then works on.
+    Change,
+    /// A new empty child of the change.
+    NewChild,
 }
 
 /// A workspace and what jj says about where it is being read from, as
@@ -152,6 +164,24 @@ impl Commander {
         Ok(current)
     }
 
+    /// The workspaces other than the one we are running in, in the order
+    /// jj lists them. Leaves the working copy alone.
+    /// Maps to `jj workspace list --ignore-working-copy`
+    #[instrument(level = "trace", skip(self))]
+    pub fn get_other_workspaces(&self) -> Result<Vec<Workspace>, CommandError> {
+        let others = self
+            .jj(["workspace", "list", "-T", &workspace_template()])
+            .ignore_working_copy()
+            .run()?
+            .lines()
+            .filter_map(parse_workspace)
+            .map(|record| self.reading(record))
+            .filter(|workspace| !workspace.current)
+            .collect();
+
+        Ok(others)
+    }
+
     /// The workspaces whose working copy is on `commit`, in the order jj
     /// lists them. Leaves the working copy alone.
     /// Maps to `jj workspace list --ignore-working-copy`
@@ -229,6 +259,24 @@ impl Commander {
         commander.env.root = root.to_owned();
 
         commander.jj(["workspace", "rename", new_name]).run_void()
+    }
+
+    /// Move the working copy of the workspace whose root is `root` onto
+    /// `revset`, or onto a new child of it, which changes the files in
+    /// that directory.
+    /// Maps to `jj edit <revset>` or `jj new <revset>`, run in that
+    /// workspace
+    #[instrument(level = "trace", skip(self))]
+    pub fn run_workspace_move(&self, root: &str, revset: Revset, target: MoveTarget) -> Result<()> {
+        // jj moves the working copy of the workspace the command is run
+        // in, so the one to move is the one we run it in.
+        let mut commander = self.clone();
+        commander.env.root = root.to_owned();
+
+        match target {
+            MoveTarget::Change => commander.run_edit(revset, false),
+            MoveTarget::NewChild => commander.run_new_with_insert(revset, NewInsertMode::Child),
+        }
     }
 }
 
@@ -415,6 +463,71 @@ mod tests {
         assert!(
             workspaces(&test_repo)?[0].current,
             "the renamed workspace is still the one we are in"
+        );
+
+        Ok(())
+    }
+
+    /// A repo with a second workspace and the change under the one we
+    /// are running in, which is one both of them can be moved to.
+    fn repo_with_a_workspace_to_move() -> Result<(TestRepo, String, Head)> {
+        let test_repo = TestRepo::new()?;
+        // A change of its own to stand on, the root commit being
+        // immutable and so nothing to move a workspace onto.
+        let base = test_repo.commander.get_current_head()?;
+        test_repo.commander.run_new(&base.commit_id)?;
+
+        let added = test_repo
+            .directory
+            .path()
+            .join("added")
+            .to_string_lossy()
+            .into_owned();
+        test_repo
+            .commander
+            .run_workspace_add(&added, Some("elsewhere"))?;
+
+        let ours = test_repo.commander.get_current_head()?;
+        let parent = test_repo.commander.get_commit_parent(&ours.commit_id)?;
+
+        Ok((test_repo, added, parent))
+    }
+
+    /// A workspace is moved where it is, so moving one is a matter of
+    /// running the move in its directory rather than in ours.
+    #[test]
+    fn a_workspace_moved_to_a_change_holds_it_and_leaves_ours_alone() -> Result<()> {
+        let (test_repo, added, parent) = repo_with_a_workspace_to_move()?;
+        let ours = test_repo.commander.get_current_head()?;
+
+        test_repo.commander.run_workspace_move(
+            &added,
+            Revset::from(&parent.commit_id),
+            MoveTarget::Change,
+        )?;
+
+        let workspaces = workspaces(&test_repo)?;
+        assert_eq!(workspaces[1].target, parent);
+        assert_eq!(workspaces[0].target, ours, "our own workspace has moved");
+
+        Ok(())
+    }
+
+    #[test]
+    fn a_workspace_moved_to_a_new_child_holds_an_empty_change_under_it() -> Result<()> {
+        let (test_repo, added, parent) = repo_with_a_workspace_to_move()?;
+
+        test_repo.commander.run_workspace_move(
+            &added,
+            Revset::from(&parent.commit_id),
+            MoveTarget::NewChild,
+        )?;
+
+        let moved = workspaces(&test_repo)?[1].target.clone();
+        assert_ne!(moved.commit_id, parent.commit_id);
+        assert_eq!(
+            test_repo.commander.get_commit_parent(&moved.commit_id)?,
+            parent
         );
 
         Ok(())

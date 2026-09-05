@@ -150,6 +150,8 @@ edit-revset = "r"
 set-bookmark = "b"
 # switch-workspace comes unbound, so this is an example rather than a default
 switch-workspace = "ctrl+shift+w"
+# move-workspace comes unbound too
+move-workspace = "ctrl+shift+m"
 open-files = "enter"
 open-evolog = "v"
 copy-change-id = "y"

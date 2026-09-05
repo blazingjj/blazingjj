@@ -119,6 +119,7 @@ impl Menu {
                 "push-menu",
                 "set-bookmark",
                 "switch-workspace",
+                "move-workspace",
                 "copy-change-id",
                 "copy-rev",
             ],
