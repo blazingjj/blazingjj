@@ -22,6 +22,7 @@ use tracing::instrument;
 use tracing::trace;
 use tracing::warn;
 
+use crate::app::command::ask_move_workspace;
 use crate::app::command::ask_update_stale_workspace;
 use crate::app::command::refuse_outdated_view;
 use crate::app::repo_watch::Check;
@@ -757,6 +758,10 @@ impl<'a> App<'a> {
             }
             AppAction::WorkIn(root) => {
                 self.work_in(&root)?;
+            }
+            AppAction::AskMoveWorkspace(workspace) => {
+                let ask = ask_move_workspace(None, &workspace, self.log.head());
+                self.handle_action(ask)?;
             }
             AppAction::ConfigChanged => {
                 // The environment we are leaving stays where it is, so

@@ -162,6 +162,11 @@ impl<'a> LogTab<'a> {
         self.log_panel.marked.clear();
     }
 
+    /// The change the cursor is on.
+    pub fn head(&self) -> &Head {
+        &self.head
+    }
+
     /// Move the cursor, updating the details panel. The log itself is
     /// left as it was.
     pub fn set_head(&mut self, head: Head) {

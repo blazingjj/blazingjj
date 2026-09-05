@@ -79,7 +79,7 @@ pub enum Role {
 
 impl Role {
     /// Every role there is, in the order the styles tab lists them.
-    pub const ALL: [Self; 35] = [
+    pub const ALL: [Self; 37] = [
         Self::Default,
         Self::Highlight,
         Self::Hint,
