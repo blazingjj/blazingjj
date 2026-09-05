@@ -1,0 +1,8 @@
+---
+source: src/commander/files.rs
+assertion_line: 434
+expression: "run_file_diff(&test_repo.commander, &head, &file, &DiffFormat::Git, false)?"
+---
+Some(
+    "diff --git a/README b/README\nnew file mode 100644\nindex 0000000000..43d88b6586\n--- /dev/null\n+++ b/README\n@@ -0,0 +1,1 @@ AAA\n+AAA\n\\ No newline at end of file\n",
+)

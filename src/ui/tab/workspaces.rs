@@ -240,6 +240,13 @@ impl WorkspacesTab {
                     return Ok(Some(command::switch_workspace(workspace)));
                 }
             }
+            WorkspacesTabEvent::MoveTo => {
+                if let Some(workspace) = self.selected_workspace() {
+                    return Ok(Some(AppAction::AskMoveWorkspace(Box::new(
+                        workspace.clone(),
+                    ))));
+                }
+            }
             WorkspacesTabEvent::ViewInLog => {
                 if let Some(workspace) = self.selected_workspace() {
                     return Ok(Some(AppAction::ViewLog(workspace.target.clone())));
