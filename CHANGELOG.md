@@ -62,6 +62,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `blazingjj.editor-url`, like `jj://$revision/$file`, adds opening the file
     at the revision shown to that question, for an editor that reads a
     revision itself, such as neovim with jj.nvim
+- A command typed into the command popup (`:`) or run interactively (`!`) can
+  name what the tab has selected by a placeholder: `$selected` (`$s`) for
+  whatever the tab is about, `$marked` (`$m`) for the changes the log has
+  marked, and `$revision`, `$file`, `$bookmark` and `$operation` for a
+  selection of that one kind
 - Diff format rendering the Git format with a pager like
   [delta](https://github.com/dandavison/delta), configured as
   `blazingjj.diff-pager` and toggled through with `w` like the others

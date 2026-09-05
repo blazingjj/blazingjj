@@ -31,6 +31,8 @@ use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::keybinds::FilesTabEvent;
 use crate::keybinds::FilesTabKeybinds;
+use crate::selection::Selection;
+use crate::selection::shown_revision;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -123,19 +125,6 @@ impl OutputKey for FileDiffKey {
 
     fn slot(owner: TabId, request: OutputRequest<Self>) -> TaskSlot {
         TaskSlot::FileDiff(owner, request)
-    }
-}
-
-/// How the revision the tab is on is named to something outside the app:
-/// by its change id, so that it is read as the change stands, except
-/// where what is shown is not the change as it stands. A version out of
-/// the evolog and one of several divergent commits are both only to be
-/// found by their commit id.
-fn shown_revision(head: &Head, pinned: bool) -> &str {
-    if pinned || head.divergent {
-        head.commit_id.as_str()
-    } else {
-        head.change_id.as_str()
     }
 }
 
@@ -366,6 +355,17 @@ impl Tab for FilesTab {
             self.get_current_file_index()
                 .and_then(|index| self.files_pane.item_anchor(index, 1)),
         ))
+    }
+
+    /// The tab is about the file, which is only shown at the change it
+    /// belongs to, so a command run here can name either.
+    fn selection(&self) -> Selection {
+        let selection = Selection::default().revision(&self.head, self.pinned);
+
+        match self.file.as_ref().and_then(|file| file.path.as_deref()) {
+            Some(path) => selection.file(path),
+            None => selection,
+        }
     }
 
     fn main_panel_bindings(&self) -> Vec<Binding> {

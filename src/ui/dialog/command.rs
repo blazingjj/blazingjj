@@ -22,6 +22,7 @@ use crate::commander::NO_EDITOR;
 use crate::commander::new_commander;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
+use crate::selection::Selection;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -45,14 +46,18 @@ pub enum CommandMode {
 pub struct CommandPopup<'a> {
     mode: CommandMode,
     command_textarea: TextArea<'a>,
+    /// What the tab the popup was opened over has selected, which the
+    /// placeholders of the command stand for.
+    selection: Selection,
     keybinds: PopupKeybinds,
 }
 
 impl CommandPopup<'_> {
-    pub fn new(mode: CommandMode) -> Self {
+    pub fn new(mode: CommandMode, selection: Selection) -> Self {
         Self {
             mode,
             command_textarea: TextArea::new(vec![]),
+            selection,
             keybinds: PopupKeybinds::text_line(),
         }
     }
@@ -209,14 +214,25 @@ impl Component for CommandPopup<'_> {
                         return cancel;
                     }
 
-                    let title = format!("jj {command}");
+                    let typed = format!("jj {command}");
                     let args = match split(&command) {
                         Ok(args) => args,
                         Err(err) => {
                             let report = format!("Failed to split command input\n\n{err}");
-                            return Ok(ComponentInputResult::HandledAction(popup(title, report)));
+                            return Ok(ComponentInputResult::HandledAction(popup(typed, report)));
                         }
                     };
+                    // What ran is what the command came to once the
+                    // selection was put in it, which is what there is to
+                    // read the output against.
+                    let args = match self.selection.substitute(&args) {
+                        Ok(args) => args,
+                        Err(missing) => {
+                            let report = format!("Nothing to run the command against\n\n{missing}");
+                            return Ok(ComponentInputResult::HandledAction(popup(typed, report)));
+                        }
+                    };
+                    let title = format!("jj {}", args.join(" "));
 
                     return Ok(match self.mode {
                         CommandMode::Capture => run_captured(title, &args),
@@ -245,6 +261,7 @@ mod tests {
         CommandPopup {
             mode: CommandMode::Capture,
             command_textarea: TextArea::new(vec![typed.to_owned()]),
+            selection: Selection::default(),
             keybinds: PopupKeybinds::text_line(),
         }
         .command()

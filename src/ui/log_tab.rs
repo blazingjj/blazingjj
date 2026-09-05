@@ -31,6 +31,7 @@ use crate::keybinds::LogTabKeybinds;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::keybinds::Relation;
+use crate::selection::Selection;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -415,6 +416,12 @@ impl Tab for LogTab<'_> {
 
     fn open_context_menu(&self) -> Result<Option<AppAction>> {
         self.context_menu(self.log_panel.selected_position())
+    }
+
+    fn selection(&self) -> Selection {
+        Selection::default()
+            .revision(&self.head, false)
+            .marked(&self.marked())
     }
 
     fn main_panel_bindings(&self) -> Vec<Binding> {

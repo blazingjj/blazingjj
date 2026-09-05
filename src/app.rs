@@ -956,12 +956,18 @@ impl<'a> App<'a> {
                                 }
                             }
                             GlobalEvent::CommandPopup => {
-                                self.popup =
-                                    Some(Box::new(CommandPopup::new(CommandMode::Capture)));
+                                let selection = self.get_current_tab().selection();
+                                self.popup = Some(Box::new(CommandPopup::new(
+                                    CommandMode::Capture,
+                                    selection,
+                                )));
                             }
                             GlobalEvent::InteractiveCommandPopup => {
-                                self.popup =
-                                    Some(Box::new(CommandPopup::new(CommandMode::Interactive)));
+                                let selection = self.get_current_tab().selection();
+                                self.popup = Some(Box::new(CommandPopup::new(
+                                    CommandMode::Interactive,
+                                    selection,
+                                )));
                             }
                             GlobalEvent::ToggleLayout => self.toggle_layout(),
                             GlobalEvent::OpenHelp => self.open_help()?,
