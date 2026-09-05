@@ -127,6 +127,11 @@ pub fn log_context_menu(
     if let Some((label, action)) = command::switch_to_workspace_on(anchor, selected)? {
         items.push(Item::new("switch-workspace", Line::raw(label), action));
     }
+    // With no workspace but the one we are running in there is none to
+    // move, and moving that one is editing the change.
+    if let Some((label, action)) = command::move_workspace_to(anchor, selected)? {
+        items.push(Item::new("move-workspace", Line::raw(label), action));
+    }
     items.extend([
         Item::new(
             "copy-change-id",
