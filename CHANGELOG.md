@@ -52,6 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `Ctrl+space` in the log tab unmarks every marked change, whether or not the
   log is showing it
+- The log tab's context menu offers to work in a workspace that has its
+  working copy on the selected change, naming it, or putting them to a menu of
+  their own where several are on it. It is `switch-workspace`, which comes
+  unbound as a keybinding of the log tab and can be taken out of the menu
+  through `blazingjj.context-menu.log`
 - Status bar along the foot of the window, saying which workspace the app is
   working in and where it is, the revset the log is showing and how many
   changes it has marked, and how many of those the log is not showing. It has

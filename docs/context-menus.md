@@ -67,10 +67,15 @@ log = [
   "rebase",
   "push-menu",
   "set-bookmark",
+  "switch-workspace",
   "copy-change-id",
   "copy-rev",
 ]
 ```
+
+`switch-workspace` is offered on a change another workspace has its working
+copy on, naming that workspace, or putting them to a menu of their own where
+several are on it.
 
 ### Files tab
 

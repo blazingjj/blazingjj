@@ -13,6 +13,7 @@ use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::execute;
 use ratatui::layout::Alignment;
+use ratatui::layout::Position;
 use ratatui::text::Line;
 use ratatui::text::Text;
 
@@ -1099,6 +1100,65 @@ pub fn ask_forget_workspace(workspace: &Workspace) -> AppAction {
         ]),
         Command::ForgetWorkspace(workspace.name.clone()),
     )
+}
+
+/// Working in one of the workspaces whose working copy is `head`, other
+/// than the one we are running in: what to call it and what picking it
+/// asks for, or None where the change is no other workspace's to be
+/// worked in. Several are put to a menu of their own, one being asked
+/// about by name.
+pub fn switch_to_workspace_on(
+    anchor: Option<Position>,
+    head: &Head,
+) -> Result<Option<(String, AppAction)>> {
+    let workspaces: Vec<Workspace> = new_commander()
+        .get_workspaces_at(&head.commit_id)?
+        .into_iter()
+        .filter(|workspace| !workspace.current)
+        .collect();
+
+    Ok(match workspaces.as_slice() {
+        [] => None,
+        [only] => Some((
+            format!("Work in the {} workspace", only.name),
+            switch_workspace(only),
+        )),
+        several => Some((
+            format!("Work in one of the {} workspaces here", several.len()),
+            AppAction::SetPopup(Box::new(workspace_menu(anchor, several))),
+        )),
+    })
+}
+
+/// Asking to work in one of the workspaces whose working copy is
+/// `head`, which where the change is no other workspace's leaves only
+/// saying so: what the menu holds nothing about, a key has to answer
+/// for.
+pub fn ask_switch_to_workspace_on(head: &Head) -> Result<AppAction> {
+    Ok(match switch_to_workspace_on(None, head)? {
+        Some((_, action)) => action,
+        None => message(
+            "Switch",
+            "No workspace other than the one blazingjj is running in has its working \
+             copy on this change.",
+        ),
+    })
+}
+
+/// The menu of the workspaces a change is the working copy of, put at
+/// `anchor` or centered when there is nowhere to point at.
+fn workspace_menu(anchor: Option<Position>, workspaces: &[Workspace]) -> ChoicePopup {
+    let items: Vec<(Line<'static>, AppAction)> = workspaces
+        .iter()
+        .map(|workspace| {
+            (
+                Line::raw(workspace.name.clone()),
+                switch_workspace(workspace),
+            )
+        })
+        .collect();
+
+    ChoicePopup::new(anchor, "Work in a workspace", items)
 }
 
 /// Work in `workspace` from now on, which is nothing but where we run:

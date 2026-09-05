@@ -148,6 +148,8 @@ absorb = "shift+a"
 describe = "d"
 edit-revset = "r"
 set-bookmark = "b"
+# switch-workspace comes unbound, so this is an example rather than a default
+switch-workspace = "ctrl+shift+w"
 open-files = "enter"
 open-evolog = "v"
 copy-change-id = "y"

@@ -14,6 +14,7 @@ use tracing::instrument;
 
 use crate::commander::CommandError;
 use crate::commander::Commander;
+use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::log::head_template;
 use crate::ui::styles::AnsiText;
@@ -151,6 +152,24 @@ impl Commander {
         Ok(current)
     }
 
+    /// The workspaces whose working copy is on `commit`, in the order jj
+    /// lists them. Leaves the working copy alone.
+    /// Maps to `jj workspace list --ignore-working-copy`
+    #[instrument(level = "trace", skip(self))]
+    pub fn get_workspaces_at(&self, commit: &CommitId) -> Result<Vec<Workspace>, CommandError> {
+        let at = self
+            .jj(["workspace", "list", "-T", &workspace_template()])
+            .ignore_working_copy()
+            .run()?
+            .lines()
+            .filter_map(parse_workspace)
+            .map(|record| self.reading(record))
+            .filter(|workspace| workspace.target.commit_id == *commit)
+            .collect();
+
+        Ok(at)
+    }
+
     /// The workspace `record` describes, with whether we are running in
     /// it settled.
     ///
@@ -271,6 +290,41 @@ mod tests {
             test_repo.commander.get_current_head()?,
             "the workspace holds a change other than the one it is on"
         );
+
+        Ok(())
+    }
+
+    /// Which workspace holds a change is what the log offers to work in
+    /// it, so a change no workspace holds offers none.
+    #[test]
+    fn the_workspaces_on_a_change_are_the_ones_holding_it() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let added = test_repo.directory.path().join("added");
+        test_repo
+            .commander
+            .run_workspace_add(&added.to_string_lossy(), Some("elsewhere"))?;
+
+        let at = |commit: &CommitId| -> Result<Vec<String>> {
+            Ok(test_repo
+                .commander
+                .get_workspaces_at(commit)?
+                .into_iter()
+                .map(|workspace| workspace.name)
+                .collect())
+        };
+
+        let workspaces = workspaces(&test_repo)?;
+        let [ours, theirs] = workspaces.as_slice() else {
+            panic!("the repo has two workspaces, got {workspaces:?}");
+        };
+        assert_eq!(at(&ours.target.commit_id)?, ["default"]);
+        assert_eq!(at(&theirs.target.commit_id)?, ["elsewhere"]);
+
+        // The change both of them stand on is no workspace's own.
+        let parent = test_repo
+            .commander
+            .get_commit_parent(&ours.target.commit_id)?;
+        assert!(at(&parent.commit_id)?.is_empty());
 
         Ok(())
     }
