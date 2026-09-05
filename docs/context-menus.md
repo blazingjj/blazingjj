@@ -68,6 +68,7 @@ log = [
   "push-menu",
   "set-bookmark",
   "switch-workspace",
+  "move-workspace",
   "copy-change-id",
   "copy-rev",
 ]
@@ -76,6 +77,10 @@ log = [
 `switch-workspace` is offered on a change another workspace has its working
 copy on, naming that workspace, or putting them to a menu of their own where
 several are on it.
+
+`move-workspace` moves another workspace to the selected change, or to a new
+change under it, and is offered wherever the repo has a workspace besides the
+one blazingjj is running in.
 
 ### Files tab
 

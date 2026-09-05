@@ -57,6 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their own where several are on it. It is `switch-workspace`, which comes
   unbound as a keybinding of the log tab and can be taken out of the menu
   through `blazingjj.context-menu.log`
+- The log tab's context menu offers to move another workspace to the selected
+  change, or to a new change under it, which changes the files in that
+  workspace's directory. It is `move-workspace`, which comes unbound as a
+  keybinding of the log tab and can be taken out of the menu through
+  `blazingjj.context-menu.log`
 - Status bar along the foot of the window, saying which workspace the app is
   working in and where it is, the revset the log is showing and how many
   changes it has marked, and how many of those the log is not showing. It has

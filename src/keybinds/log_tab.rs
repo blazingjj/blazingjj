@@ -51,6 +51,8 @@ pub enum LogTabEvent {
     SetBookmark,
     /// Comes unbound, so the key it answers to is the user's to pick.
     SwitchWorkspace,
+    /// Comes unbound, so the key it answers to is the user's to pick.
+    MoveWorkspace,
     OpenFiles,
     OpenEvolog,
     CopyChangeId,
@@ -175,6 +177,7 @@ impl LogTabKeybinds {
             LogTabEvent::EditRevset => config.edit_revset,
             LogTabEvent::SetBookmark => config.set_bookmark,
             LogTabEvent::SwitchWorkspace => config.switch_workspace,
+            LogTabEvent::MoveWorkspace => config.move_workspace,
             LogTabEvent::OpenFiles => config.open_files,
             LogTabEvent::OpenEvolog => config.open_evolog,
             LogTabEvent::CopyChangeId => config.copy_change_id,
@@ -220,6 +223,7 @@ impl LogTabKeybinds {
 
             LogTabEvent::SetBookmark => "set-bookmark", Some(Section::BookmarksAndRemotes), "set bookmark",
             LogTabEvent::SwitchWorkspace => "switch-workspace", Some(Section::Workspaces), "work in the workspace this change is the working copy of",
+            LogTabEvent::MoveWorkspace => "move-workspace", Some(Section::Workspaces), "move another workspace to this change",
             LogTabEvent::Fetch { all_remotes: false } => "fetch", Some(Section::BookmarksAndRemotes), "git fetch",
             LogTabEvent::Fetch { all_remotes: true } => "fetch-all", Some(Section::BookmarksAndRemotes), "git fetch all remotes",
             LogTabEvent::PushMenu => "push-menu", Some(Section::BookmarksAndRemotes), "open the push menu",

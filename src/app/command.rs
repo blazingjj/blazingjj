@@ -26,6 +26,7 @@ use crate::commander::files::File;
 use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
 use crate::commander::ids::OperationId;
+use crate::commander::is_stale_working_copy;
 use crate::commander::jj::NewInsertMode;
 use crate::commander::jj::PushTarget;
 use crate::commander::jj::RebaseSource;
@@ -35,6 +36,7 @@ use crate::commander::new_commander;
 use crate::commander::operation::Operation;
 use crate::commander::program::Program;
 use crate::commander::revset::Revset;
+use crate::commander::workspace::MoveTarget;
 use crate::commander::workspace::Workspace;
 use crate::commands::CustomCommand;
 use crate::commands::CustomRun;
@@ -44,6 +46,7 @@ use crate::env::JjConfig;
 use crate::env::get_env;
 use crate::keybinds::PushScope;
 use crate::selection::Selection;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Interactive;
 use crate::ui::dialog::BookmarkNameMode;
@@ -202,6 +205,15 @@ pub enum Command {
     RenameWorkspace {
         root: String,
         new_name: String,
+    },
+    /// Move the working copy of the workspace whose root is `root` onto
+    /// a change, or onto a new child of it, which changes the files in
+    /// that directory.
+    MoveWorkspace {
+        root: String,
+        name: String,
+        revset: Revset,
+        target: MoveTarget,
     },
 }
 
@@ -490,6 +502,23 @@ impl Command {
                     )))),
                 }
             }
+            Command::MoveWorkspace {
+                root,
+                name,
+                revset,
+                target,
+            } => match new_commander().run_workspace_move(&root, revset, target) {
+                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
+                Err(err) if is_stale_working_copy(&err) => Ok(Some(message(
+                    "Move workspace",
+                    format!(
+                        "The working copy of the {name} workspace is stale, so jj reads \
+                         nothing in {root}. Work in that workspace to update it, and move \
+                         it from there."
+                    ),
+                ))),
+                Err(err) => Ok(Some(refused("Move workspace", err))),
+            },
         }
     }
 }
@@ -1183,6 +1212,118 @@ pub fn switch_workspace(workspace: &Workspace) -> AppAction {
     };
 
     AppAction::WorkIn(root)
+}
+
+/// Moving a workspace other than the one we are running in onto `head`:
+/// what to call it and what picking it asks for, or None where there is
+/// no other workspace to move. Several are put to a menu of their own,
+/// one being asked about by name.
+pub fn move_workspace_to(
+    anchor: Option<Position>,
+    head: &Head,
+) -> Result<Option<(String, AppAction)>> {
+    let workspaces = new_commander().get_other_workspaces()?;
+
+    Ok(match workspaces.as_slice() {
+        [] => None,
+        [only] => Some((
+            format!("Move the {} workspace here", only.name),
+            ask_move_workspace(anchor, only, head),
+        )),
+        several => Some((
+            "Move a workspace here".to_owned(),
+            AppAction::SetPopup(Box::new(move_workspace_menu(anchor, several, head))),
+        )),
+    })
+}
+
+/// Asking to move a workspace onto `head`, which where the repo has no
+/// workspace but ours leaves only saying so: what the menu holds nothing
+/// about, a key has to answer for.
+pub fn ask_move_workspace_to(head: &Head) -> Result<AppAction> {
+    Ok(match move_workspace_to(None, head)? {
+        Some((_, action)) => action,
+        None => message(
+            "Move workspace",
+            "The repo has no workspace other than the one blazingjj is running in.",
+        ),
+    })
+}
+
+/// The menu of the workspaces there are to move onto `head`, put at
+/// `anchor` or centered when there is nowhere to point at.
+fn move_workspace_menu(
+    anchor: Option<Position>,
+    workspaces: &[Workspace],
+    head: &Head,
+) -> ChoicePopup {
+    let items: Vec<(Line<'static>, AppAction)> = workspaces
+        .iter()
+        .map(|workspace| {
+            (
+                Line::raw(workspace.name.clone()),
+                ask_move_workspace(anchor, workspace, head),
+            )
+        })
+        .collect();
+
+    ChoicePopup::new(anchor, "Move a workspace here", items)
+}
+
+/// Asking where on `head` to move `workspace`: onto the change itself,
+/// or onto a new change under it. The two are the whole question, so
+/// picking one is what asks for the move.
+pub fn ask_move_workspace(
+    anchor: Option<Position>,
+    workspace: &Workspace,
+    head: &Head,
+) -> AppAction {
+    if workspace.current {
+        return message(
+            "Move workspace",
+            "This is the workspace blazingjj is running in, which is moved by editing \
+             the change or creating one.",
+        );
+    }
+    let Some(root) = workspace.root.clone() else {
+        return message(
+            "Move workspace",
+            format!(
+                "{}, so there is nowhere for us to move it. Start blazingjj in that \
+                 directory to move it from there.",
+                unknown_root(&workspace.name)
+            ),
+        );
+    };
+
+    let name = workspace.name.clone();
+    let change: String = head.change_id.as_str().chars().take(8).collect();
+    let move_to = |target| {
+        AppAction::Run(Command::MoveWorkspace {
+            root: root.clone(),
+            name: name.clone(),
+            revset: Revset::from(&head.commit_id),
+            target,
+        })
+    };
+
+    let items = vec![
+        (
+            Line::raw(format!("Move {name} to {change}")),
+            move_to(MoveTarget::Change),
+        ),
+        (
+            Line::raw(format!("Move {name} to a new change under {change}")),
+            move_to(MoveTarget::NewChild),
+        ),
+    ];
+
+    AppAction::SetPopup(Box::new(
+        ChoicePopup::new(anchor, "Move workspace", items).footnote(vec![Line::styled(
+            format!("The files in {root} change with it."),
+            Role::Hint.style(),
+        )]),
+    ))
 }
 
 /// How a question opens where the repo does not say what directory the
