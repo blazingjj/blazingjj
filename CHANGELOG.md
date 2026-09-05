@@ -113,9 +113,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the change the selected one holds; opened from the tab bar with `6`, and the
   workspace the app is running in marked with a `*`. `a` adds a workspace in a
   directory you name, `r` renames the selected one, `x` forgets it and `Enter`
-  works in it from now on, every command of ours going there; the context menu
-  holds the same, and takes the change a workspace holds to the log. The keys
-  are configurable under `[blazingjj.keybinds.workspaces-tab]`
+  works in it from now on, every command of ours going there, and `v` takes the
+  change it holds to the log. The keys are configurable under
+  `[blazingjj.keybinds.workspaces-tab]`, and what its context menu holds under
+  `blazingjj.context-menu.workspaces`
 - Text in the details panel can be marked by dragging the mouse over it,
   by double clicking a word or by triple clicking a line, and goes to the
   system clipboard when the button comes up. A line the panel wrapped or

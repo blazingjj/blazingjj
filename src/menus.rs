@@ -40,17 +40,19 @@ pub enum Menu {
     Bookmarks,
     Evolog,
     OpLog,
+    Workspaces,
 }
 
 impl Menu {
     /// Every menu there is, in the order the tabs they belong to come
     /// in.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Log,
         Self::Files,
         Self::Bookmarks,
         Self::Evolog,
         Self::OpLog,
+        Self::Workspaces,
     ];
 
     /// The key under `blazingjj.context-menu` it is configured by.
@@ -61,6 +63,7 @@ impl Menu {
             Self::Bookmarks => "bookmarks",
             Self::Evolog => "evolog",
             Self::OpLog => "op-log",
+            Self::Workspaces => "workspaces",
         }
     }
 
@@ -73,6 +76,7 @@ impl Menu {
             Self::Bookmarks => Context::BookmarksTab,
             Self::Evolog => Context::EvologTab,
             Self::OpLog => Context::OpLogTab,
+            Self::Workspaces => Context::WorkspacesTab,
         }
     }
 
@@ -94,6 +98,7 @@ impl Menu {
             Self::Bookmarks => "Bookmark actions",
             Self::Evolog => "Version actions",
             Self::OpLog => "Operation actions",
+            Self::Workspaces => "Workspace actions",
         }
     }
 
@@ -131,6 +136,7 @@ impl Menu {
             ],
             Self::Evolog => &["open-files", "duplicate", "copy-rev"],
             Self::OpLog => &["restore", "revert", "copy-id"],
+            Self::Workspaces => &["add", "switch", "rename", "forget", "view-in-log"],
         }
     }
 }
@@ -144,6 +150,7 @@ pub struct ContextMenus {
     bookmarks: Option<Vec<String>>,
     evolog: Option<Vec<String>>,
     op_log: Option<Vec<String>>,
+    workspaces: Option<Vec<String>>,
 }
 
 impl ContextMenus {
@@ -156,6 +163,7 @@ impl ContextMenus {
             Menu::Bookmarks => &self.bookmarks,
             Menu::Evolog => &self.evolog,
             Menu::OpLog => &self.op_log,
+            Menu::Workspaces => &self.workspaces,
         }
         .as_deref()
     }

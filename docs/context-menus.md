@@ -112,3 +112,13 @@ evolog = ["open-files", "duplicate", "copy-rev"]
 [blazingjj.context-menu]
 op-log = ["restore", "revert", "copy-id"]
 ```
+
+### Workspaces tab
+
+```toml
+[blazingjj.context-menu]
+workspaces = ["add", "switch", "rename", "forget", "view-in-log"]
+```
+
+Every item but `add` acts on the selected workspace, so a line that names none
+offers `add` alone.
