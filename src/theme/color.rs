@@ -43,6 +43,38 @@ pub enum Ansi {
 }
 
 impl Ansi {
+    /// The sixteen, in the order a palette numbers them.
+    pub const ALL: [Self; 16] = [
+        Self::Black,
+        Self::Red,
+        Self::Green,
+        Self::Yellow,
+        Self::Blue,
+        Self::Magenta,
+        Self::Cyan,
+        Self::White,
+        Self::BrightBlack,
+        Self::BrightRed,
+        Self::BrightGreen,
+        Self::BrightYellow,
+        Self::BrightBlue,
+        Self::BrightMagenta,
+        Self::BrightCyan,
+        Self::BrightWhite,
+    ];
+
+    /// Where the colour sits in a palette, which is where it sits in
+    /// [Ansi::ALL].
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// The colour `name` stands for, for a name written as a palette
+    /// spells it.
+    pub fn named(name: &str) -> Option<Self> {
+        Self::parse(&as_written(name))
+    }
+
     /// The name the colour is written under, which is the name jj knows
     /// it by.
     pub fn name(self) -> &'static str {
@@ -175,11 +207,7 @@ impl FromStr for ThemeColor {
             return Ok(Self::Indexed(index));
         }
 
-        // A name is taken however it is spaced and capitalised, so that
-        // `bright black`, `bright-black` and `BrightBlack` are the one
-        // colour.
-        let name = lower.replace([' ', '-', '_'], "");
-
+        let name = as_written(text);
         if let "default" | "none" | "terminal" | "reset" = name.as_str() {
             return Ok(Self::Terminal);
         }
@@ -189,6 +217,13 @@ impl FromStr for ThemeColor {
 
         Err(ParseColorError(text.to_owned()))
     }
+}
+
+/// `name` as a colour of that name is looked up: a name is taken however
+/// it is spaced and capitalised, so that `bright black`, `bright-black`
+/// and `BrightBlack` are the one colour.
+fn as_written(name: &str) -> String {
+    name.to_lowercase().replace([' ', '-', '_'], "")
 }
 
 /// The colour `#rrggbb` stands for, and nothing for anything else.
@@ -229,26 +264,6 @@ impl<'de> Deserialize<'de> for ThemeColor {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The sixteen, in the order the palette has them.
-    const ANSI: [Ansi; 16] = [
-        Ansi::Black,
-        Ansi::Red,
-        Ansi::Green,
-        Ansi::Yellow,
-        Ansi::Blue,
-        Ansi::Magenta,
-        Ansi::Cyan,
-        Ansi::White,
-        Ansi::BrightBlack,
-        Ansi::BrightRed,
-        Ansi::BrightGreen,
-        Ansi::BrightYellow,
-        Ansi::BrightBlue,
-        Ansi::BrightMagenta,
-        Ansi::BrightCyan,
-        Ansi::BrightWhite,
-    ];
 
     fn parse(text: &str) -> ThemeColor {
         text.parse().expect("the colour is one that can be written")
@@ -319,7 +334,7 @@ mod tests {
     /// configuration says for changing.
     #[test]
     fn what_a_colour_is_written_as_reads_back_as_the_same_colour() {
-        for color in ANSI.map(ThemeColor::Ansi).into_iter().chain([
+        for color in Ansi::ALL.map(ThemeColor::Ansi).into_iter().chain([
             ThemeColor::Terminal,
             ThemeColor::Indexed(208),
             ThemeColor::Rgb(1, 2, 3),

@@ -6,9 +6,13 @@ It is a combination of
 - command line arguments
 */
 use std::fmt;
+use std::fs;
+use std::io::Write;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::ptr;
+use std::sync::Mutex;
 #[cfg(test)]
 use std::sync::Once;
 use std::sync::atomic::AtomicPtr;
@@ -22,6 +26,8 @@ use anyhow::bail;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::de;
+use tempfile::NamedTempFile;
+use tracing::warn;
 
 use crate::commander::MIN_SETTABLE_WIDTH;
 use crate::commander::RemoveEndLine;
@@ -36,6 +42,12 @@ use crate::theme::Theme;
 /// in place leaks the one that was there: whoever is reading it may
 /// still be looking at it.
 static ENV: AtomicPtr<Env> = AtomicPtr::new(ptr::null_mut());
+
+/// Every file jj has been told its colours in this run. One that is
+/// replaced stays readable for the rest of the run, the environment
+/// holding it being leaked rather than dropped, so they are taken away
+/// together at the end instead.
+static JJ_COLOR_FILES: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
 /// Set application environment, in place of whatever was set before.
 pub fn set_env(env: Env) {
@@ -65,15 +77,47 @@ pub fn configured_theme() -> Option<&'static Theme> {
 pub fn reload_env() -> Result<()> {
     let env = get_env();
     let (config, jj_config) = read_jj_config(&env.root, &env.jj_bin)?;
+    let theme = jj_config.theme();
+    // Telling jj costs another run of it, and most of what can be
+    // changed has nothing to do with colours.
+    let jj_colors = if colors_said(&config) == colors_said(&env.config) {
+        env.jj_colors.clone()
+    } else {
+        write_jj_colors(&env.root, &env.jj_bin, &theme, env.jj_colors.as_ref())
+    };
 
     set_env(Env {
         config,
-        theme: jj_config.theme(),
+        theme,
         jj_config,
+        jj_colors,
         ..env.clone()
     });
 
     Ok(())
+}
+
+/// What `config` says that the file telling jj its colours is made of:
+/// what we are drawn in and what jj draws its own output in.
+fn colors_said(config: &toml::Table) -> (Option<&toml::Value>, Option<&toml::Value>) {
+    (
+        config
+            .get("blazingjj")
+            .and_then(|blazingjj| blazingjj.get("colors")),
+        config.get("colors"),
+    )
+}
+
+/// Take away every file jj was told its colours in this run. Each is
+/// this run's alone, so failing to remove one is nothing to report.
+pub fn remove_jj_colors() {
+    for path in JJ_COLOR_FILES
+        .lock()
+        .expect("nothing panics holding it")
+        .drain(..)
+    {
+        let _ = fs::remove_file(path);
+    }
 }
 
 /// The environment, if one has been set.
@@ -97,6 +141,7 @@ pub fn set_test_env() {
             jj_config: JjConfig::default(),
             default_revset: None,
             jj_bin: "jj".to_owned(),
+            jj_colors: None,
         })
     });
 }
@@ -338,6 +383,8 @@ pub struct Env {
     pub root: String,
     pub default_revset: Option<String>,
     pub jj_bin: String,
+    /// What jj is told to write in, for as long as it is told anything.
+    pub jj_colors: Option<JjColors>,
 }
 
 impl Env {
@@ -353,14 +400,17 @@ impl Env {
         }
         let root = String::from_utf8(root_output.stdout)?.remove_end_line();
         let (config, jj_config) = read_jj_config(&root, &jj_bin)?;
+        let theme = jj_config.theme();
+        let jj_colors = write_jj_colors(&root, &jj_bin, &theme, None);
 
         Ok(Env {
             root,
             config,
-            theme: jj_config.theme(),
+            theme,
             jj_config,
             default_revset,
             jj_bin,
+            jj_colors,
         })
     }
 }
@@ -368,14 +418,7 @@ impl Env {
 /// What the configuration of the repo at `root` says, across all the
 /// layers jj reads it from, as it is listed and as the app reads it.
 fn read_jj_config(root: &str, jj_bin: &str) -> Result<(toml::Table, JjConfig)> {
-    let cfg = Command::new(jj_bin)
-        .arg("config")
-        .arg("list")
-        .args(get_output_args(false, true))
-        .current_dir(root)
-        .output()
-        .context("Failed to get jj config")?
-        .stdout;
+    let cfg = list_jj_config(root, jj_bin, &[])?;
 
     let config: toml::Table = toml::from_slice(&cfg).context("Failed to parse jj config")?;
     if config
@@ -383,9 +426,7 @@ fn read_jj_config(root: &str, jj_bin: &str) -> Result<(toml::Table, JjConfig)> {
         .and_then(|blazingjj| blazingjj.get("highlight-color"))
         .is_some()
     {
-        tracing::warn!(
-            "blazingjj.highlight-color is gone; set blazingjj.colors.highlight.bg instead"
-        );
+        warn!("blazingjj.highlight-color is gone; set blazingjj.colors.highlight.bg instead");
     }
     let jj_config = config
         .clone()
@@ -393,6 +434,108 @@ fn read_jj_config(root: &str, jj_bin: &str) -> Result<(toml::Table, JjConfig)> {
         .context("Failed to read the jj config")?;
 
     Ok((config, jj_config))
+}
+
+/// What `jj config list` says about `what`, or about the whole of the
+/// configuration when that names nothing.
+fn list_jj_config(root: &str, jj_bin: &str, what: &[&str]) -> Result<Vec<u8>> {
+    Ok(Command::new(jj_bin)
+        .arg("config")
+        .arg("list")
+        .args(what)
+        .args(get_output_args(false, true))
+        .current_dir(root)
+        .output()
+        .context("Failed to get jj config")?
+        .stdout)
+}
+
+/// The file telling jj to write in the colours the app is drawn in, and
+/// what was written to it. The file is kept for the run and taken away
+/// by [remove_jj_colors].
+#[derive(Clone, Debug)]
+pub struct JjColors {
+    path: PathBuf,
+    /// What it says, which two of them are the same by.
+    text: String,
+}
+
+impl JjColors {
+    /// Where jj is to be pointed at.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Env {
+    /// Whether jj is told to write in other colours than it was told
+    /// when `before` was the environment, which makes whatever output it
+    /// wrote by then no longer what it would write now.
+    pub fn tells_jj_other_colors_than(&self, before: &Env) -> bool {
+        fn said(env: &Env) -> Option<&str> {
+            env.jj_colors.as_ref().map(|colors| colors.text.as_str())
+        }
+
+        said(self) != said(before)
+    }
+}
+
+/// The file telling jj to write in the colours the app is drawn in,
+/// written out for jj to be pointed at. `before` is the file written
+/// last, which is handed back where it already says the same thing. None
+/// while there is nothing to tell jj, and none when jj cannot be asked
+/// what it colours things now or the file cannot be written.
+fn write_jj_colors(
+    root: &str,
+    jj_bin: &str,
+    theme: &Theme,
+    before: Option<&JjColors>,
+) -> Option<JjColors> {
+    if !theme.applies_to_jj() {
+        return None;
+    }
+
+    match jj_colors(root, jj_bin, theme, before) {
+        Ok(colors) => colors,
+        Err(err) => {
+            warn!("jj writes in its own colours: {err:#}");
+            None
+        }
+    }
+}
+
+/// What [write_jj_colors] writes, with what stopped it where it could
+/// not be written.
+fn jj_colors(
+    root: &str,
+    jj_bin: &str,
+    theme: &Theme,
+    before: Option<&JjColors>,
+) -> Result<Option<JjColors>> {
+    let listed = list_jj_config(root, jj_bin, &["--include-defaults", "colors"])?;
+    let listed: toml::Table = toml::from_slice(&listed).context("jj lists unreadable colors")?;
+    let colors = listed
+        .get("colors")
+        .and_then(toml::Value::as_table)
+        .ok_or_else(|| anyhow!("jj lists no colors to go by"))?;
+    let Some(text) = theme.jj_config(colors) else {
+        return Ok(None);
+    };
+    // The file already written says as much, so jj goes on being pointed
+    // at it rather than at a second copy of the same thing.
+    if let Some(before) = before.filter(|before| before.text == text) {
+        return Ok(Some(before.clone()));
+    }
+
+    let mut file = NamedTempFile::with_suffix(".toml")?;
+    file.write_all(text.as_bytes())?;
+    let path = file.into_temp_path().keep()?;
+    JJ_COLOR_FILES
+        .lock()
+        .expect("nothing panics holding it")
+        .push(path.clone());
+
+    Ok(Some(JjColors { path, text }))
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Default, PartialEq)]
@@ -672,6 +815,45 @@ mod tests {
     use super::*;
 
     const PANEL_WIDTH: usize = 80;
+
+    /// An environment that has told jj `told`, or nothing.
+    fn telling_jj(told: Option<&str>) -> Env {
+        Env {
+            root: ".".to_owned(),
+            config: toml::Table::new(),
+            theme: Theme::default(),
+            jj_config: JjConfig::default(),
+            default_revset: None,
+            jj_bin: "jj".to_owned(),
+            jj_colors: told.map(|text| JjColors {
+                path: PathBuf::new(),
+                text: text.to_owned(),
+            }),
+        }
+    }
+
+    /// Output jj wrote is held onto until the repo moves, so a change to
+    /// what jj is told to write in is what says the output no longer
+    /// looks like the app does. The file it is written to keeps its name
+    /// from run to run, so what is compared is what it says.
+    #[test]
+    fn telling_jj_other_colours_is_what_says_the_output_is_no_longer_ours() {
+        let told = |text| telling_jj(Some(text));
+
+        assert!(told("green").tells_jj_other_colors_than(&told("red")));
+        assert!(!told("green").tells_jj_other_colors_than(&told("green")));
+    }
+
+    /// Taking the colours back off jj, or handing them over in the first
+    /// place, changes what it writes just as much as changing them does.
+    #[test]
+    fn taking_the_colours_off_jj_changes_what_it_writes() {
+        let none = telling_jj(None);
+
+        assert!(none.tells_jj_other_colors_than(&telling_jj(Some("green"))));
+        assert!(telling_jj(Some("green")).tells_jj_other_colors_than(&none));
+        assert!(!none.tells_jj_other_colors_than(&telling_jj(None)));
+    }
 
     /// The configuration `jj config list` would print for the given
     /// settings

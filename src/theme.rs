@@ -12,14 +12,18 @@ terminal's own shows through.
 */
 
 mod color;
+mod jj;
+mod scheme;
 
 use std::collections::HashMap;
+use std::iter;
 use std::sync::LazyLock;
 
 pub use color::Ansi;
 pub use color::ThemeColor;
 use ratatui::style::Color;
 use ratatui::style::Style;
+pub use scheme::Scheme;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::de;
@@ -184,6 +188,27 @@ impl Role {
         }
     }
 
+    /// The labels jj writes what the role names, for the roles that name
+    /// something jj draws rather than something we do. The `working_copy`
+    /// forms are the same thing on the working copy's row. A change id
+    /// jj marks as divergent is left out: it is drawn in red to say so.
+    pub fn jj_labels(self) -> &'static [&'static str] {
+        match self {
+            Self::ChangeId => &["change_id", "working_copy change_id"],
+            Self::Bookmark => &[
+                "bookmark",
+                "bookmarks",
+                "local_bookmarks",
+                "remote_bookmarks",
+                "working_copy bookmark",
+                "working_copy bookmarks",
+                "working_copy local_bookmarks",
+                "working_copy remote_bookmarks",
+            ],
+            _ => &[],
+        }
+    }
+
     /// The role this one falls back to for a colour it says nothing
     /// about itself. Almost every role falls back to [Role::Default],
     /// what is set for the app as a whole; one that is a kind of
@@ -222,6 +247,17 @@ pub enum Channel {
 }
 
 impl Channel {
+    /// Both of them.
+    pub const ALL: [Self; 2] = [Self::Fg, Self::Bg];
+
+    /// What the channel is called under a role's table.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Fg => "fg",
+            Self::Bg => "bg",
+        }
+    }
+
     fn of(self, colors: RoleColors) -> Option<ThemeColor> {
         match self {
             Self::Fg => colors.fg,
@@ -268,42 +304,84 @@ impl<'de> Deserialize<'de> for RoleColors {
     }
 }
 
-/// What the configuration says to draw each role in. A role it says
-/// nothing about is left out rather than held as saying nothing, so that
-/// what a colour scheme says can be told apart from what the user does.
+/// What the configuration says about the colours: which scheme to draw
+/// in, and what of it to draw differently. A role it says nothing about
+/// is left out rather than held as saying nothing, so that what the
+/// scheme says can be told apart from what the user does.
 #[derive(Debug, Clone, Default)]
-pub struct Colors(HashMap<Role, RoleColors>);
+pub struct Colors {
+    scheme: Option<&'static Scheme>,
+    /// Whether jj is to be told to write in the scheme's colours too,
+    /// for as long as anything is said about it either way.
+    apply_to_jj: Option<bool>,
+    roles: HashMap<Role, RoleColors>,
+}
 
 impl Colors {
     /// What the configuration says about `role`, which may be nothing.
     fn role(&self, role: Role) -> RoleColors {
-        self.0.get(&role).copied().unwrap_or_default()
+        self.roles.get(&role).copied().unwrap_or_default()
     }
 }
 
-/// The roles are named rather than numbered, and one that names no role
-/// is refused with the ones there are: a misspelt role is a colour that
-/// would otherwise go quietly unset.
+/// The scheme and whether it reaches jj are named alongside the roles
+/// rather than under a table of their own, so they are taken out before
+/// what is left is read as roles.
 impl<'de> Deserialize<'de> for Colors {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let table = toml::Table::deserialize(deserializer)?;
-        let mut colors = HashMap::new();
+        let mut table = toml::Table::deserialize(deserializer)?;
 
-        for (key, value) in table {
-            let Some(role) = Role::ALL.into_iter().find(|role| role.key() == key) else {
-                return Err(de::Error::custom(format!(
-                    "{key:?} is no element to color; they are {}",
-                    Role::ALL.map(Role::key).join(", ")
-                )));
-            };
-            colors.insert(
-                role,
-                RoleColors::deserialize(value).map_err(de::Error::custom)?,
-            );
-        }
+        let scheme = match table.remove("scheme") {
+            None => None,
+            Some(value) => {
+                let name = String::deserialize(value).map_err(de::Error::custom)?;
 
-        Ok(Self(colors))
+                Some(Scheme::named(&name).ok_or_else(|| {
+                    de::Error::custom(format!(
+                        "{name:?} is no color scheme; they are {}",
+                        Scheme::NAMES.join(", ")
+                    ))
+                })?)
+            }
+        };
+
+        let apply_to_jj = table
+            .remove("apply-to-jj")
+            .map(bool::deserialize)
+            .transpose()
+            .map_err(de::Error::custom)?;
+
+        Ok(Self {
+            scheme,
+            apply_to_jj,
+            roles: roles_from_table(table).map_err(de::Error::custom)?,
+        })
     }
+}
+
+/// The roles `table` says something about, refusing a key that names no
+/// role with the roles there are: a misspelt one is a colour that would
+/// otherwise go quietly unset.
+fn roles_from_table(table: toml::Table) -> Result<HashMap<Role, RoleColors>, String> {
+    table
+        .into_iter()
+        .map(|(key, value)| {
+            let role = Role::ALL
+                .into_iter()
+                .find(|role| role.key() == key)
+                .ok_or_else(|| {
+                    format!(
+                        "{key:?} is no element to color; they are {}",
+                        Role::ALL.map(Role::key).join(", ")
+                    )
+                })?;
+
+            Ok((
+                role,
+                RoleColors::deserialize(value).map_err(|err| err.to_string())?,
+            ))
+        })
+        .collect()
 }
 
 /// The colours to draw the roles in.
@@ -348,42 +426,97 @@ impl Theme {
         style
     }
 
-    /// What the configuration draws `role` in, as far as it says: what it
-    /// says about the role, else what the role is drawn in without being
-    /// said anything about, else what it says about the app as a whole.
+    /// What `role` is drawn in, as far as anything says: what the user
+    /// says about the role, else what the scheme says about it, else
+    /// what the role is drawn in without being said anything about,
+    /// else what is set for the app as a whole.
+    ///
+    /// A colour naming one of the sixteen is what the scheme's palette
+    /// makes of it, which is how a scheme recolours the roles neither it
+    /// nor the user says anything about.
     pub fn color_of(&self, role: Role, channel: Channel) -> Option<ThemeColor> {
+        let scheme = self.colors.scheme;
         let said = |this: Role| {
             channel
                 .of(self.colors.role(this))
+                .or_else(|| channel.of(scheme?.role(this)))
                 .or_else(|| channel.of(this.builtin()))
         };
 
-        if let Some(color) = said(role) {
-            return Some(color);
-        }
-        // The cut-off is the asked-for role's own: a role that is only a
-        // kind of one that keeps a channel off still takes what is set
-        // for the app.
-        if role.keeps_off(channel) {
-            return None;
-        }
+        // The role itself first, then what it falls back to and from
+        // there to what is set for the app. A role that keeps the
+        // channel off is left alone when it says nothing itself; one
+        // that is only a kind of such a role still falls back.
+        let color = match said(role) {
+            Some(color) => color,
+            None if role.keeps_off(channel) => return None,
+            None => iter::successors(role.parent(), |this| this.parent())
+                .find_map(said)
+                .or_else(|| channel.of(scheme?.palette().default_colors()))?,
+        };
 
-        // Each role in turn, from the one it falls back to and from
-        // there to what is set for the app.
-        let mut at = role.parent();
-        while let Some(this) = at {
-            if let Some(color) = said(this) {
-                return Some(color);
-            }
+        Some(self.through_palette(color))
+    }
 
-            at = this.parent();
+    /// What the configuration or the scheme draws `role`'s `channel` in
+    /// where either says so outright, as the palette makes of it.
+    ///
+    /// What a role only falls back to is not something to hand jj: it is
+    /// what the app draws in for want of anything said, and jj has its
+    /// own answer for that already.
+    pub fn said_of(&self, role: Role, channel: Channel) -> Option<ThemeColor> {
+        let scheme = self.colors.scheme;
+        let color = channel
+            .of(self.colors.role(role))
+            .or_else(|| channel.of(scheme?.role(role)))?;
+
+        Some(self.through_palette(color))
+    }
+
+    /// `color` as the scheme's palette draws it, where it names one of
+    /// the sixteen and a scheme is picked.
+    fn through_palette(&self, color: ThemeColor) -> ThemeColor {
+        match (color, self.colors.scheme) {
+            (ThemeColor::Ansi(ansi), Some(scheme)) => scheme.palette().of(ansi),
+            _ => color,
         }
-
-        None
     }
 
     fn color(&self, role: Role, channel: Channel) -> Option<Color> {
         self.color_of(role, channel).map(ThemeColor::to_ratatui)
+    }
+
+    /// The scheme the app is drawn in, if one is picked.
+    pub fn scheme(&self) -> Option<&'static Scheme> {
+        self.colors.scheme
+    }
+
+    /// Whether jj is to be told to write in the colours the app draws
+    /// in: while a scheme is picked or a role naming jj's output is
+    /// given a colour, unless told not to.
+    pub fn applies_to_jj(&self) -> bool {
+        let says_what_jj_draws = || {
+            Role::ALL.into_iter().any(|role| {
+                !role.jj_labels().is_empty()
+                    && Channel::ALL
+                        .into_iter()
+                        .any(|channel| self.said_of(role, channel).is_some())
+            })
+        };
+
+        self.asked_to_apply_to_jj() && (self.colors.scheme.is_some() || says_what_jj_draws())
+    }
+
+    /// Whether telling jj is turned on, whether or not there is anything
+    /// to tell it as things stand.
+    pub fn asked_to_apply_to_jj(&self) -> bool {
+        self.colors.apply_to_jj.unwrap_or(true)
+    }
+
+    /// What jj is to be told to write in, given `colors` as jj reads
+    /// them now.
+    pub fn jj_config(&self, colors: &toml::Table) -> Option<String> {
+        jj::config_text(self, colors)
     }
 }
 
@@ -648,5 +781,119 @@ mod tests {
             theme.style(Role::ButtonActive),
             theme.style(Role::Highlight)
         );
+    }
+
+    /// Picking a scheme recolours the roles it says nothing about,
+    /// because what they name is one of the sixteen and the scheme is
+    /// what says what those look like. This is the whole of what a
+    /// scheme is for: the app is recoloured without a role being named.
+    #[test]
+    fn a_scheme_recolours_the_roles_it_says_nothing_about() {
+        let theme = theme_of("blazingjj.colors.scheme = \"tokyo-night\"\n");
+
+        // The error is `red`, which Tokyo Night draws as #f7768e, on the
+        // background the scheme draws the app on.
+        assert_eq!(
+            theme.style(Role::Error),
+            Style::new()
+                .fg(Color::Rgb(0xf7, 0x76, 0x8e))
+                .bg(Color::Rgb(0x1a, 0x1b, 0x26))
+        );
+    }
+
+    /// A scheme says what the app is drawn in, which the highlight is
+    /// not: it goes over a row of jj's own output, and a foreground of
+    /// ours would flatten the change ids and bookmarks on that row to
+    /// the one colour. Every scheme the app comes with says so.
+    #[test]
+    fn no_scheme_gives_the_highlight_a_foreground() {
+        for scheme in Scheme::NAMES.map(|name| Scheme::named(name).expect("the scheme reads")) {
+            let theme = theme_of(&format!("blazingjj.colors.scheme = \"{}\"\n", scheme.name));
+
+            assert_eq!(theme.style(Role::Highlight).fg, None, "{}", scheme.name);
+            assert!(theme.style(Role::Highlight).bg.is_some(), "{}", scheme.name);
+        }
+    }
+
+    /// A scheme says what the app is drawn on, so that picking one is
+    /// picking a background as well as the colours on it.
+    #[test]
+    fn a_scheme_says_what_the_app_is_drawn_on() {
+        let theme = theme_of("blazingjj.colors.scheme = \"tokyo-night-storm\"\n");
+
+        assert_eq!(
+            theme.style(Role::Default),
+            Style::new()
+                .fg(Color::Rgb(0xc0, 0xca, 0xf5))
+                .bg(Color::Rgb(0x24, 0x28, 0x3b))
+        );
+    }
+
+    /// Solarized puts its dark background on `bright black`, which is
+    /// what the separator would otherwise be drawn in. The scheme saying
+    /// so outright is what keeps it visible.
+    #[test]
+    fn a_scheme_beats_what_a_role_is_drawn_in_without_one() {
+        let theme = theme_of("blazingjj.colors.scheme = \"solarized-dark\"\n");
+
+        assert_eq!(
+            theme.style(Role::Separator),
+            Style::new()
+                .fg(Color::Rgb(0x58, 0x6e, 0x75))
+                .bg(Color::Rgb(0x00, 0x2b, 0x36))
+        );
+    }
+
+    /// What the user says beats the scheme, so that picking one is a
+    /// place to start rather than the last word.
+    #[test]
+    fn what_is_set_beats_the_scheme() {
+        let theme = theme_of(
+            "blazingjj.colors.scheme = \"tokyo-night\"\nblazingjj.colors.error = \"#010203\"\n",
+        );
+
+        assert_eq!(theme.style(Role::Error).fg, Some(Color::Rgb(1, 2, 3)));
+    }
+
+    /// The log and the diffs are jj's output in our panels, so a scheme
+    /// that stopped at the frame would be half applied. Picking one
+    /// hands it to jj as well, without a second thing to find and set.
+    #[test]
+    fn a_scheme_is_handed_to_jj_without_being_asked_twice() {
+        assert!(
+            theme_of("blazingjj.colors.scheme = \"tokyo-night\"\n").applies_to_jj(),
+            "a scheme is handed over"
+        );
+    }
+
+    /// Nothing is said to jj without a scheme, so a configuration that
+    /// never asked to be recoloured keeps the colours it set for itself.
+    #[test]
+    fn without_a_scheme_jj_is_left_as_it_was() {
+        assert!(!Theme::default().applies_to_jj());
+        assert!(!theme_of("blazingjj.colors.apply-to-jj = true\n").applies_to_jj());
+    }
+
+    /// Handing the colours over is still something to turn down, for
+    /// whoever wants the app drawn in a scheme and jj left alone.
+    #[test]
+    fn handing_the_colours_to_jj_can_be_turned_down() {
+        let theme = theme_of(
+            "blazingjj.colors.scheme = \"tokyo-night\"\n\
+             blazingjj.colors.apply-to-jj = false\n",
+        );
+
+        assert!(!theme.applies_to_jj());
+    }
+
+    /// A scheme that is not one of the app's is refused with the ones
+    /// that are, rather than leaving the app looking unchanged for no
+    /// stated reason.
+    #[test]
+    fn a_scheme_the_app_does_not_come_with_is_refused() {
+        let refusal = refusal("blazingjj.colors.scheme = \"dracula\"\n");
+
+        assert!(refusal.contains("dracula"), "{refusal}");
+        assert!(refusal.contains("tokyo-night"), "{refusal}");
     }
 }

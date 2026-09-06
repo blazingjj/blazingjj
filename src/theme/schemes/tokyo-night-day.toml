@@ -1,0 +1,29 @@
+# Tokyo Night Day, by Folke Lemaitre.
+# https://github.com/folke/tokyonight.nvim
+#
+# The light one of the four, the theme's own colours inverted for a light
+# background.
+
+[palette]
+fg = "#3760bf"
+bg = "#e1e2e7"
+black = "#b4b5b9"
+red = "#f52a65"
+green = "#587539"
+yellow = "#8c6c3e"
+blue = "#2e7de9"
+magenta = "#9854f1"
+cyan = "#007197"
+white = "#6172b0"
+bright-black = "#a1a6c5"
+bright-red = "#ff4774"
+bright-green = "#5c8524"
+bright-yellow = "#a27629"
+bright-blue = "#358aff"
+bright-magenta = "#a463ff"
+bright-cyan = "#007ea8"
+bright-white = "#3760bf"
+
+[colors]
+# The selection background the theme publishes for terminals.
+highlight = { bg = "#b7c1e3" }

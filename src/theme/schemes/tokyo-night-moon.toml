@@ -1,0 +1,29 @@
+# Tokyo Night Moon, by Folke Lemaitre.
+# https://github.com/folke/tokyonight.nvim
+#
+# Between Tokyo Night Storm and the light one, on a background of its own
+# and with the palette shifted to match.
+
+[palette]
+fg = "#c8d3f5"
+bg = "#222436"
+black = "#1b1d2b"
+red = "#ff757f"
+green = "#c3e88d"
+yellow = "#ffc777"
+blue = "#82aaff"
+magenta = "#c099ff"
+cyan = "#86e1fc"
+white = "#828bb8"
+bright-black = "#444a73"
+bright-red = "#ff8d94"
+bright-green = "#c7fb6d"
+bright-yellow = "#ffd8ab"
+bright-blue = "#9ab8ff"
+bright-magenta = "#caabff"
+bright-cyan = "#b2ebff"
+bright-white = "#c8d3f5"
+
+[colors]
+# The selection background the theme publishes for terminals.
+highlight = { bg = "#2d3f76" }

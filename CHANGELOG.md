@@ -65,6 +65,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   given their own
 - A color can be written as one of the sixteen names, an `#rrggbb` code,
   `ansi-color-0` through `ansi-color-255`, or `default` for the terminal's own
+- `blazingjj.colors.scheme` draws the app in one of the color schemes it comes
+  with: `solarized-dark`, `solarized-light`, `tokyo-night`,
+  `tokyo-night-storm`, `tokyo-night-moon` or `tokyo-night-day`. A scheme
+  says what the sixteen colors of the terminal palette look like, and almost
+  everything is drawn in one of the sixteen, so picking one recolors all of
+  it. What is set under `blazingjj.colors` still wins over the scheme
+  - jj is told to write in the scheme's colors too, so the log, the diffs and
+    the operation log match the frame around them rather than being the one
+    part of the app a scheme does not reach. That overrides whatever is set
+    under jj's own `colors` and can be turned down with
+    `blazingjj.colors.apply-to-jj = false`. It reaches only the runs blazingjj
+    renders itself: a program handed the terminal, like `jj describe` in your
+    editor or a diff tool, stays as you configured it
+  - `change-id` and `bookmark` are handed to jj the same way, with or without
+    a scheme: they name jj's own output rather than anything blazingjj draws,
+    so that is the only way they reach the screen. A channel you say nothing
+    about stays as jj draws it, so the working copy's change id keeps the
+    brighter tone jj tells it apart by. Without a scheme and without either of
+    those set, jj is left entirely alone
 - `+` (`goto-child`) moves the log tab selection to the child of the selected
   change, asking which one when it has several in the log view, the way `-`
   does for its parents

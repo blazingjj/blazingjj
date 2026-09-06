@@ -518,7 +518,9 @@ mod tests {
 
     #[test]
     fn the_details_panel_says_what_the_selected_option_does() {
-        let screen = screen(&mut tab("blazingjj.layout = \"vertical\"\n"));
+        let mut tab = tab("blazingjj.layout = \"vertical\"\n");
+        select(&mut tab, "blazingjj.layout");
+        let screen = screen(&mut tab);
 
         assert!(
             screen

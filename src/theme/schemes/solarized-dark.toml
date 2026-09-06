@@ -1,0 +1,34 @@
+# Solarized Dark, by Ethan Schoonover.
+# https://ethanschoonover.com/solarized/
+#
+# The palette is the one Solarized publishes for the sixteen terminal
+# colours, which spends eight of them on the tones its two backgrounds
+# and four text weights are made of rather than on colours.
+
+[palette]
+fg = "#839496"                # base0
+bg = "#002b36"                # base03
+black = "#073642"             # base02
+red = "#dc322f"
+green = "#859900"
+yellow = "#b58900"
+blue = "#268bd2"
+magenta = "#d33682"
+cyan = "#2aa198"
+white = "#eee8d5"             # base2
+bright-black = "#002b36"      # base03
+bright-red = "#cb4b16"        # orange
+bright-green = "#586e75"      # base01
+bright-yellow = "#657b83"     # base00
+bright-blue = "#839496"       # base0
+bright-magenta = "#6c71c4"    # violet
+bright-cyan = "#93a1a1"       # base1
+bright-white = "#fdf6e3"      # base3
+
+[colors]
+# base02, Solarized's highlight background.
+highlight = { bg = "#073642" }
+# base00 and base01, the two tones below the text: `bright black` is the
+# background itself here, so neither can be left to the palette.
+hint = "#657b83"
+separator = "#586e75"

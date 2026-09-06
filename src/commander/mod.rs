@@ -42,6 +42,7 @@ use std::fmt;
 use std::io;
 use std::io::Read;
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::Child;
 use std::process::Stdio;
 use std::string::FromUtf8Error;
@@ -202,6 +203,11 @@ impl Commander {
             jj_bin: self.env.jj_bin.clone(),
             root: self.env.root.clone(),
             args,
+            jj_colors: self
+                .env
+                .jj_colors
+                .as_ref()
+                .map(|colors| colors.path().to_path_buf()),
             color: false,
             force_no_color: self.force_no_color,
             quiet: true,
@@ -297,6 +303,11 @@ pub struct JjCommand {
     jj_bin: String,
     root: String,
     args: Vec<OsString>,
+    /// The file telling jj to write in the colours the app is drawn in,
+    /// if it is to be told anything. Like [Self::color] it only reaches
+    /// the runs whose output the app renders itself: a program handed
+    /// the terminal is the user's, and looks as they configured it.
+    jj_colors: Option<PathBuf>,
     /// Whether the command should emit ANSI color. Off by default so output
     /// is safe to parse; enable with [Self::color] for output shown to the
     /// user.
@@ -431,10 +442,13 @@ impl JjCommand {
     fn execute(mut self, stdout: Stdio, cancel: &CancelToken) -> Result<Vec<u8>, CommandError> {
         let input = self.stdin.take().map(String::into_bytes);
 
-        let program = self.build_jj().args(get_output_args(
+        let mut program = self.build_jj().args(get_output_args(
             !self.force_no_color && self.color,
             self.quiet,
         ));
+        if let Some(colors) = self.jj_colors.take() {
+            program = program.args(["--config-file".into(), colors.into_os_string()]);
+        }
 
         let Some(pager) = self.pager.take() else {
             return run_child(&program, input, stdout, cancel, self.with_stderr);
@@ -648,6 +662,7 @@ pub mod tests {
                 jj_config: JjConfig::default(),
                 default_revset: None,
                 jj_bin,
+                jj_colors: None,
             };
 
             let mut commander = Commander::new(&env);

@@ -49,6 +49,7 @@ use crate::app::Handled;
 use crate::commander::Commander;
 use crate::commander::new_commander;
 use crate::env::Env;
+use crate::env::remove_jj_colors;
 use crate::env::set_env;
 use crate::interrupt::catch_interrupts;
 use crate::interrupt::watch_for_interrupts;
@@ -76,9 +77,21 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    // Setup environment
-    set_env(init_env()?);
+    let res = init_env().and_then(|env| {
+        set_env(env);
 
+        run()
+    });
+    // The files jj was told its colours in are taken away however far
+    // the run got, there being nothing left to read them.
+    remove_jj_colors();
+
+    res
+}
+
+/// The app itself, from the environment being set to the terminal being
+/// handed back.
+fn run() -> Result<()> {
     // A stale working copy has to be dealt with before anything can
     // read the repo.
     if !update_stale_workspace()? {
@@ -96,9 +109,8 @@ fn main() -> Result<()> {
     // Run app
     let res = run_app(&mut terminal, &mut app);
     restore_terminal()?;
-    res?;
 
-    Ok(())
+    res
 }
 
 /// Examine environment variables and command line arguments
@@ -359,6 +371,7 @@ fn install_panic_hook() {
         if let Err(err) = restore_terminal() {
             eprintln!("Failed to restore terminal: {err}");
         }
+        remove_jj_colors();
         original_hook(info);
     }));
 }

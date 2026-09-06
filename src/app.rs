@@ -465,6 +465,14 @@ impl<'a> App<'a> {
         }
     }
 
+    /// Every tab throws away the output it is holding, so that what it
+    /// comes to show is produced afresh.
+    fn drop_all_caches(&mut self) {
+        for tab in TabId::ALL {
+            self.get_tab(tab).drop_caches();
+        }
+    }
+
     /// Every tab is behind on what it shows, whoever moved the repo.
     fn mark_all_stale(&mut self) {
         for tab in TabId::ALL {
@@ -574,10 +582,21 @@ impl<'a> App<'a> {
                 self.pending_interactive = Some(interactive);
             }
             AppAction::ConfigChanged => {
+                // The environment we are leaving stays where it is, so
+                // what it told jj is still there to be compared with.
+                let before = get_env();
                 // Whatever went wrong reading it, the app goes on with
                 // the configuration it has rather than coming down.
                 if let Err(err) = reload_env() {
                     warn!("Could not read the configuration again: {err:#}");
+                }
+
+                // Output jj wrote is held onto until the repo moves, and
+                // it was written in the colours jj was told to write in
+                // at the time. Told others now, what is held is what the
+                // app no longer looks like, so it goes.
+                if get_env().tells_jj_other_colors_than(before) {
+                    self.drop_all_caches();
                 }
 
                 self.repo_watch
