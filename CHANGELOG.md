@@ -92,7 +92,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changes the selected setting and `x` takes it back out of your config, both
   through `jj config` on the user config file and both configurable under
   `[blazingjj.keybinds.settings-tab]`. A change takes effect at once, without
-  a restart
+  a restart. Clearing the field a value is typed in also takes the option out,
+  which is the only way to reach one of several options written under the same
+  key
 - Keybindings tab, opened from the settings tab's `blazingjj.keybinds` row,
   listing every action a key can be bound to under the heading of where its
   keys take effect. `Enter` takes the next key you press for the selected
