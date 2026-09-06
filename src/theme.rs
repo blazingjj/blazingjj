@@ -32,64 +32,37 @@ use crate::env::JjConfig;
 use crate::env::configured_theme;
 
 /// What the app draws an element for. The colour of a role is the colour
-/// of every element drawn in it.
+/// of every element drawn in it, and [Role::doc] is what each is drawn
+/// for, said once for the colours tab to show and to read here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Role {
-    /// What everything else falls back to, and what is drawn in nothing
-    /// more particular.
     Default,
-    /// The row, tab or button the keys act on.
     Highlight,
-    /// What is worth saying but not worth reading first: the keys a
-    /// panel answers to, what an option falls back to, where a binding
-    /// comes from, a row that cannot be picked.
     Hint,
-    /// The rules a popup divides itself with.
     Separator,
-    /// The border around a panel of the frame.
     Border,
-    /// The workspace the app is running in, as the status bar names it.
     Workspace,
-    /// The title a panel of the frame is drawn under.
     PanelTitle,
-    /// The heading a list is divided under.
     Heading,
-    /// The border around a popup.
     PopupBorder,
-    /// The title of a popup.
     PopupTitle,
-    /// What went wrong.
     Error,
-    /// What is about to make a change rather than pick something that is
-    /// already there.
     Warning,
-    /// What just worked, for as long as it is worth showing.
     Success,
-    /// A button that is not the one Enter presses.
     Button,
-    /// The button Enter presses.
     ButtonActive,
-    /// A change id.
     ChangeId,
-    /// The name of a bookmark.
     Bookmark,
-    /// A file the change adds.
     FileAdded,
-    /// A file the change changes.
     FileModified,
-    /// A file the change renames.
     FileRenamed,
-    /// A file the change copies.
     FileCopied,
-    /// A file the change deletes.
     FileDeleted,
-    /// A file left conflicted.
     Conflict,
 }
 
 impl Role {
-    /// Every role there is, in the order a list of them reads best in
-    /// rather than the order they are declared in.
+    /// Every role there is, in the order the colours tab lists them.
     pub const ALL: [Self; 23] = [
         Self::Default,
         Self::Highlight,
@@ -101,11 +74,11 @@ impl Role {
         Self::Heading,
         Self::PopupBorder,
         Self::PopupTitle,
+        Self::Button,
+        Self::ButtonActive,
         Self::Error,
         Self::Warning,
         Self::Success,
-        Self::Button,
-        Self::ButtonActive,
         Self::ChangeId,
         Self::Bookmark,
         Self::FileAdded,
@@ -148,6 +121,66 @@ impl Role {
             Self::FileCopied => "file-copied",
             Self::FileDeleted => "file-deleted",
             Self::Conflict => "conflict",
+        }
+    }
+
+    /// What the role is drawn for, as the colours tab says it.
+    pub fn doc(self) -> &'static str {
+        match self {
+            Self::Default => {
+                "What everything else falls back to, and what is drawn in nothing more particular."
+            }
+            Self::Highlight => "The row, tab or button the keys act on.",
+            Self::Hint => {
+                "What is worth saying but not worth reading first: the keys a panel answers to, what an option falls back to, a row that cannot be picked."
+            }
+            Self::Separator => "The rules a popup divides itself with.",
+            Self::Border => "The border around a panel of the frame.",
+            Self::Workspace => "The workspace the app is running in, as the status bar names it.",
+            Self::PanelTitle => "The title a panel of the frame is drawn under.",
+            Self::Heading => "The heading a list is divided under.",
+            Self::PopupBorder => "The border around a popup.",
+            Self::PopupTitle => "The title of a popup.",
+            Self::Error => "What went wrong.",
+            Self::Warning => {
+                "What is about to make a change rather than pick something already there."
+            }
+            Self::Success => "What just worked, for as long as it is worth showing.",
+            Self::Button => "A button that is not the one Enter presses.",
+            Self::ButtonActive => {
+                "The button Enter presses. Takes the highlight's colors unless given its own."
+            }
+            Self::ChangeId => "A change id.",
+            Self::Bookmark => "The name of a bookmark.",
+            Self::FileAdded => "A file the change adds.",
+            Self::FileModified => "A file the change changes.",
+            Self::FileRenamed => "A file the change renames.",
+            Self::FileCopied => "A file the change copies.",
+            Self::FileDeleted => "A file the change deletes.",
+            Self::Conflict => "A file left conflicted.",
+        }
+    }
+
+    /// The heading the colours tab lists the role under.
+    pub fn section(self) -> &'static str {
+        match self {
+            Self::Default
+            | Self::Highlight
+            | Self::Hint
+            | Self::Separator
+            | Self::Border
+            | Self::Workspace
+            | Self::PanelTitle
+            | Self::Heading => "The frame",
+            Self::PopupBorder | Self::PopupTitle | Self::Button | Self::ButtonActive => "Popups",
+            Self::Error | Self::Warning | Self::Success => "What the app has to say",
+            Self::ChangeId | Self::Bookmark => "The repo",
+            Self::FileAdded
+            | Self::FileModified
+            | Self::FileRenamed
+            | Self::FileCopied
+            | Self::FileDeleted
+            | Self::Conflict => "Files",
         }
     }
 
@@ -247,7 +280,7 @@ pub enum Channel {
 }
 
 impl Channel {
-    /// Both of them.
+    /// Both of them, in the order the colours tab asks for them.
     pub const ALL: [Self; 2] = [Self::Fg, Self::Bg];
 
     /// What the channel is called under a role's table.

@@ -85,6 +85,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     about stays as jj draws it, so the working copy's change id keeps the
     brighter tone jj tells it apart by. Without a scheme and without either of
     those set, jj is left entirely alone
+- The `blazingjj.colors` row of the settings tab opens the colors, which are
+  changed there one element at a time, the way the keybindings are. Each is
+  listed drawn in its own colors; `Enter` asks what an element is drawn in,
+  `b` what it is drawn on, and `x` takes both back out of your config, while
+  clearing either field takes just that one out. The keys are configured
+  under `[blazingjj.keybinds.colors-tab]`
 - `+` (`goto-child`) moves the log tab selection to the child of the selected
   change, asking which one when it has several in the log view, the way `-`
   does for its parents

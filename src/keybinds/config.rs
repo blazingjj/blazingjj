@@ -30,6 +30,7 @@ pub struct KeybindsConfig {
     pub op_log_tab: Option<OpLogTabKeybindsConfig>,
     pub settings_tab: Option<SettingsTabKeybindsConfig>,
     pub keybindings_tab: Option<KeybindingsTabKeybindsConfig>,
+    pub colors_tab: Option<ColorsTabKeybindsConfig>,
     pub details_panel: Option<DetailsPanelKeybindsConfig>,
     pub popup: Option<PopupKeybindsConfig>,
     pub text_popup: Option<TextPopupKeybindsConfig>,
@@ -196,6 +197,15 @@ pub struct OpLogTabKeybindsConfig {
 pub struct SettingsTabKeybindsConfig {
     pub change: Option<Keybind>,
     pub unset: Option<Keybind>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct ColorsTabKeybindsConfig {
+    pub change_foreground: Option<Keybind>,
+    pub change_background: Option<Keybind>,
+    pub unset: Option<Keybind>,
+    pub back: Option<Keybind>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

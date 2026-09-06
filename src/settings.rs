@@ -14,6 +14,7 @@ use anyhow::bail;
 
 use crate::env::check_config_value;
 use crate::env::get_env;
+use crate::theme::Role;
 use crate::theme::Scheme;
 
 /// What kind of value an option takes, which decides both how it is
@@ -36,6 +37,9 @@ pub enum SettingKind {
     /// The keybindings, which are a table rather than a value to type,
     /// so they are changed one binding at a time in a tab of their own.
     Keybindings,
+    /// The colours, which are a table rather than a value to type, so
+    /// they are changed one element at a time in a tab of their own.
+    Colors,
 }
 
 /// One option the settings tab shows.
@@ -57,6 +61,7 @@ impl Setting {
     pub fn value_of(&self, input: &str) -> Result<String> {
         let value = match self.kind {
             SettingKind::Keybindings => bail!("The keybindings are not an option to type"),
+            SettingKind::Colors => bail!("The colors are not an option to type"),
             SettingKind::Number => {
                 let input = input.trim();
                 // TOML reads anything but a number here as text that
@@ -102,6 +107,14 @@ impl Setting {
                 1 => "1 binding set".to_owned(),
                 set => format!("{set} bindings set"),
             },
+            // As for the keybindings, what the colours are is the
+            // colours tab's to say. The scheme sits under the same table
+            // and is an option of its own, so it is not counted here.
+            (SettingKind::Colors, _) => match colors_set(value) {
+                0 => "as the scheme has them".to_owned(),
+                1 => "1 element given a color".to_owned(),
+                set => format!("{set} elements given colors"),
+            },
             (SettingKind::CommandLine, toml::Value::Array(words)) => words
                 .iter()
                 .map(|word| {
@@ -133,6 +146,19 @@ fn is_number(input: &str) -> bool {
     )
 }
 
+/// How many elements `value` gives a colour, of the keys under
+/// `blazingjj.colors` that name one.
+fn colors_set(value: &toml::Value) -> usize {
+    let Some(table) = value.as_table() else {
+        return 0;
+    };
+
+    table
+        .keys()
+        .filter(|key| Role::ALL.iter().any(|role| role.key() == *key))
+        .count()
+}
+
 /// How many bindings `value` holds, counting the ones in the tables of
 /// the contexts they take effect in.
 fn bindings_set(value: &toml::Value) -> usize {
@@ -159,6 +185,13 @@ pub const SETTINGS: &[Setting] = &[
         doc: "Whether jj is told what to write its own output in, so that the log, the diffs and the operation log match the frame around them. A scheme is told to it, and so is what you set for the change id and the bookmark, those being jj's output rather than ours and drawn in nothing else. It overrides whatever you have set under jj's own colors, and reaches only the runs blazingjj renders itself: a program handed the terminal, such as your editor or a diff tool, is left as you configured it.",
         fallback: "true while there is anything to tell jj",
         kind: SettingKind::Toggle(|| get_env().theme.asked_to_apply_to_jj()),
+    },
+    Setting {
+        key: "blazingjj.colors",
+        section: "Appearance",
+        doc: "What each element of the app is drawn in and on. Opens the list of them.",
+        fallback: "the colors of the scheme, else the terminal's own",
+        kind: SettingKind::Colors,
     },
     Setting {
         key: "blazingjj.layout",

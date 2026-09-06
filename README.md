@@ -71,6 +71,9 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Rebind any key from the `blazingjj.keybinds` row: `Enter` on an action
     takes the next key you press for it, `a` takes one more key beside the
     keys it has, `X` leaves it bound to nothing
+  - Recolor any element from the `blazingjj.colors` row: `Enter` on an element
+    asks what it is drawn in, `b` what it is drawn on, `x` takes both back out;
+    clearing either field takes just that one out
 - Config: Configure blazingjj with your jj config
 - Command box: Run jj commands directly in blazingjj with `:`
 - Help: See all key mappings with `?`
@@ -117,6 +120,7 @@ You can optionally configure the following options through your jj config:
   - An element that is a kind of another falls back to that one before `default`: `button-active`, the button Enter presses, takes the `highlight`'s colors, and `separator` takes the `hint`'s, unless given their own
   - `default` is what the rest fall back to: an element that says nothing about a color takes `default`'s, and where that says nothing either the terminal's own shows through. So setting `blazingjj.colors.default.bg` gives the whole interface a background, while leaving it unset keeps your terminal's
   - A color is one of the sixteen names (`red`, `bright black`, ...), an `#rrggbb` code, `ansi-color-0` through `ansi-color-255`, or `default` for the terminal's own. Names are read as jj reads them, so `white` is the dim one and `bright white` the bright one
+  - The `blazingjj.colors` row of the settings tab opens the list of elements, showing each drawn in its own colors, and changes them one at a time
 - `blazingjj.diff-format`: Change the default diff format. Can be `color-words`, `git`, `pager`, `summary` or `stat`. Defaults to `color_words`
   - If `blazingjj.diff-format` is not set but `ui.diff.format` is, the latter will be used
 - `blazingjj.diff-tool`: Specify which diff tool to use by default

@@ -26,6 +26,14 @@ pub fn panel_title(title: impl Into<Cow<'static, str>>) -> Span<'static> {
     Span::styled(title, Role::PanelTitle.style())
 }
 
+/// A patch of `style`, for the colours of an element to be seen rather
+/// than only read. It carries text so that both of them show: the
+/// foreground has to be drawn in something to be seen at all, and a
+/// patch of the background alone would say nothing about it.
+pub fn swatch(style: Style) -> Span<'static> {
+    Span::styled(" x ", style)
+}
+
 /// The heading a list is divided under, which is underlined rather than
 /// indented like the rows beneath it.
 pub fn section_heading(heading: impl Into<Cow<'static, str>>) -> Span<'static> {
