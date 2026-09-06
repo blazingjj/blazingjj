@@ -29,7 +29,6 @@ use ratatui::prelude::Buffer;
 use ratatui::prelude::Constraint;
 use ratatui::prelude::Direction;
 use ratatui::prelude::Layout;
-use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -49,6 +48,7 @@ use crate::keybinds::PopupKeybinds;
 use crate::keybinds::rebase_popup::CutOption;
 use crate::keybinds::rebase_popup::PasteOption;
 use crate::keybinds::rebase_popup::PopupAction;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -105,10 +105,10 @@ impl Component for RebasePopup {
         let area = centered_rect_fixed(area, 32, 12);
         // The border of the dialog
         let block = Block::bordered()
-            .title(Span::styled(" Rebase ", Style::new().bold().cyan()))
+            .title(Span::styled(" Rebase ", Role::PopupTitle.style().bold()))
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Green));
+            .border_style(Role::PopupBorder.style());
         frame.render_widget(Clear, area);
         frame.render_widget(&block, area);
 
@@ -236,8 +236,8 @@ struct RadioButton {
 
 impl RadioButton {
     pub fn new(labels: Vec<&str>) -> Self {
-        let button_style = Style::default().fg(Color::White);
-        let label_style = Style::default().fg(Color::White);
+        let button_style = Role::Button.style();
+        let label_style = Role::Button.style();
         Self {
             labels: labels.iter().map(|s| s.to_string()).collect(),
             button_style,

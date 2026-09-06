@@ -20,7 +20,6 @@ use crate::commander::bookmarks::BookmarkLine;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
-use crate::env::get_env;
 use crate::event::Mouse;
 use crate::keybinds::Binding;
 use crate::keybinds::BookmarksTabEvent;
@@ -28,6 +27,7 @@ use crate::keybinds::BookmarksTabKeybinds;
 use crate::keybinds::DetailsPanelEvent;
 use crate::keybinds::DetailsPanelKeybinds;
 use crate::selection::Selection;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -40,6 +40,8 @@ use crate::ui::panel::ListPane;
 use crate::ui::panel::MouseInput;
 use crate::ui::panel::copy_marked;
 use crate::ui::panel::route_mouse;
+use crate::ui::styles::panel_block;
+use crate::ui::styles::panel_title;
 use crate::ui::utils::PaneDivider;
 
 /// Bookmarks tab. Shows bookmarks in main panel and selected bookmark current change in details panel.
@@ -277,7 +279,6 @@ impl BookmarksTab {
     /// `anchor` or centered when there is nowhere to point at.
     fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(bookmarks_context_menu(
-            get_env().jj_config.clone(),
             anchor,
             self.selected_target(),
         ))))
@@ -304,18 +305,12 @@ impl BookmarksTab {
             }
             BookmarksTabEvent::DeleteBookmark => {
                 if let Some(bookmark) = self.selected_bookmark() {
-                    return Ok(Some(command::ask_delete_bookmark(
-                        get_env().jj_config.clone(),
-                        &bookmark.name,
-                    )));
+                    return Ok(Some(command::ask_delete_bookmark(&bookmark.name)));
                 }
             }
             BookmarksTabEvent::ForgetBookmark => {
                 if let Some(bookmark) = self.listed_bookmark() {
-                    return Ok(Some(command::ask_forget_bookmark(
-                        get_env().jj_config.clone(),
-                        &bookmark.name,
-                    )));
+                    return Ok(Some(command::ask_forget_bookmark(&bookmark.name)));
                 }
             }
             // TODO: Ask for confirmation?
@@ -335,17 +330,12 @@ impl BookmarksTab {
             }
             BookmarksTabEvent::SetBookmark => {
                 if let Some((bookmark, head)) = self.selected_target() {
-                    return Ok(Some(command::ask_set_bookmark(
-                        get_env().jj_config.clone(),
-                        bookmark,
-                        head,
-                    )));
+                    return Ok(Some(command::ask_set_bookmark(bookmark, head)));
                 }
             }
             BookmarksTabEvent::NewChange { describe } => {
                 if let Some((bookmark, head)) = self.selected_target() {
                     return Ok(Some(command::ask_new_change(
-                        get_env().jj_config.clone(),
                         Revset::from(&head.commit_id),
                         NewSource::Change,
                         &bookmark.to_string(),
@@ -356,7 +346,6 @@ impl BookmarksTab {
             BookmarksTabEvent::EditChange { ignore_immutable } => {
                 if let Some((bookmark, head)) = self.selected_target() {
                     return Ok(Some(command::ask_edit(
-                        get_env().jj_config.clone(),
                         head,
                         format!("Bookmark: {bookmark}"),
                         ignore_immutable,
@@ -511,13 +500,13 @@ impl Component for BookmarksTab {
                                 line.spans.insert(0, Span::from(" "));
 
                                 if current_bookmark_index == Some(i) {
-                                    let highlight = get_env().jj_config.highlight_color();
+                                    let highlight = Role::Highlight.style();
 
-                                    line = line.bg(highlight);
+                                    line = line.patch_style(highlight);
                                     line.spans = line
                                         .spans
                                         .iter_mut()
-                                        .map(|span| span.to_owned().bg(highlight))
+                                        .map(|span| span.to_owned().patch_style(highlight))
                                         .collect();
                                 }
 
@@ -530,7 +519,11 @@ impl Component for BookmarksTab {
                     .flatten()
                     .collect(),
                 Err(err) => [
-                    vec![Line::raw("Error getting bookmarks").bold().fg(Color::Red)],
+                    vec![
+                        Line::raw("Error getting bookmarks")
+                            .bold()
+                            .patch_style(Role::Error.style()),
+                    ],
                     // TODO: Remove when jj 0.20 is released
                     if let CommandError::Status(output, _) = err {
                         if output.contains("unexpected argument '-T' found") {
@@ -538,7 +531,7 @@ impl Component for BookmarksTab {
                                 Line::raw(""),
                                 Line::raw("Please update jj to >0.18 for -T support to bookmarks")
                                     .bold()
-                                    .fg(Color::Red),
+                                    .patch_style(Role::Error.style()),
                             ]
                         } else {
                             vec![]
@@ -553,14 +546,16 @@ impl Component for BookmarksTab {
             };
 
             let lines = if bookmark_lines.is_empty() {
-                vec![Line::from(" No bookmarks").fg(Color::DarkGray).italic()]
+                vec![
+                    Line::from(" No bookmarks")
+                        .patch_style(Role::Hint.style())
+                        .italic(),
+                ]
             } else {
                 bookmark_lines
             };
 
-            let block = Block::bordered()
-                .title(" Bookmarks ")
-                .border_type(BorderType::Rounded);
+            let block = panel_block().title(panel_title(" Bookmarks "));
             let bookmarks = List::new(lines).scroll_padding(3);
             *self.bookmarks_list_state.selected_mut() = current_bookmark_index;
             self.bookmarks_pane.render(

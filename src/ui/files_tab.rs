@@ -33,6 +33,7 @@ use crate::keybinds::FilesTabEvent;
 use crate::keybinds::FilesTabKeybinds;
 use crate::selection::Selection;
 use crate::selection::shown_revision;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -46,6 +47,8 @@ use crate::ui::panel::OutputPanel;
 use crate::ui::panel::OutputRequest;
 use crate::ui::panel::copy_marked;
 use crate::ui::panel::route_mouse;
+use crate::ui::styles::panel_block;
+use crate::ui::styles::panel_title;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::error_text;
 
@@ -240,7 +243,6 @@ impl FilesTab {
         let file = self.file.as_ref()?;
 
         Some(AppAction::SetPopup(Box::new(files_context_menu(
-            get_env().jj_config.clone(),
             anchor,
             file,
             self.open(file),
@@ -423,21 +425,23 @@ impl Component for FilesTab {
                                     line.spans.insert(0, Span::from(" "));
 
                                     if let Some(diff_type) = file.diff_type.as_ref() {
+                                        let style = diff_type.role().style();
+
                                         line.spans = line
                                             .spans
                                             .iter_mut()
-                                            .map(|span| span.to_owned().fg(diff_type.color()))
+                                            .map(|span| span.to_owned().patch_style(style))
                                             .collect();
                                     }
 
                                     if current_file_index == Some(i) {
-                                        let highlight = get_env().jj_config.highlight_color();
+                                        let highlight = Role::Highlight.style();
 
-                                        line = line.bg(highlight);
+                                        line = line.patch_style(highlight);
                                         line.spans = line
                                             .spans
                                             .iter_mut()
-                                            .map(|span| span.to_owned().bg(highlight))
+                                            .map(|span| span.to_owned().patch_style(highlight))
                                             .collect();
                                     }
 
@@ -450,7 +454,7 @@ impl Component for FilesTab {
                     if files_lines.is_empty() {
                         vec![
                             Line::from(" No changed files in change")
-                                .fg(Color::DarkGray)
+                                .patch_style(Role::Hint.style())
                                 .italic(),
                         ]
                     } else {
@@ -472,13 +476,15 @@ impl Component for FilesTab {
                 lines.push(Line::default());
 
                 for conflict in &self.conflicts_output {
-                    lines.push(Line::raw(format!("C {}", conflict.path)).fg(Color::Red));
+                    lines.push(
+                        Line::raw(format!("C {}", conflict.path))
+                            .patch_style(Role::Conflict.style()),
+                    );
                 }
             }
 
-            let block = Block::bordered()
-                .title(" Files for ".to_owned() + &title_change + " ")
-                .border_type(BorderType::Rounded);
+            let block =
+                panel_block().title(panel_title(" Files for ".to_owned() + &title_change + " "));
             let files = List::new(lines).scroll_padding(3);
             *self.files_list_state.selected_mut() = current_file_index;
             self.files_pane

@@ -18,12 +18,12 @@ use crate::app::TabId;
 use crate::app::command::Command;
 use crate::commander::config::config_value;
 use crate::commander::new_commander;
-use crate::env::get_env;
 use crate::event::Mouse;
 use crate::keybinds::Binding;
 use crate::keybinds::Context;
 use crate::keybinds::KeybindingsTabEvent;
 use crate::keybinds::KeybindingsTabKeybinds;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -38,6 +38,9 @@ use crate::ui::panel::PanelMouseInput;
 use crate::ui::panel::Row as SectionRow;
 use crate::ui::panel::Sections;
 use crate::ui::panel::copy_marked;
+use crate::ui::styles::panel_block;
+use crate::ui::styles::panel_title;
+use crate::ui::styles::section_heading;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::error_text;
 
@@ -212,7 +215,6 @@ impl KeybindingsTab {
         }
 
         Some(AppAction::SetPopup(Box::new(ChoicePopup::new(
-            get_env().jj_config.clone(),
             anchor,
             "Keybinding actions",
             items,
@@ -258,10 +260,9 @@ impl KeybindingsTab {
                 let line = match row {
                     // The indent is no part of the heading, so it is no
                     // part of what is underlined either.
-                    SectionRow::Heading(heading) => Line::from(vec![
-                        Span::raw(" "),
-                        Span::raw(*heading).bold().underlined(),
-                    ]),
+                    SectionRow::Heading(heading) => {
+                        Line::from(vec![Span::raw(" "), section_heading(*heading)])
+                    }
                     SectionRow::Item(bindable) => {
                         let description: String = bindable
                             .binding
@@ -271,7 +272,7 @@ impl KeybindingsTab {
                             .collect();
                         let keys = Span::raw(bindable.shown_keys.clone());
                         let keys = if bindable.binding.keys.is_empty() {
-                            keys.fg(Color::DarkGray)
+                            keys.patch_style(Role::Hint.style())
                         } else {
                             keys
                         };
@@ -284,7 +285,7 @@ impl KeybindingsTab {
                 };
 
                 if index == bindings.rows.selected_row() {
-                    line.bg(get_env().jj_config.highlight_color())
+                    line.patch_style(Role::Highlight.style())
                 } else {
                     line
                 }
@@ -322,7 +323,7 @@ impl KeybindingsTab {
             Line::from(vec![
                 Span::raw("Current binding: "),
                 Span::raw(bindable.shown_keys.clone()).bold(),
-                Span::raw(source).fg(Color::DarkGray),
+                Span::raw(source).patch_style(Role::Hint.style()),
             ]),
             Line::raw(format!(
                 "Default binding: {}",
@@ -404,14 +405,13 @@ impl Component for KeybindingsTab {
         // which is nowhere to look for the key that gets you out of it.
         // The hint goes between the corners, with a space to either side.
         let hint_width = chunks[0].width.saturating_sub(4) as usize;
-        let block = Block::bordered()
-            .title(" Settings / Keybindings ")
+        let block = panel_block()
+            .title(panel_title(" Settings / Keybindings "))
             .title_bottom(
                 Line::raw(format!(" {} ", self.keybinds.hint(hint_width)))
                     .centered()
-                    .fg(Color::DarkGray),
-            )
-            .border_type(BorderType::Rounded);
+                    .patch_style(Role::Hint.style()),
+            );
         *self.bindings_list_state.selected_mut() = Some(self.selected_row());
         self.bindings_pane.render(
             f,
@@ -423,9 +423,8 @@ impl Component for KeybindingsTab {
 
         f.render_widget(
             Paragraph::new(details).wrap(Wrap { trim: false }).block(
-                Block::bordered()
-                    .title(" About ")
-                    .border_type(BorderType::Rounded)
+                panel_block()
+                    .title(panel_title(" About "))
                     .padding(Padding::horizontal(1)),
             ),
             chunks[1],

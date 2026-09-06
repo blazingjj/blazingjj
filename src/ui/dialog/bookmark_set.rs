@@ -8,9 +8,6 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
-use ratatui::style::Style;
-use ratatui::style::Stylize;
 use ratatui::text::Span;
 use ratatui::text::Text;
 use ratatui::widgets::Block;
@@ -34,6 +31,7 @@ use crate::keybinds::BookmarkSetPopupEvent;
 use crate::keybinds::BookmarkSetPopupKeybinds;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -227,13 +225,13 @@ impl Component for BookmarkSetPopup<'_> {
             }
 
             let help = Paragraph::new(vec![self.name_keybinds.hint("accept").into()])
-                .fg(Color::DarkGray)
+                .style(Role::Hint.style())
                 .alignment(Alignment::Center)
                 .block(
                     Block::default()
                         .borders(Borders::TOP)
                         .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(Color::DarkGray)),
+                        .border_style(Role::Separator.style()),
                 );
 
             f.render_widget(help, popup_chunks[2]);
@@ -241,11 +239,11 @@ impl Component for BookmarkSetPopup<'_> {
             let block = Block::bordered()
                 .title(Span::styled(
                     " Select bookmark ",
-                    Style::new().bold().cyan(),
+                    Role::PopupTitle.style().bold(),
                 ))
                 .title_alignment(Alignment::Center)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Green));
+                .border_style(Role::PopupBorder.style());
             let area = centered_rect(area, 40, 60);
             f.render_widget(Clear, area);
             f.render_widget(&block, area);
@@ -258,35 +256,37 @@ impl Component for BookmarkSetPopup<'_> {
             let create = self.label("Create bookmark", BookmarkSetPopupEvent::CreateBookmark);
             let generate = self.label("Generate bookmark", BookmarkSetPopupEvent::UseGeneratedName);
             let list_items = self.options.iter().map(|option| match option {
-                BookmarkSetOption::CreateBookmark => Text::raw(create.clone()).fg(Color::Yellow),
+                BookmarkSetOption::CreateBookmark => {
+                    Text::raw(create.clone()).patch_style(Role::Warning.style())
+                }
                 BookmarkSetOption::GeneratedName(generated_name, exists) => {
                     let mut text = format!("{generate}: {generated_name}");
                     if *exists {
                         text.push_str(" (exists)");
                     }
-                    Text::raw(text).fg(Color::Yellow)
+                    Text::raw(text).patch_style(Role::Warning.style())
                 }
                 BookmarkSetOption::Bookmark(bookmark) => {
-                    Text::raw(bookmark.to_string()).fg(Color::Magenta)
+                    Text::raw(bookmark.to_string()).patch_style(Role::Bookmark.style())
                 }
                 BookmarkSetOption::Error(err) => err.into_text().unwrap(),
             });
 
             let list = List::new(list_items)
                 .scroll_padding(3)
-                .highlight_style(Style::default().bg(self.config.highlight_color()));
+                .highlight_style(Role::Highlight.style());
 
             f.render_stateful_widget(list, popup_chunks[0], &mut self.list_state);
             self.list_height = popup_chunks[0].height;
 
             let help = Paragraph::new(vec![self.keybinds.scroll_hint("select").into()])
-                .fg(Color::DarkGray)
+                .style(Role::Hint.style())
                 .alignment(Alignment::Center)
                 .block(
                     Block::default()
                         .borders(Borders::TOP)
                         .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(Color::DarkGray)),
+                        .border_style(Role::Separator.style()),
                 );
 
             f.render_widget(help, popup_chunks[1]);

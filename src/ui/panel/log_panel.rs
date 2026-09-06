@@ -15,10 +15,12 @@ use super::PanelMouseInput;
 use crate::commander::CommandError;
 use crate::commander::log::LogItem;
 use crate::commander::log::LogOutput;
-use crate::env::get_env;
 use crate::event::Mouse;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
+use crate::ui::styles::panel_block;
+use crate::ui::styles::panel_title;
 use crate::ui::utils::error_text;
 
 /**
@@ -157,18 +159,18 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
             line.spans.insert(0, span);
         };
 
-        // Set the background color of the line
-        fn set_bg(line: &mut Line, bg_color: Color) {
-            // Set background to use when no Span is present
-            // This makes the highlight continue beyond the last Span
-            line.style = line.style.patch(Style::default().bg(bg_color));
+        fn patch(line: &mut Line, style: Style) {
+            // The line's own style is what the cells no span reaches are
+            // drawn in, which is what carries a highlight past the last
+            // span to the edge of the panel.
+            line.style = line.style.patch(style);
 
             for span in line.spans.iter_mut() {
-                span.style = span.style.bg(bg_color)
+                span.style = span.style.patch(style)
             }
         }
 
-        let highlight = get_env().jj_config.highlight_color();
+        let highlight = Role::Highlight.style();
 
         self.log_output_text
             .iter()
@@ -181,7 +183,7 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
 
                 // Highlight lines that correspond to self.selected
                 if log_output.item_at(i) == Some(&self.selected) {
-                    set_bg(&mut line, highlight);
+                    patch(&mut line, highlight);
                 };
 
                 line
@@ -324,9 +326,7 @@ impl<T: LogItem> Component for LogPanel<'_, T> {
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let log_lines = self.log_lines();
-        let log_block = Block::bordered()
-            .title(self.title.clone())
-            .border_type(BorderType::Rounded);
+        let log_block = panel_block().title(panel_title(self.title.clone()));
         self.log_list_state.select(self.selected_log_line());
         let log = List::new(log_lines);
         let log = if self.scroll_padding_active {

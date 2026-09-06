@@ -32,6 +32,7 @@ use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::keybinds::Relation;
 use crate::selection::Selection;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -258,7 +259,6 @@ impl<'a> LogTab<'a> {
                 Ok(None)
             }
             _ => Ok(Some(AppAction::SetPopup(Box::new(relative_select(
-                get_env().jj_config.clone(),
                 relation.select_title(),
                 &relatives,
                 &out_of_view,
@@ -280,7 +280,6 @@ impl<'a> LogTab<'a> {
 
             LogTabEvent::CreateNew { describe } => {
                 return Ok(Some(command::ask_new_change_from_selection(
-                    get_env().jj_config.clone(),
                     &self.head,
                     &self.marked(),
                     describe,
@@ -290,26 +289,17 @@ impl<'a> LogTab<'a> {
                 return Ok(Some(command::rebase(&self.head)?));
             }
             LogTabEvent::Squash { ignore_immutable } => {
-                return Ok(Some(command::ask_squash(
-                    get_env().jj_config.clone(),
-                    &self.head,
-                    ignore_immutable,
-                )?));
+                return Ok(Some(command::ask_squash(&self.head, ignore_immutable)?));
             }
             LogTabEvent::EditChange { ignore_immutable } => {
                 return Ok(Some(command::ask_edit(
-                    get_env().jj_config.clone(),
                     &self.head,
                     format!("Change: {}", self.head.change_id.as_str()),
                     ignore_immutable,
                 )));
             }
             LogTabEvent::Abandon => {
-                return Ok(Some(command::ask_abandon(
-                    get_env().jj_config.clone(),
-                    &self.head,
-                    self.marked(),
-                )));
+                return Ok(Some(command::ask_abandon(&self.head, self.marked())));
             }
             LogTabEvent::Absorb => {
                 return Ok(Some(AppAction::Run(Command::Absorb(self.head.clone()))));
@@ -357,7 +347,6 @@ impl<'a> LogTab<'a> {
             }
             LogTabEvent::PushMenu => {
                 return Ok(Some(AppAction::SetPopup(Box::new(push_menu(
-                    get_env().jj_config.clone(),
                     self.log_panel.selected_position(),
                     &self.head,
                 )))));
@@ -479,10 +468,10 @@ impl Component for LogTab<'_> {
         {
             if let Some(log_revset_textarea) = self.log_revset_textarea.as_mut() {
                 let block = Block::bordered()
-                    .title(Span::styled(" Revset ", Style::new().bold().cyan()))
+                    .title(Span::styled(" Revset ", Role::PopupTitle.style().bold()))
                     .title_alignment(Alignment::Center)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::Green));
+                    .border_style(Role::PopupBorder.style());
                 let area = centered_rect_line_height(area, 30, 7);
                 f.render_widget(Clear, area);
                 f.render_widget(&block, area);
@@ -495,13 +484,13 @@ impl Component for LogTab<'_> {
                 f.render_widget(&*log_revset_textarea, popup_chunks[0]);
 
                 let help = Paragraph::new(vec![self.revset_keybinds.hint("accept").into()])
-                    .fg(Color::DarkGray)
+                    .style(Role::Hint.style())
                     .alignment(Alignment::Center)
                     .block(
                         Block::default()
                             .borders(Borders::TOP)
                             .border_type(BorderType::Rounded)
-                            .border_style(Style::default().fg(Color::DarkGray)),
+                            .border_style(Role::Separator.style()),
                     );
 
                 f.render_widget(help, popup_chunks[1]);

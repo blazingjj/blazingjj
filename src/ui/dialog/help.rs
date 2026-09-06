@@ -7,8 +7,6 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::style::Stylize;
-use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
 use ratatui::widgets::Clear;
@@ -25,6 +23,7 @@ use crate::keybinds::PopupKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::styles::create_popup_block;
+use crate::ui::styles::section_heading;
 use crate::ui::utils::centered_rect_fixed;
 use crate::ui::utils::chrome;
 
@@ -186,7 +185,7 @@ fn create_table<'a>(section: &Section<'a>, key_width: u16, skipped: u16) -> Tabl
 
     table.block(
         Block::new()
-            .title(Span::from(section.title).bold().underlined())
+            .title(section_heading(section.title))
             .title_alignment(Alignment::Center),
     )
 }

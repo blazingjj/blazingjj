@@ -14,9 +14,6 @@ use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
-use ratatui::style::Style;
-use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
@@ -26,10 +23,10 @@ use ratatui::widgets::List;
 use ratatui::widgets::ListState;
 use ratatui::widgets::Paragraph;
 
-use crate::env::JjConfig;
 use crate::event::Mouse;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -85,7 +82,6 @@ pub struct ChoicePopup {
     popup_area: Rect,
     /// List area inside the popup, updated on every draw
     list_area: Rect,
-    config: JjConfig,
     keybinds: PopupKeybinds,
     /// The line under the choices, saying what the popup answers to
     hint: String,
@@ -93,7 +89,6 @@ pub struct ChoicePopup {
 
 impl ChoicePopup {
     pub fn new(
-        config: JjConfig,
         anchor: Option<Position>,
         title: &'static str,
         items: impl IntoIterator<Item: Into<Choice>>,
@@ -108,7 +103,6 @@ impl ChoicePopup {
             anchor,
             popup_area: Rect::ZERO,
             list_area: Rect::ZERO,
-            config,
             keybinds,
         }
     }
@@ -236,18 +230,18 @@ impl Component for ChoicePopup {
         let rows: Vec<Line<'static>> = self.rows().cloned().collect();
         let list = List::new(rows)
             .scroll_padding(3)
-            .highlight_style(Style::default().bg(self.config.highlight_color()));
+            .highlight_style(Role::Highlight.style());
 
         f.render_stateful_widget(list, chunks[0], &mut self.list_state);
 
         let help = Paragraph::new(vec![self.hint.clone().into()])
-            .fg(Color::DarkGray)
+            .style(Role::Hint.style())
             .alignment(Alignment::Center)
             .block(
                 Block::default()
                     .borders(Borders::TOP)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::DarkGray)),
+                    .border_style(Role::Separator.style()),
             );
 
         f.render_widget(help, chunks[1]);
@@ -360,12 +354,7 @@ pub(super) mod tests {
     fn popup(count: u8, footnote: usize) -> ChoicePopup {
         let items = (0..count).map(|i| (Line::raw(format!("item {i}")), action(i)));
 
-        ChoicePopup::new(JjConfig::default(), None, "Choose", items).footnote(vec![
-            Line::raw(
-                "footnote"
-            );
-            footnote
-        ])
+        ChoicePopup::new(None, "Choose", items).footnote(vec![Line::raw("footnote"); footnote])
     }
 
     fn press(popup: &mut ChoicePopup, key: KeyCode) -> ComponentInputResult {
@@ -405,7 +394,7 @@ pub(super) mod tests {
             if i == 1 { choice.key('x') } else { choice }
         });
 
-        ChoicePopup::new(JjConfig::default(), None, "Choose", items)
+        ChoicePopup::new(None, "Choose", items)
     }
 
     #[test]
@@ -430,7 +419,7 @@ pub(super) mod tests {
     #[test]
     fn a_choice_cannot_take_over_a_key_of_the_popup() {
         let items = (0..3).map(|i| Choice::new(Line::raw(format!("item {i}")), action(i)).key('j'));
-        let mut popup = ChoicePopup::new(JjConfig::default(), None, "Choose", items);
+        let mut popup = ChoicePopup::new(None, "Choose", items);
 
         press(&mut popup, KeyCode::Char('j'));
 
@@ -606,12 +595,7 @@ pub(super) mod tests {
     #[test]
     fn a_row_wider_than_the_help_line_widens_the_popup() {
         let label = "x".repeat(Line::raw(&popup(0, 0).hint).width() + 10);
-        let popup = ChoicePopup::new(
-            JjConfig::default(),
-            None,
-            "Choose",
-            vec![(Line::raw(label.clone()), action(0))],
-        );
+        let popup = ChoicePopup::new(None, "Choose", vec![(Line::raw(label.clone()), action(0))]);
 
         let rect = popup.popup_rect(Rect::new(0, 0, 200, 40), &create_popup_block("Choose"));
 
@@ -630,7 +614,6 @@ pub(super) mod tests {
     #[test]
     fn a_wide_row_stops_at_the_share_of_the_screen_we_take() {
         let popup = ChoicePopup::new(
-            JjConfig::default(),
             None,
             "Choose",
             vec![(Line::raw("x".repeat(200)), action(0))],
@@ -644,12 +627,7 @@ pub(super) mod tests {
     #[test]
     fn a_title_wider_than_the_rows_still_fits_between_the_corners() {
         let title = "A rather wordy popup title that outgrows its help line";
-        let popup = ChoicePopup::new(
-            JjConfig::default(),
-            None,
-            title,
-            vec![(Line::raw("x"), action(0))],
-        );
+        let popup = ChoicePopup::new(None, title, vec![(Line::raw("x"), action(0))]);
 
         let rect = popup.popup_rect(Rect::new(0, 0, 200, 40), &create_popup_block(title));
 

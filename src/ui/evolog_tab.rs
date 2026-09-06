@@ -19,7 +19,6 @@ use crate::commander::log::EVOLOG_LINES_PER_ITEM;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::revset::Revset;
-use crate::env::get_env;
 use crate::event::Mouse;
 use crate::keybinds::Binding;
 use crate::keybinds::DetailsPanelEvent;
@@ -119,7 +118,6 @@ impl<'a> EvologTab<'a> {
     /// `anchor` or centered when there is nowhere to point at.
     fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(evolog_context_menu(
-            get_env().jj_config.clone(),
             anchor,
             &self.entry_panel.selected,
             &self.change,

@@ -1,10 +1,10 @@
-use std::sync::LazyLock;
+use std::borrow::Cow;
 
 use ansi_to_tui::IntoText;
 use ratatui::layout::Alignment;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 use ratatui::style::Style;
+use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
@@ -14,13 +14,42 @@ use ratatui::widgets::Padding;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 
-pub static POPUP_BLOCK: LazyLock<Block<'static>> = LazyLock::new(|| {
+use crate::theme::Role;
+
+/// The title a panel of the frame is drawn under, as its block takes
+/// one.
+pub fn panel_title(title: impl Into<Cow<'static, str>>) -> Span<'static> {
+    Span::styled(title, Role::PanelTitle.style())
+}
+
+/// The heading a list is divided under, which is underlined rather than
+/// indented like the rows beneath it.
+pub fn section_heading(heading: impl Into<Cow<'static, str>>) -> Span<'static> {
+    Span::styled(heading, Role::Heading.style())
+        .bold()
+        .underlined()
+}
+
+/// The block a panel of the frame is drawn in, which a caller titles
+/// with [panel_title] and pads as it needs.
+pub fn panel_block() -> Block<'static> {
+    Block::bordered()
+        .border_style(Role::Border.style())
+        .border_type(BorderType::Rounded)
+}
+
+/// The block a popup is drawn in.
+pub fn popup_block() -> Block<'static> {
     Block::<'static>::bordered()
         .padding(Padding::horizontal(1))
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Green))
-});
-pub static POPUP_BLOCK_TITLE_STYLE: LazyLock<Style> = LazyLock::new(|| Style::new().bold().cyan());
+        .border_style(Role::PopupBorder.style())
+}
+
+/// What the title of a popup is written in.
+pub fn popup_block_title_style() -> Style {
+    Role::PopupTitle.style().bold()
+}
 
 /// What a popup puts under the field it asks in when what was typed was
 /// turned down: the answer, boxed off from the field and wrapped to
@@ -32,7 +61,7 @@ pub fn refusal(answer: &str, width: u16) -> (Paragraph<'static>, u16) {
             Block::default()
                 .borders(Borders::TOP)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::DarkGray)),
+                .border_style(Role::Separator.style()),
         );
     let height = paragraph.line_count(width) as u16;
 
@@ -40,9 +69,11 @@ pub fn refusal(answer: &str, width: u16) -> (Paragraph<'static>, u16) {
 }
 
 pub fn create_popup_block(title: &str) -> Block<'_> {
-    POPUP_BLOCK
-        .clone()
-        .title(Span::styled(format!(" {title} "), *POPUP_BLOCK_TITLE_STYLE))
+    popup_block()
+        .title(Span::styled(
+            format!(" {title} "),
+            popup_block_title_style(),
+        ))
         .title_alignment(Alignment::Center)
 }
 
@@ -75,7 +106,7 @@ pub fn popup_footer(lines: Vec<Line<'static>>) -> Paragraph<'static> {
         Block::default()
             .borders(Borders::TOP)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::DarkGray)),
+            .border_style(Role::Separator.style()),
     )
 }
 

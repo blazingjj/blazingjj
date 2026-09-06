@@ -18,7 +18,6 @@ use crate::background_tasks::TaskSlot;
 use crate::commander::new_commander;
 use crate::commander::operation::OP_LOG_LINES_PER_ITEM;
 use crate::commander::operation::Operation;
-use crate::env::get_env;
 use crate::event::Mouse;
 use crate::keybinds::Binding;
 use crate::keybinds::DetailsPanelEvent;
@@ -136,7 +135,6 @@ impl<'a> OpLogTab<'a> {
     /// `anchor` or centered when there is nowhere to point at.
     fn context_menu(&self, anchor: Option<Position>) -> Option<AppAction> {
         Some(AppAction::SetPopup(Box::new(op_log_context_menu(
-            get_env().jj_config.clone(),
             anchor,
             &self.op_panel.selected,
         ))))
@@ -145,16 +143,10 @@ impl<'a> OpLogTab<'a> {
     fn handle_event(&mut self, event: OpLogTabEvent) -> Result<Option<AppAction>> {
         match event {
             OpLogTabEvent::Restore => {
-                return Ok(Some(command::ask_op_restore(
-                    get_env().jj_config.clone(),
-                    &self.op_panel.selected,
-                )));
+                return Ok(Some(command::ask_op_restore(&self.op_panel.selected)));
             }
             OpLogTabEvent::Revert => {
-                return Ok(Some(command::ask_op_revert(
-                    get_env().jj_config.clone(),
-                    &self.op_panel.selected,
-                )));
+                return Ok(Some(command::ask_op_revert(&self.op_panel.selected)));
             }
             OpLogTabEvent::CopyId => {
                 return Ok(Some(AppAction::Run(Command::Copy(

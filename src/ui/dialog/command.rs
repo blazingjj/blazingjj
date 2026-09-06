@@ -5,9 +5,6 @@ use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
-use ratatui::style::Color;
-use ratatui::style::Style;
-use ratatui::style::Stylize;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
@@ -23,6 +20,7 @@ use crate::commander::new_commander;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::selection::Selection;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -175,10 +173,10 @@ impl Component for CommandPopup<'_> {
             CommandMode::Interactive => " Interactive command ",
         };
         let block = Block::bordered()
-            .title(Span::styled(title, Style::new().bold().cyan()))
+            .title(Span::styled(title, Role::PopupTitle.style().bold()))
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Green));
+            .border_style(Role::PopupBorder.style());
         let area = centered_rect_line_height(area, 60, 5);
         f.render_widget(Clear, area);
         f.render_widget(&block, area);
@@ -191,13 +189,13 @@ impl Component for CommandPopup<'_> {
         f.render_widget(&self.command_textarea, popup_chunks[0]);
 
         let help = Paragraph::new(vec![self.keybinds.hint("run").into()])
-            .fg(Color::DarkGray)
+            .style(Role::Hint.style())
             .alignment(Alignment::Center)
             .block(
                 Block::default()
                     .borders(Borders::TOP)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::DarkGray)),
+                    .border_style(Role::Separator.style()),
             );
 
         f.render_widget(help, popup_chunks[1]);

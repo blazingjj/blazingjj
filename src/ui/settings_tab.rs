@@ -26,6 +26,7 @@ use crate::keybinds::SettingsTabKeybinds;
 use crate::settings::SETTINGS;
 use crate::settings::Setting;
 use crate::settings::SettingKind;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -39,6 +40,9 @@ use crate::ui::panel::PanelMouseInput;
 use crate::ui::panel::Row as SectionRow;
 use crate::ui::panel::Sections;
 use crate::ui::panel::copy_marked;
+use crate::ui::styles::panel_block;
+use crate::ui::styles::panel_title;
+use crate::ui::styles::section_heading;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::error_text;
 
@@ -162,7 +166,6 @@ impl SettingsTab {
 
         Some(AppAction::SetPopup(Box::new(
             ChoicePopup::new(
-                get_env().jj_config.clone(),
                 self.settings_pane
                     .item_anchor(self.settings.selected_row(), 1),
                 setting.key,
@@ -201,7 +204,6 @@ impl SettingsTab {
         }
 
         Some(AppAction::SetPopup(Box::new(ChoicePopup::new(
-            get_env().jj_config.clone(),
             anchor,
             "Setting actions",
             items,
@@ -235,15 +237,14 @@ impl SettingsTab {
                 let line = match row {
                     // The indent is no part of the heading, so it is no
                     // part of what is underlined either.
-                    SectionRow::Heading(heading) => Line::from(vec![
-                        Span::raw(" "),
-                        Span::raw(*heading).bold().underlined(),
-                    ]),
+                    SectionRow::Heading(heading) => {
+                        Line::from(vec![Span::raw(" "), section_heading(*heading)])
+                    }
                     SectionRow::Item(setting) => {
                         let value = match values.value(setting) {
                             Some(value) => Span::raw(value),
                             None => Span::raw(setting.fallback.to_owned())
-                                .fg(Color::DarkGray)
+                                .patch_style(Role::Hint.style())
                                 .italic(),
                         };
 
@@ -255,7 +256,7 @@ impl SettingsTab {
                 };
 
                 if index == self.settings.selected_row() {
-                    line.bg(get_env().jj_config.highlight_color())
+                    line.patch_style(Role::Highlight.style())
                 } else {
                     line
                 }
@@ -285,7 +286,7 @@ impl SettingsTab {
                 } else {
                     "  (elsewhere in your configuration)"
                 })
-                .fg(Color::DarkGray),
+                .patch_style(Role::Hint.style()),
             ]),
             None => Line::raw("Not set."),
         });
@@ -361,9 +362,7 @@ impl Component for SettingsTab {
             ),
         };
 
-        let block = Block::bordered()
-            .title(" Settings ")
-            .border_type(BorderType::Rounded);
+        let block = panel_block().title(panel_title(" Settings "));
         *self.settings_list_state.selected_mut() = Some(self.settings.selected_row());
         self.settings_pane.render(
             f,
@@ -375,9 +374,8 @@ impl Component for SettingsTab {
 
         f.render_widget(
             Paragraph::new(details).wrap(Wrap { trim: false }).block(
-                Block::bordered()
-                    .title(" About ")
-                    .border_type(BorderType::Rounded)
+                panel_block()
+                    .title(panel_title(" About "))
                     .padding(Padding::horizontal(1)),
             ),
             chunks[1],

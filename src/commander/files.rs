@@ -6,7 +6,6 @@ It is mostly used in the [files_tab][crate::ui::files_tab] module.
 */
 use anyhow::Context;
 use anyhow::Result;
-use ratatui::style::Color;
 use serde::Deserialize;
 use tracing::instrument;
 
@@ -16,6 +15,7 @@ use crate::commander::JjCommand;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::env::DiffFormat;
+use crate::theme::Role;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct File {
@@ -52,13 +52,14 @@ impl DiffType {
         }
     }
 
-    pub fn color(&self) -> Color {
+    /// What a file changed this way is drawn in.
+    pub fn role(&self) -> Role {
         match self {
-            DiffType::Added => Color::Green,
-            DiffType::Modified => Color::Cyan,
-            DiffType::Renamed => Color::Cyan,
-            DiffType::Copied => Color::Cyan,
-            DiffType::Deleted => Color::Red,
+            DiffType::Added => Role::FileAdded,
+            DiffType::Modified => Role::FileModified,
+            DiffType::Renamed => Role::FileRenamed,
+            DiffType::Copied => Role::FileCopied,
+            DiffType::Deleted => Role::FileDeleted,
         }
     }
 }

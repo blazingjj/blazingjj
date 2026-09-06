@@ -10,9 +10,6 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::prelude::Stylize;
-use ratatui::style::Color;
-use ratatui::style::Style;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
@@ -29,6 +26,7 @@ use crate::env::DescribeMode;
 use crate::env::get_env;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -89,10 +87,10 @@ impl DescribePopup<'_> {
 impl Component for DescribePopup<'_> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let block = Block::bordered()
-            .title(Span::styled(" Describe ", Style::new().bold().cyan()))
+            .title(Span::styled(" Describe ", Role::PopupTitle.style().bold()))
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Green));
+            .border_style(Role::PopupBorder.style());
 
         const MAX_COMMIT_WIDTH: u16 = 72;
         const MIN_COMMIT_HEIGHT: u16 = 5;
@@ -127,13 +125,13 @@ impl Component for DescribePopup<'_> {
         }
 
         let help = Paragraph::new(vec![self.keybinds.hint("accept").into()])
-            .fg(Color::DarkGray)
+            .style(Role::Hint.style())
             .alignment(Alignment::Center)
             .block(
                 Block::default()
                     .borders(Borders::TOP)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::DarkGray)),
+                    .border_style(Role::Separator.style()),
             );
         f.render_widget(help, popup_chunks[2]);
 

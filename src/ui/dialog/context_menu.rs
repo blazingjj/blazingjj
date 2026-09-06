@@ -38,7 +38,6 @@ pub fn log_context_menu(
         (
             Line::raw("Edit"),
             command::ask_edit(
-                config.clone(),
                 selected,
                 format!("Change: {}", selected.change_id.as_str()),
                 false,
@@ -46,11 +45,11 @@ pub fn log_context_menu(
         ),
         (
             Line::raw("New"),
-            command::ask_new_change_from_selection(config.clone(), selected, marked, false),
+            command::ask_new_change_from_selection(selected, marked, false),
         ),
         (
             Line::raw("New & describe"),
-            command::ask_new_change_from_selection(config.clone(), selected, marked, true),
+            command::ask_new_change_from_selection(selected, marked, true),
         ),
         (Line::raw("Describe"), command::describe(selected)?),
         (
@@ -59,7 +58,7 @@ pub fn log_context_menu(
         ),
         (
             Line::raw("Abandon"),
-            command::ask_abandon(config.clone(), selected, marked.to_vec()),
+            command::ask_abandon(selected, marked.to_vec()),
         ),
         (
             Line::raw("Duplicate"),
@@ -71,7 +70,7 @@ pub fn log_context_menu(
             } else {
                 "Squash @ into this"
             }),
-            command::ask_squash(config.clone(), selected, false)?,
+            command::ask_squash(selected, false)?,
         ),
     ];
     if !selected_is_at {
@@ -80,11 +79,11 @@ pub fn log_context_menu(
     items.extend([
         (
             Line::raw("Push"),
-            AppAction::SetPopup(Box::new(push_menu(config.clone(), anchor, selected))),
+            AppAction::SetPopup(Box::new(push_menu(anchor, selected))),
         ),
         (
             Line::raw("Set bookmark"),
-            command::set_bookmark(config.clone(), selected),
+            command::set_bookmark(config, selected),
         ),
         (
             Line::raw("Copy change id"),
@@ -96,17 +95,12 @@ pub fn log_context_menu(
         ),
     ]);
 
-    Ok(ChoicePopup::new(config, anchor, "Actions", items))
+    Ok(ChoicePopup::new(anchor, "Actions", items))
 }
 
 /// The context menu for `file`, `open` being what opening it in an
 /// editor takes, which depends on what the tab is showing.
-pub fn files_context_menu(
-    config: JjConfig,
-    anchor: Option<Position>,
-    file: &File,
-    open: AppAction,
-) -> ChoicePopup {
+pub fn files_context_menu(anchor: Option<Position>, file: &File, open: AppAction) -> ChoicePopup {
     let items = vec![
         (Line::raw("Open in editor"), open),
         (
@@ -119,16 +113,11 @@ pub fn files_context_menu(
         ),
     ];
 
-    ChoicePopup::new(config, anchor, "File actions", items)
+    ChoicePopup::new(anchor, "File actions", items)
 }
 
 /// The context menu for `version` of `change`.
-pub fn evolog_context_menu(
-    config: JjConfig,
-    anchor: Option<Position>,
-    version: &Head,
-    change: &Head,
-) -> ChoicePopup {
+pub fn evolog_context_menu(anchor: Option<Position>, version: &Head, change: &Head) -> ChoicePopup {
     let items = vec![
         (
             Line::raw("Show files"),
@@ -144,23 +133,19 @@ pub fn evolog_context_menu(
         ),
     ];
 
-    ChoicePopup::new(config, anchor, "Version actions", items)
+    ChoicePopup::new(anchor, "Version actions", items)
 }
 
 /// The context menu for `operation`.
-pub fn op_log_context_menu(
-    config: JjConfig,
-    anchor: Option<Position>,
-    operation: &Operation,
-) -> ChoicePopup {
+pub fn op_log_context_menu(anchor: Option<Position>, operation: &Operation) -> ChoicePopup {
     let items = vec![
         (
             Line::raw("Restore the repo to this operation"),
-            command::ask_op_restore(config.clone(), operation),
+            command::ask_op_restore(operation),
         ),
         (
             Line::raw("Revert this operation"),
-            command::ask_op_revert(config.clone(), operation),
+            command::ask_op_revert(operation),
         ),
         (
             Line::raw("Copy operation id"),
@@ -168,7 +153,7 @@ pub fn op_log_context_menu(
         ),
     ];
 
-    ChoicePopup::new(config, anchor, "Operation actions", items)
+    ChoicePopup::new(anchor, "Operation actions", items)
 }
 
 /// The context menu for `selected`, the bookmark and the change its line
@@ -176,7 +161,6 @@ pub fn op_log_context_menu(
 /// is anything to do to: then there is nothing but creating one. Tracking
 /// only applies to the bookmarks on a remote.
 pub fn bookmarks_context_menu(
-    config: JjConfig,
     anchor: Option<Position>,
     selected: Option<(&Bookmark, &Head)>,
 ) -> ChoicePopup {
@@ -194,11 +178,11 @@ pub fn bookmarks_context_menu(
             ),
             (
                 Line::raw("Delete"),
-                command::ask_delete_bookmark(config.clone(), &bookmark.name),
+                command::ask_delete_bookmark(&bookmark.name),
             ),
             (
                 Line::raw("Forget"),
-                command::ask_forget_bookmark(config.clone(), &bookmark.name),
+                command::ask_forget_bookmark(&bookmark.name),
             ),
         ]);
         if bookmark.remote.is_some() {
@@ -216,19 +200,19 @@ pub fn bookmarks_context_menu(
         items.extend([
             (
                 Line::raw("Edit the change"),
-                command::ask_edit(config.clone(), head, format!("Bookmark: {bookmark}"), false),
+                command::ask_edit(head, format!("Bookmark: {bookmark}"), false),
             ),
             (
                 Line::raw("New change"),
-                command::ask_new_change_from_bookmark(config.clone(), bookmark, head, false),
+                command::ask_new_change_from_bookmark(bookmark, head, false),
             ),
             (
                 Line::raw("New change & describe"),
-                command::ask_new_change_from_bookmark(config.clone(), bookmark, head, true),
+                command::ask_new_change_from_bookmark(bookmark, head, true),
             ),
             (Line::raw("View in log"), AppAction::ViewLog(head.clone())),
         ]);
     }
 
-    ChoicePopup::new(config, anchor, "Bookmark actions", items)
+    ChoicePopup::new(anchor, "Bookmark actions", items)
 }

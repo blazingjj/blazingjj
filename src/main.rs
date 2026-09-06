@@ -42,6 +42,7 @@ mod interrupt;
 mod keybinds;
 mod selection;
 mod settings;
+mod theme;
 mod ui;
 use crate::app::App;
 use crate::app::Handled;

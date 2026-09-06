@@ -8,8 +8,6 @@ UI responsive. What it has rendered goes into a
 
 use ratatui::layout::Rect;
 use ratatui::prelude::Frame;
-use ratatui::style::Color;
-use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Text;
 use tracing::error;
@@ -29,6 +27,8 @@ use crate::env::DiffFormat;
 use crate::env::get_env;
 use crate::event::Mouse;
 use crate::keybinds::DetailsPanelEvent;
+use crate::theme::Role;
+use crate::ui::styles::panel_title;
 use crate::ui::utils::PanelWait;
 use crate::ui::utils::error_text;
 
@@ -288,7 +288,7 @@ impl<K: OutputKey> OutputPanel<K> {
             Some(shown) => shown.key.format(),
             None => &self.diff_format,
         };
-        let format = Line::styled(format!(" {format} "), Style::new().fg(Color::DarkGray));
+        let format = Line::styled(format!(" {format} "), Role::Hint.style());
 
         if let Some(shown) = shown
             && let Some(value) = self.cache.get(&shown.key)
@@ -304,7 +304,7 @@ impl<K: OutputKey> OutputPanel<K> {
                 Ok(document) => self
                     .panel
                     .render_context::<LargeStringContent>(document)
-                    .title(title)
+                    .title(panel_title(title))
                     .title_right(format)
                     .draw(f, area),
                 Err(message) => {
@@ -313,7 +313,7 @@ impl<K: OutputKey> OutputPanel<K> {
                         .unwrap_or_else(|_| Text::raw(message.to_owned()));
                     self.panel
                         .render_context::<TextContent>(text)
-                        .title(title)
+                        .title(panel_title(title))
                         .title_right(format)
                         .draw(f, area);
                 }
@@ -325,7 +325,7 @@ impl<K: OutputKey> OutputPanel<K> {
         // Say that we are waiting, once the wait is worth saying
         self.panel
             .render_context::<TextContent>(self.wait.message(K::COMMAND))
-            .title(title)
+            .title(panel_title(title))
             .title_right(format)
             .draw(f, area);
     }

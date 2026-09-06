@@ -12,8 +12,6 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::prelude::Stylize;
-use ratatui::style::Color;
 use ratatui::widgets::Clear;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
@@ -22,6 +20,7 @@ use crate::app::command::Command;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::settings::Setting;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -95,7 +94,7 @@ impl Component for SettingValuePopup<'_> {
             popup_footer(vec![
                 format!("{} | empty: take out", self.keybinds.hint("accept")).into(),
             ])
-            .fg(Color::DarkGray)
+            .style(Role::Hint.style())
             .alignment(Alignment::Center),
             chunks[2],
         );

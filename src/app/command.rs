@@ -540,7 +540,7 @@ pub fn ask_open_file(config: JjConfig, head: &Head, revision: &str, file: &File)
         return message("Open", "There is no version of the file to open.");
     }
 
-    AppAction::SetPopup(Box::new(ChoicePopup::new(config, None, "Open", items)))
+    AppAction::SetPopup(Box::new(ChoicePopup::new(None, "Open", items)))
 }
 
 /// Whether the working copy has `path`. A file another change added or
@@ -556,7 +556,6 @@ fn in_working_copy(path: &str) -> bool {
 /// Asking for a new change from the marked changes, or from `selected`
 /// when none are marked.
 pub fn ask_new_change_from_selection(
-    config: JjConfig,
     selected: &Head,
     marked: &[CommitId],
     describe: bool,
@@ -573,18 +572,12 @@ pub fn ask_new_change_from_selection(
         NewSource::Marks
     };
 
-    ask_new_change(config, revset, source, &target, describe)
+    ask_new_change(revset, source, &target, describe)
 }
 
 /// Asking for a new change from the one a bookmark points at.
-pub fn ask_new_change_from_bookmark(
-    config: JjConfig,
-    bookmark: &Bookmark,
-    head: &Head,
-    describe: bool,
-) -> AppAction {
+pub fn ask_new_change_from_bookmark(bookmark: &Bookmark, head: &Head, describe: bool) -> AppAction {
     ask_new_change(
-        config,
         Revset::from(&head.commit_id),
         NewSource::Change,
         &bookmark.to_string(),
@@ -663,7 +656,6 @@ fn ask_push(target: PushTarget, preview: String) -> AppAction {
     question.push_line("Do you want to push?");
 
     AppAction::SetPopup(Box::new(ConfirmPopup::new(
-        get_env().jj_config.clone(),
         "Push Preview",
         question,
         AppAction::Run(Command::Push(target)),
@@ -727,13 +719,12 @@ pub fn set_bookmark(config: JjConfig, head: &Head) -> AppAction {
 /// Asking for a new change from `revset`, which `target` names as the
 /// user sees it: where the change goes is a question of its own.
 pub fn ask_new_change(
-    config: JjConfig,
     revset: Revset,
     source: NewSource,
     target: &str,
     describe: bool,
 ) -> AppAction {
-    AppAction::SetPopup(Box::new(new_insert(config, target, |insert| {
+    AppAction::SetPopup(Box::new(new_insert(target, |insert| {
         AppAction::Run(Command::New {
             revset: revset.clone(),
             source,
@@ -745,7 +736,7 @@ pub fn ask_new_change(
 
 /// Asking to squash into `selected`: the target it picks, the refusal
 /// when that target cannot take it, or the question that runs it.
-pub fn ask_squash(config: JjConfig, selected: &Head, ignore_immutable: bool) -> Result<AppAction> {
+pub fn ask_squash(selected: &Head, ignore_immutable: bool) -> Result<AppAction> {
     // Squashing the change the working copy is on has nowhere to go but
     // its parent.
     let at = new_commander().get_current_head()?;
@@ -776,7 +767,6 @@ pub fn ask_squash(config: JjConfig, selected: &Head, ignore_immutable: bool) -> 
     }
 
     Ok(confirm(
-        config,
         "Squash",
         Text::from(lines),
         Command::Squash {
@@ -788,12 +778,7 @@ pub fn ask_squash(config: JjConfig, selected: &Head, ignore_immutable: bool) -> 
 
 /// Asking to edit `target`, which the question names as `subject`: the
 /// refusal when it is immutable, or the question that runs it.
-pub fn ask_edit(
-    config: JjConfig,
-    target: &Head,
-    subject: String,
-    ignore_immutable: bool,
-) -> AppAction {
+pub fn ask_edit(target: &Head, subject: String, ignore_immutable: bool) -> AppAction {
     if target.immutable && !ignore_immutable {
         return message(
             "Edit",
@@ -810,7 +795,6 @@ pub fn ask_edit(
     }
 
     confirm(
-        config,
         "Edit",
         Text::from(lines),
         Command::Edit {
@@ -823,7 +807,7 @@ pub fn ask_edit(
 /// Asking to abandon the `marked` changes, or `selected` when none are
 /// marked: the refusal when it is immutable, or the question that runs
 /// it.
-pub fn ask_abandon(config: JjConfig, selected: &Head, marked: Vec<CommitId>) -> AppAction {
+pub fn ask_abandon(selected: &Head, marked: Vec<CommitId>) -> AppAction {
     if selected.immutable {
         return message(
             "Abandon",
@@ -844,7 +828,6 @@ pub fn ask_abandon(config: JjConfig, selected: &Head, marked: Vec<CommitId>) -> 
     };
 
     confirm(
-        config,
         "Abandon",
         text,
         Command::Abandon {
@@ -855,9 +838,8 @@ pub fn ask_abandon(config: JjConfig, selected: &Head, marked: Vec<CommitId>) -> 
 }
 
 /// Asking to take the repo back to the state `operation` left it in.
-pub fn ask_op_restore(config: JjConfig, operation: &Operation) -> AppAction {
+pub fn ask_op_restore(operation: &Operation) -> AppAction {
     confirm(
-        config,
         "Restore",
         Text::from(vec![
             Line::from("Are you sure you want to restore the repo to this operation?"),
@@ -868,9 +850,8 @@ pub fn ask_op_restore(config: JjConfig, operation: &Operation) -> AppAction {
 }
 
 /// Asking to take back `operation` alone.
-pub fn ask_op_revert(config: JjConfig, operation: &Operation) -> AppAction {
+pub fn ask_op_revert(operation: &Operation) -> AppAction {
     confirm(
-        config,
         "Revert",
         Text::from(vec![
             Line::from("Are you sure you want to revert this operation?"),
@@ -891,9 +872,8 @@ fn name_of(operation: &Operation) -> String {
 }
 
 /// Asking to delete the bookmark of this name.
-pub fn ask_delete_bookmark(config: JjConfig, name: &str) -> AppAction {
+pub fn ask_delete_bookmark(name: &str) -> AppAction {
     confirm(
-        config,
         "Delete",
         Text::from(format!(
             "Are you sure you want to delete the {name} bookmark?"
@@ -903,9 +883,8 @@ pub fn ask_delete_bookmark(config: JjConfig, name: &str) -> AppAction {
 }
 
 /// Asking to forget the bookmark of this name.
-pub fn ask_forget_bookmark(config: JjConfig, name: &str) -> AppAction {
+pub fn ask_forget_bookmark(name: &str) -> AppAction {
     confirm(
-        config,
         "Forget",
         Text::from(format!(
             "Are you sure you want to forget the {name} bookmark?"
@@ -916,9 +895,8 @@ pub fn ask_forget_bookmark(config: JjConfig, name: &str) -> AppAction {
 
 /// Asking to put `bookmark` on `head`, which for one of several targets
 /// is what settles it on that one.
-pub fn ask_set_bookmark(config: JjConfig, bookmark: &Bookmark, head: &Head) -> AppAction {
+pub fn ask_set_bookmark(bookmark: &Bookmark, head: &Head) -> AppAction {
     confirm(
-        config,
         "Set",
         Text::from(vec![
             Line::from(format!(
@@ -937,9 +915,8 @@ pub fn ask_set_bookmark(config: JjConfig, bookmark: &Bookmark, head: &Head) -> A
 
 /// Asking whether to update a stale working copy, which jj refuses to
 /// read the repo until.
-pub fn ask_update_stale_workspace(config: JjConfig) -> AppAction {
+pub fn ask_update_stale_workspace() -> AppAction {
     confirm(
-        config,
         "Stale working copy",
         Text::from(vec![
             Line::from("The working copy is stale: the repo has moved on since it was last"),
@@ -952,14 +929,8 @@ pub fn ask_update_stale_workspace(config: JjConfig) -> AppAction {
 }
 
 /// Put `question` to the user, running `command` if they say yes.
-fn confirm(
-    config: JjConfig,
-    title: &'static str,
-    question: Text<'static>,
-    command: Command,
-) -> AppAction {
+fn confirm(title: &'static str, question: Text<'static>, command: Command) -> AppAction {
     AppAction::SetPopup(Box::new(ConfirmPopup::new(
-        config,
         title,
         question,
         AppAction::Run(command),
@@ -1278,12 +1249,7 @@ mod tests {
     #[test]
     fn an_immutable_change_is_refused_rather_than_asked_about() {
         assert!(says(
-            ask_edit(
-                JjConfig::default(),
-                &head("a", true),
-                "Change: a".to_owned(),
-                false,
-            ),
+            ask_edit(&head("a", true), "Change: a".to_owned(), false),
             "because it is immutable"
         ));
     }
@@ -1291,22 +1257,14 @@ mod tests {
     #[test]
     fn an_immutable_change_is_asked_about_when_immutability_is_ignored() {
         assert!(says(
-            ask_edit(
-                JjConfig::default(),
-                &head("a", true),
-                "Change: a".to_owned(),
-                true,
-            ),
+            ask_edit(&head("a", true), "Change: a".to_owned(), true),
             "This change is immutable"
         ));
     }
 
     #[test]
     fn abandoning_names_the_selected_change_when_none_are_marked() {
-        assert!(says(
-            ask_abandon(JjConfig::default(), &head("a", false), vec![]),
-            "Change: a"
-        ));
+        assert!(says(ask_abandon(&head("a", false), vec![]), "Change: a"));
     }
 
     #[test]
@@ -1314,7 +1272,7 @@ mod tests {
         let marked = vec![CommitId("commit-a".into()), CommitId("commit-b".into())];
 
         assert!(says(
-            ask_abandon(JjConfig::default(), &head("a", false), marked),
+            ask_abandon(&head("a", false), marked),
             "abandon 2 marked changes"
         ));
     }
@@ -1329,11 +1287,11 @@ mod tests {
         };
 
         assert!(says(
-            ask_op_restore(JjConfig::default(), &operation),
+            ask_op_restore(&operation),
             "Operation: 0123456789ab describe commit"
         ));
         assert!(says(
-            ask_op_revert(JjConfig::default(), &operation),
+            ask_op_revert(&operation),
             "Operation: 0123456789ab describe commit"
         ));
     }
@@ -1343,7 +1301,7 @@ mod tests {
         let marked = vec![CommitId("commit-a".into())];
 
         assert!(says(
-            ask_abandon(JjConfig::default(), &head("a", true), marked),
+            ask_abandon(&head("a", true), marked),
             "because it is immutable"
         ));
     }

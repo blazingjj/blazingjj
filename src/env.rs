@@ -52,6 +52,12 @@ pub fn keybinds_config() -> Option<&'static KeybindsConfig> {
     env().and_then(|env| env.jj_config.keybinds())
 }
 
+/// The configuration, if the environment is set. Unlike [`get_env()`],
+/// this works before it is, as in tests building components.
+pub fn jj_config() -> Option<&'static JjConfig> {
+    env().map(|env| &env.jj_config)
+}
+
 /// Read the configuration again and put the environment it makes up in
 /// place of the one the app has been running on.
 pub fn reload_env() -> Result<()> {

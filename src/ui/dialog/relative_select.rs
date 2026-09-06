@@ -2,24 +2,22 @@
 log's selection onto one of them.
 */
 
-use ratatui::style::Color;
-use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Span;
 
 use crate::commander::log::Relative;
-use crate::env::JjConfig;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::dialog::ChoicePopup;
 
 /// The row a relative gets in the list, dimmed when it cannot be
 /// selected.
 fn relative_line(relative: &Relative, dimmed: bool) -> Line<'static> {
-    let dim = Style::default().fg(Color::DarkGray);
+    let dim = Role::Hint.style();
     let (change_id_style, description_style) = if dimmed {
         (dim, dim)
     } else {
-        (Style::default().fg(Color::Magenta), Style::default())
+        (Role::ChangeId.style(), Role::Default.style())
     };
 
     let change_id: String = relative.head.change_id.as_str().chars().take(8).collect();
@@ -36,7 +34,6 @@ fn relative_line(relative: &Relative, dimmed: bool) -> Line<'static> {
 /// `out_of_view` are listed underneath so that the change's place in the
 /// graph is shown in full, but cannot be picked.
 pub fn relative_select(
-    config: JjConfig,
     title: &'static str,
     relatives: &[Relative],
     out_of_view: &[Relative],
@@ -47,7 +44,7 @@ pub fn relative_select(
             AppAction::ViewLog(relative.head.clone()),
         )
     });
-    let popup = ChoicePopup::new(config, None, title, items);
+    let popup = ChoicePopup::new(None, title, items);
 
     if out_of_view.is_empty() {
         return popup;
@@ -57,7 +54,7 @@ pub fn relative_select(
         Line::default(),
         Line::from(Span::styled(
             " ── Not in the log view ──",
-            Style::default().fg(Color::DarkGray),
+            Role::Hint.style(),
         )),
     ];
     footnote.extend(
@@ -102,12 +99,7 @@ mod tests {
     fn popup(in_view: usize, out_of_view: usize) -> ChoicePopup {
         let all = relatives(0..in_view + out_of_view);
 
-        relative_select(
-            JjConfig::default(),
-            "Select parent",
-            &all[..in_view],
-            &all[in_view..],
-        )
+        relative_select("Select parent", &all[..in_view], &all[in_view..])
     }
 
     /// The change the popup asked the log to move to, if it asked at all.
@@ -203,7 +195,7 @@ mod tests {
     fn a_relative_without_a_description_says_so() {
         let mut relative = relatives(0..1);
         relative[0].description = String::new();
-        let mut popup = relative_select(JjConfig::default(), "Select parent", &relative, &[]);
+        let mut popup = relative_select("Select parent", &relative, &[]);
 
         let buffer = render(&mut popup);
 

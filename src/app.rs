@@ -15,7 +15,6 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::prelude::*;
-use ratatui::style::Style;
 use ratatui::symbols;
 use ratatui::widgets::*;
 use tracing::info;
@@ -45,6 +44,7 @@ use crate::keybinds::GlobalKeybinds;
 use crate::keybinds::HelpSection;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -63,6 +63,8 @@ use crate::ui::op_log_tab::OpLogTab;
 use crate::ui::settings_tab::SettingsTab;
 use crate::ui::status_bar;
 use crate::ui::status_bar::Status;
+use crate::ui::styles::panel_block;
+use crate::ui::styles::panel_title;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum TabId {
@@ -164,7 +166,7 @@ fn tab_bar_layout(titles: &[String]) -> impl Iterator<Item = (u16, u16)> {
 /// The whole tab bar, however much of it shows, with the selected tab
 /// highlighted.
 fn tab_bar_line(titles: &[String], selected: usize) -> Line<'static> {
-    let highlight = get_env().jj_config.highlight_color();
+    let highlight = Role::Highlight.style();
 
     let mut spans = Vec::new();
     for (i, title) in titles.iter().enumerate() {
@@ -173,7 +175,7 @@ fn tab_bar_line(titles: &[String], selected: usize) -> Line<'static> {
         }
         let title = format!(" {title} ");
         spans.push(if i == selected {
-            Span::styled(title, Style::default().bg(highlight))
+            Span::styled(title, highlight)
         } else {
             Span::raw(title)
         });
@@ -408,7 +410,7 @@ impl<'a> App<'a> {
         }
         self.stale_workspace = true;
 
-        self.handle_action(ask_update_stale_workspace(get_env().jj_config.clone()))
+        self.handle_action(ask_update_stale_workspace())
     }
 
     /// Read what operation the repo is at, keeping the slot until the
@@ -632,9 +634,7 @@ impl<'a> App<'a> {
                 .position(|tab| *tab == self.current_tab.in_tab_bar())
                 .unwrap_or(0);
 
-            let block = Block::bordered()
-                .title(" blazingjj ")
-                .border_type(BorderType::Rounded);
+            let block = panel_block().title(panel_title(" blazingjj "));
             let inner = block.inner(chunks[0]);
 
             let scroll = tab_bar_scroll(&titles, selected, inner.width);

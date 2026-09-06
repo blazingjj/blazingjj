@@ -8,7 +8,6 @@ use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
@@ -18,6 +17,7 @@ use throbber_widgets_tui::ThrobberState;
 
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -109,7 +109,7 @@ impl Component for LoaderPopup {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let block = Block::bordered()
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Green));
+            .border_style(Role::PopupBorder.style());
 
         let label = format!("{}...", self.operation_name);
         let content_width = 2 + label.len() as u16;
