@@ -146,13 +146,6 @@ fn bindings_set(value: &toml::Value) -> usize {
 /// gathers them under it.
 pub const SETTINGS: &[Setting] = &[
     Setting {
-        key: "blazingjj.highlight-color",
-        section: "Appearance",
-        doc: "Background colour of the selected row, as a colour name or a #rrggbb code.",
-        fallback: "#323296",
-        kind: SettingKind::Text,
-    },
-    Setting {
         key: "blazingjj.layout",
         section: "Appearance",
         doc: "How a tab divides itself between its main and its details panel.",
@@ -264,6 +257,7 @@ mod tests {
     use crate::env::EditorMode;
     use crate::env::JJLayout;
     use crate::env::JjConfig;
+    use crate::theme::Role;
 
     fn setting(key: &str) -> &'static Setting {
         SETTINGS
@@ -295,8 +289,11 @@ mod tests {
     #[test]
     fn every_option_is_a_key_the_app_reads() {
         assert_eq!(
-            set("blazingjj.highlight-color", "\"#010203\"").highlight_color(),
-            Color::Rgb(1, 2, 3)
+            set("blazingjj.colors.highlight.bg", "\"#010203\"")
+                .theme()
+                .style(Role::Highlight)
+                .bg,
+            Some(Color::Rgb(1, 2, 3))
         );
         assert_eq!(
             set("blazingjj.diff-format", "\"git\"").diff_format(),
@@ -361,10 +358,6 @@ mod tests {
         let default = JjConfig::default();
 
         assert_eq!(
-            as_fallback("blazingjj.highlight-color").highlight_color(),
-            default.highlight_color()
-        );
-        assert_eq!(
             as_fallback("blazingjj.describe-mode").describe_mode(),
             default.describe_mode()
         );
@@ -389,10 +382,12 @@ mod tests {
 
     #[test]
     fn text_is_quoted_into_a_value_of_its_own() {
-        let color = setting("blazingjj.highlight-color");
+        let template = setting("blazingjj.bookmark-template");
 
-        assert_eq!(color.value_of("#123456").unwrap(), "\"#123456\"");
-        assert!(color.value_of("chartreuse").is_err());
+        assert_eq!(
+            template.value_of("'push-' ++ change_id").unwrap(),
+            "\"'push-' ++ change_id\""
+        );
     }
 
     /// An option that is either on or off is written as the boolean it

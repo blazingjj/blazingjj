@@ -1,4 +1,3 @@
-use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyEventKind;
@@ -40,8 +39,10 @@ use crate::ui::panel::ListPane;
 use crate::ui::panel::MouseInput;
 use crate::ui::panel::copy_marked;
 use crate::ui::panel::route_mouse;
+use crate::ui::styles::AnsiText;
 use crate::ui::styles::panel_block;
 use crate::ui::styles::panel_title;
+use crate::ui::styles::patched;
 use crate::ui::utils::PaneDivider;
 
 /// Bookmarks tab. Shows bookmarks in main panel and selected bookmark current change in details panel.
@@ -502,12 +503,7 @@ impl Component for BookmarksTab {
                                 if current_bookmark_index == Some(i) {
                                     let highlight = Role::Highlight.style();
 
-                                    line = line.patch_style(highlight);
-                                    line.spans = line
-                                        .spans
-                                        .iter_mut()
-                                        .map(|span| span.to_owned().patch_style(highlight))
-                                        .collect();
+                                    line = patched(line, highlight);
                                 }
 
                                 line
@@ -540,7 +536,7 @@ impl Component for BookmarksTab {
                         vec![]
                     },
                     vec![Line::raw(""), Line::raw("")],
-                    err.to_string().into_text()?.lines,
+                    err.to_string().owned_ansi_text()?.lines,
                 ]
                 .concat(),
             };

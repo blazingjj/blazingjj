@@ -9,7 +9,6 @@ use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Row;
 use ratatui::widgets::Scrollbar;
 use ratatui::widgets::ScrollbarOrientation;
@@ -22,6 +21,7 @@ use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::clear;
 use crate::ui::styles::create_popup_block;
 use crate::ui::styles::section_heading;
 use crate::ui::utils::centered_rect_fixed;
@@ -267,7 +267,7 @@ impl Component for HelpPopup {
         let height = (contents_height + extra_height).min(area.height);
 
         let area = centered_rect_fixed(area, width, height);
-        f.render_widget(Clear, area);
+        clear(f, area);
 
         let block_inner = block.inner(area);
         f.render_widget(&block, area);

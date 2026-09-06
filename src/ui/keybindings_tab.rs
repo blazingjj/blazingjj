@@ -40,6 +40,7 @@ use crate::ui::panel::Sections;
 use crate::ui::panel::copy_marked;
 use crate::ui::styles::panel_block;
 use crate::ui::styles::panel_title;
+use crate::ui::styles::patched;
 use crate::ui::styles::section_heading;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::error_text;
@@ -285,7 +286,7 @@ impl KeybindingsTab {
                 };
 
                 if index == bindings.rows.selected_row() {
-                    line.patch_style(Role::Highlight.style())
+                    patched(line, Role::Highlight.style())
                 } else {
                     line
                 }

@@ -1,6 +1,5 @@
 use std::fmt::Display;
 
-use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
 use ratatui::layout::Alignment;
@@ -13,7 +12,6 @@ use ratatui::text::Text;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
 use ratatui::widgets::Borders;
-use ratatui::widgets::Clear;
 use ratatui::widgets::List;
 use ratatui::widgets::ListState;
 use ratatui::widgets::Paragraph;
@@ -35,6 +33,8 @@ use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::AnsiText;
+use crate::ui::styles::clear;
 use crate::ui::styles::create_popup_block;
 use crate::ui::styles::refusal;
 use crate::ui::utils::centered_rect;
@@ -206,7 +206,7 @@ impl Component for BookmarkSetPopup<'_> {
             let error_height = error.as_ref().map_or(0, |(_, height)| *height);
 
             let area = centered_rect_line_height(area, 30, 5 + error_height);
-            f.render_widget(Clear, area);
+            clear(f, area);
             f.render_widget(&block, area);
 
             let popup_chunks = Layout::default()
@@ -245,7 +245,7 @@ impl Component for BookmarkSetPopup<'_> {
                 .border_type(BorderType::Rounded)
                 .border_style(Role::PopupBorder.style());
             let area = centered_rect(area, 40, 60);
-            f.render_widget(Clear, area);
+            clear(f, area);
             f.render_widget(&block, area);
 
             let popup_chunks = Layout::default()
@@ -269,7 +269,7 @@ impl Component for BookmarkSetPopup<'_> {
                 BookmarkSetOption::Bookmark(bookmark) => {
                     Text::raw(bookmark.to_string()).patch_style(Role::Bookmark.style())
                 }
-                BookmarkSetOption::Error(err) => err.into_text().unwrap(),
+                BookmarkSetOption::Error(err) => err.owned_ansi_text().unwrap(),
             });
 
             let list = List::new(list_items)

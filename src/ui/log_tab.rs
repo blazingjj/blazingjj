@@ -47,6 +47,7 @@ use crate::ui::panel::LogPanel;
 use crate::ui::panel::MouseInput;
 use crate::ui::panel::copy_marked;
 use crate::ui::panel::route_mouse;
+use crate::ui::styles::clear;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::centered_rect_line_height;
 
@@ -473,7 +474,7 @@ impl Component for LogTab<'_> {
                     .border_type(BorderType::Rounded)
                     .border_style(Role::PopupBorder.style());
                 let area = centered_rect_line_height(area, 30, 7);
-                f.render_widget(Clear, area);
+                clear(f, area);
                 f.render_widget(&block, area);
 
                 let popup_chunks = Layout::default()

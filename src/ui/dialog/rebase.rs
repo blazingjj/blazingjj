@@ -35,7 +35,6 @@ use ratatui::text::Span;
 use ratatui::text::Text;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidget;
 
@@ -52,6 +51,7 @@ use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::clear;
 use crate::ui::utils::centered_rect_fixed;
 
 type Keybinds = crate::keybinds::rebase_popup::Keybinds;
@@ -109,7 +109,7 @@ impl Component for RebasePopup {
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
             .border_style(Role::PopupBorder.style());
-        frame.render_widget(Clear, area);
+        clear(frame, area);
         frame.render_widget(&block, area);
 
         // Split area into chunks. Even though the area size is constant,

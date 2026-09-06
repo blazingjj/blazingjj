@@ -613,6 +613,7 @@ pub mod tests {
     use crate::commander::bookmarks::Bookmark;
     use crate::env::Env;
     use crate::env::JjConfig;
+    use crate::theme::Theme;
 
     macro_rules! apply_common_filters {
         {} => {
@@ -643,6 +644,7 @@ pub mod tests {
             let env = Env {
                 root: directory.path().to_string_lossy().to_string(),
                 config: toml::Table::new(),
+                theme: Theme::default(),
                 jj_config: JjConfig::default(),
                 default_revset: None,
                 jj_bin,

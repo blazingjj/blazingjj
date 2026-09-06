@@ -18,7 +18,6 @@ use ratatui::text::Line;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
 use ratatui::widgets::Borders;
-use ratatui::widgets::Clear;
 use ratatui::widgets::List;
 use ratatui::widgets::ListState;
 use ratatui::widgets::Paragraph;
@@ -30,6 +29,7 @@ use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::clear;
 use crate::ui::styles::create_popup_block;
 use crate::ui::utils::anchored_rect_fixed;
 use crate::ui::utils::centered_rect;
@@ -218,7 +218,7 @@ impl Component for ChoicePopup {
         let block = create_popup_block(self.title);
         let area = self.popup_rect(area, &block);
         self.popup_area = area;
-        f.render_widget(Clear, area);
+        clear(f, area);
         f.render_widget(&block, area);
 
         let chunks = Layout::default()

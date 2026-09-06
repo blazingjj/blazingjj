@@ -42,6 +42,7 @@ use crate::ui::panel::Sections;
 use crate::ui::panel::copy_marked;
 use crate::ui::styles::panel_block;
 use crate::ui::styles::panel_title;
+use crate::ui::styles::patched;
 use crate::ui::styles::section_heading;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::error_text;
@@ -256,7 +257,7 @@ impl SettingsTab {
                 };
 
                 if index == self.settings.selected_row() {
-                    line.patch_style(Role::Highlight.style())
+                    patched(line, Role::Highlight.style())
                 } else {
                     line
                 }
@@ -517,12 +518,12 @@ mod tests {
 
     #[test]
     fn the_details_panel_says_what_the_selected_option_does() {
-        let screen = screen(&mut tab("blazingjj.highlight-color = \"#123456\"\n"));
+        let screen = screen(&mut tab("blazingjj.layout = \"vertical\"\n"));
 
         assert!(
             screen
                 .iter()
-                .any(|row| row.contains("Background colour of the selected row")),
+                .any(|row| row.contains("How a tab divides itself")),
             "{screen:?}"
         );
     }

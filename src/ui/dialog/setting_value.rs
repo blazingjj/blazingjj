@@ -2,7 +2,6 @@
 operation that writes it to the user's config.
 */
 
-use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
@@ -12,7 +11,6 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::widgets::Clear;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 
@@ -24,7 +22,9 @@ use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::AnsiText;
 use crate::ui::styles::POPUP_WIDTH_PERCENT;
+use crate::ui::styles::clear;
 use crate::ui::styles::create_popup_block;
 use crate::ui::styles::popup_footer;
 use crate::ui::styles::popup_text_width;
@@ -62,7 +62,7 @@ impl Component for SettingValuePopup<'_> {
         let error_lines = self
             .error
             .as_ref()
-            .map(|err| format!("{err:#}").into_text())
+            .map(|err| format!("{err:#}").owned_ansi_text())
             .transpose()?
             .map(|text| text.lines);
         // What jj says about a value is a sentence rather than a line,
@@ -72,7 +72,7 @@ impl Component for SettingValuePopup<'_> {
             .map_or(0, |lines| wrapped_height(lines, popup_text_width(area)) + 1);
 
         let area = centered_rect_line_height(area, POPUP_WIDTH_PERCENT, 5 + error_height);
-        f.render_widget(Clear, area);
+        clear(f, area);
         f.render_widget(&block, area);
 
         let chunks = Layout::default()

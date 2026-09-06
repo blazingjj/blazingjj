@@ -9,7 +9,6 @@ use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
 use ratatui::widgets::Borders;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui_textarea::TextArea;
 use shell_words::split;
@@ -26,6 +25,7 @@ use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Interactive;
 use crate::ui::dialog::MessagePopup;
+use crate::ui::styles::clear;
 use crate::ui::utils::centered_rect_line_height;
 
 /// What to tell someone whose command turned out to want an editor.
@@ -178,7 +178,7 @@ impl Component for CommandPopup<'_> {
             .border_type(BorderType::Rounded)
             .border_style(Role::PopupBorder.style());
         let area = centered_rect_line_height(area, 60, 5);
-        f.render_widget(Clear, area);
+        clear(f, area);
         f.render_widget(&block, area);
 
         let popup_chunks = Layout::default()

@@ -11,7 +11,6 @@ use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
 use ratatui::widgets::Borders;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
@@ -26,6 +25,7 @@ use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::clear;
 use crate::ui::styles::refusal;
 use crate::ui::utils::centered_rect_line_height;
 
@@ -127,7 +127,7 @@ impl Component for BookmarkNamePopup<'_> {
         let error_height = error.as_ref().map_or(0, |(_, height)| *height);
 
         let area = centered_rect_line_height(area, 30, 5 + error_height);
-        f.render_widget(Clear, area);
+        clear(f, area);
         f.render_widget(&block, area);
 
         let popup_chunks = Layout::default()

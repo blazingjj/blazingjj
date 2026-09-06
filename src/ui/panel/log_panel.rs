@@ -3,7 +3,6 @@ the log, or the entries of the operation log. */
 
 use std::collections::HashSet;
 
-use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
@@ -19,8 +18,10 @@ use crate::event::Mouse;
 use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
+use crate::ui::styles::AnsiText;
 use crate::ui::styles::panel_block;
 use crate::ui::styles::panel_title;
+use crate::ui::styles::patched;
 use crate::ui::utils::error_text;
 
 /**
@@ -136,7 +137,7 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
         self.log_output_text = match self.log_output.as_ref() {
             Ok(log_output) => log_output
                 .graph
-                .into_text()
+                .owned_ansi_text()
                 .unwrap_or(Text::from("Could not turn text into TUI text (coloring)")),
             Err(_) => Text::default(),
         };
@@ -159,17 +160,6 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
             line.spans.insert(0, span);
         };
 
-        fn patch(line: &mut Line, style: Style) {
-            // The line's own style is what the cells no span reaches are
-            // drawn in, which is what carries a highlight past the last
-            // span to the edge of the panel.
-            line.style = line.style.patch(style);
-
-            for span in line.spans.iter_mut() {
-                span.style = span.style.patch(style)
-            }
-        }
-
         let highlight = Role::Highlight.style();
 
         self.log_output_text
@@ -183,7 +173,7 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
 
                 // Highlight lines that correspond to self.selected
                 if log_output.item_at(i) == Some(&self.selected) {
-                    patch(&mut line, highlight);
+                    line = patched(line, highlight);
                 };
 
                 line

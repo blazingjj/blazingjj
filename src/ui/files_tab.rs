@@ -1,6 +1,5 @@
 use std::vec;
 
-use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyEventKind;
@@ -47,8 +46,10 @@ use crate::ui::panel::OutputPanel;
 use crate::ui::panel::OutputRequest;
 use crate::ui::panel::copy_marked;
 use crate::ui::panel::route_mouse;
+use crate::ui::styles::AnsiText;
 use crate::ui::styles::panel_block;
 use crate::ui::styles::panel_title;
+use crate::ui::styles::patched;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::error_text;
 
@@ -415,7 +416,7 @@ impl Component for FilesTab {
                         .enumerate()
                         .flat_map(|(i, file)| {
                             file.line
-                                .to_text()
+                                .to_ansi_text()
                                 .unwrap()
                                 .iter()
                                 .map(|line| {
@@ -427,22 +428,13 @@ impl Component for FilesTab {
                                     if let Some(diff_type) = file.diff_type.as_ref() {
                                         let style = diff_type.role().style();
 
-                                        line.spans = line
-                                            .spans
-                                            .iter_mut()
-                                            .map(|span| span.to_owned().patch_style(style))
-                                            .collect();
+                                        line = patched(line, style);
                                     }
 
                                     if current_file_index == Some(i) {
                                         let highlight = Role::Highlight.style();
 
-                                        line = line.patch_style(highlight);
-                                        line.spans = line
-                                            .spans
-                                            .iter_mut()
-                                            .map(|span| span.to_owned().patch_style(highlight))
-                                            .collect();
+                                        line = patched(line, highlight);
                                     }
 
                                     line

@@ -14,7 +14,6 @@ use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
 use ratatui::widgets::Borders;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
@@ -31,6 +30,7 @@ use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Interactive;
+use crate::ui::styles::clear;
 use crate::ui::styles::refusal;
 use crate::ui::utils::centered_rect_fixed;
 
@@ -106,7 +106,7 @@ impl Component for DescribePopup<'_> {
             width,
             max(MIN_COMMIT_HEIGHT + 4 + error_height, area.height / 2),
         );
-        f.render_widget(Clear, area);
+        clear(f, area);
         f.render_widget(&block, area);
 
         let popup_chunks = Layout::default()

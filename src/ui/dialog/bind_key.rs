@@ -21,7 +21,6 @@ use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 
@@ -34,6 +33,7 @@ use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::styles::POPUP_WIDTH_PERCENT;
+use crate::ui::styles::clear;
 use crate::ui::styles::create_popup_block;
 use crate::ui::styles::popup_footer;
 use crate::ui::styles::popup_text_width;
@@ -166,7 +166,7 @@ impl Component for BindKeyPopup {
         let text_height = wrapped_height(&lines, popup_text_width(area));
 
         let area = centered_rect_line_height(area, POPUP_WIDTH_PERCENT, text_height + 4);
-        f.render_widget(Clear, area);
+        clear(f, area);
         f.render_widget(&block, area);
 
         let chunks = Layout::default()

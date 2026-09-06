@@ -17,7 +17,6 @@ use ratatui::text::Span;
 use ratatui::text::Text;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Padding;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
@@ -30,6 +29,7 @@ use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::clear;
 use crate::ui::utils::centered_rect_fixed;
 use crate::ui::utils::mark_key;
 
@@ -216,7 +216,7 @@ impl Component for ConfirmPopup {
         // scroll past the end of the question.
         self.scroll(0);
 
-        f.render_widget(Clear, area);
+        clear(f, area);
         // The question is padded away from the border the block draws
         // over it afterwards.
         f.render_widget(

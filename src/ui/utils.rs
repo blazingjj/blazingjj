@@ -4,7 +4,6 @@ use std::fmt;
 use std::time::Duration;
 use std::time::Instant;
 
-use ansi_to_tui::IntoText;
 pub use large_string::LargeString;
 use ratatui::crossterm::event::MouseButton;
 use ratatui::crossterm::event::MouseEventKind;
@@ -23,6 +22,7 @@ use crate::env::get_env;
 use crate::event::Mouse;
 use crate::keybinds::Shortcut;
 use crate::theme::Role;
+use crate::ui::styles::AnsiText;
 
 /// Tracks the split position between two panes and handles drag-to-resize mouse events.
 #[derive(Default)]
@@ -284,7 +284,7 @@ pub fn error_text<'a>(
         Line::raw(""),
         Line::raw(""),
     ];
-    lines.append(&mut error.to_string().into_text()?.lines);
+    lines.append(&mut error.to_string().owned_ansi_text()?.lines);
 
     Ok(Text::from(lines))
 }

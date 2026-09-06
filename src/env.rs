@@ -19,7 +19,6 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
-use ratatui::style::Color;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::de;
@@ -28,6 +27,8 @@ use crate::commander::MIN_SETTABLE_WIDTH;
 use crate::commander::RemoveEndLine;
 use crate::commander::get_output_args;
 use crate::keybinds::KeybindsConfig;
+use crate::theme::Colors;
+use crate::theme::Theme;
 
 /// Singleton holding application environment.
 ///
@@ -52,10 +53,11 @@ pub fn keybinds_config() -> Option<&'static KeybindsConfig> {
     env().and_then(|env| env.jj_config.keybinds())
 }
 
-/// The configuration, if the environment is set. Unlike [`get_env()`],
-/// this works before it is, as in tests building components.
-pub fn jj_config() -> Option<&'static JjConfig> {
-    env().map(|env| &env.jj_config)
+/// The colours the app is drawing in, if the environment is set. Unlike
+/// [`get_env()`], this works before it is, as in tests building
+/// components.
+pub fn configured_theme() -> Option<&'static Theme> {
+    env().map(|env| &env.theme)
 }
 
 /// Read the configuration again and put the environment it makes up in
@@ -66,6 +68,7 @@ pub fn reload_env() -> Result<()> {
 
     set_env(Env {
         config,
+        theme: jj_config.theme(),
         jj_config,
         ..env.clone()
     });
@@ -90,6 +93,7 @@ pub fn set_test_env() {
         set_env(Env {
             root: ".".to_owned(),
             config: toml::Table::new(),
+            theme: Theme::default(),
             jj_config: JjConfig::default(),
             default_revset: None,
             jj_bin: "jj".to_owned(),
@@ -104,7 +108,7 @@ pub fn check_config_value(key: &str, value: &str) -> Result<()> {
     // Only what the value was refused for is worth reading; the line
     // and column of a document we wrote ourselves are not.
     toml::from_str::<JjConfig>(&format!("{key} = {value}\n"))
-        .map_err(|err| anyhow!("{}", err.message()))
+        .map_err(|err| anyhow!("{}", err.message().trim()))
         .context("The setting cannot take that value")?;
 
     Ok(())
@@ -121,8 +125,8 @@ pub struct JjConfig {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "kebab-case", default)]
 pub struct JjConfigBlazingjj {
-    #[serde(deserialize_with = "deserialize_highlight_color")]
-    highlight_color: Color,
+    /// What each element is drawn in, by role.
+    colors: Colors,
     describe_mode: DescribeMode,
     diff_format: Option<ConfiguredDiffFormat>,
     diff_tool: Option<String>,
@@ -150,7 +154,7 @@ pub struct JjConfigBlazingjj {
 impl Default for JjConfigBlazingjj {
     fn default() -> Self {
         Self {
-            highlight_color: Color::Rgb(50, 50, 150),
+            colors: Colors::default(),
             confirm_push: true,
             layout_percent: 50,
             layout_preserve_ratio: true,
@@ -168,20 +172,6 @@ impl Default for JjConfigBlazingjj {
             keybinds: None,
         }
     }
-}
-
-/// Reads a colour, of which ratatui says only that it failed to parse
-/// one, leaving out what one looks like.
-fn deserialize_highlight_color<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Color, D::Error> {
-    let text = String::deserialize(deserializer)?;
-
-    text.parse().map_err(|_| {
-        de::Error::custom(format!(
-            "{text:?} is neither a colour name nor a #rrggbb code"
-        ))
-    })
 }
 
 /// Reads a share of a tab, which is refused above the whole of it: a
@@ -296,8 +286,9 @@ impl JjConfig {
         )
     }
 
-    pub fn highlight_color(&self) -> Color {
-        self.blazingjj.highlight_color
+    /// What the configuration says to draw each role in.
+    pub fn colors(&self) -> &Colors {
+        &self.blazingjj.colors
     }
 
     pub fn bookmark_template(&self) -> String {
@@ -338,6 +329,8 @@ impl JjConfig {
 #[derive(Debug, Clone)]
 pub struct Env {
     pub jj_config: JjConfig,
+    /// The colours the app is drawing in, as `jj_config` has them.
+    pub theme: Theme,
     /// The configuration as jj lists it, which is what an option is
     /// read out of by the key it is named by rather than by what the
     /// app makes of it.
@@ -364,6 +357,7 @@ impl Env {
         Ok(Env {
             root,
             config,
+            theme: jj_config.theme(),
             jj_config,
             default_revset,
             jj_bin,
@@ -384,6 +378,15 @@ fn read_jj_config(root: &str, jj_bin: &str) -> Result<(toml::Table, JjConfig)> {
         .stdout;
 
     let config: toml::Table = toml::from_slice(&cfg).context("Failed to parse jj config")?;
+    if config
+        .get("blazingjj")
+        .and_then(|blazingjj| blazingjj.get("highlight-color"))
+        .is_some()
+    {
+        tracing::warn!(
+            "blazingjj.highlight-color is gone; set blazingjj.colors.highlight.bg instead"
+        );
+    }
     let jj_config = config
         .clone()
         .try_into()
@@ -887,8 +890,8 @@ mod tests {
             "The setting cannot take that value: an interval is a number of seconds, 0 or more"
         );
         assert_eq!(
-            refusal("blazingjj.highlight-color", "\"chartreuse\""),
-            "The setting cannot take that value: \"chartreuse\" is neither a colour name nor a #rrggbb code"
+            refusal("blazingjj.colors.hint", "\"chartreuse\""),
+            "The setting cannot take that value: \"chartreuse\" is none of a color name, a #rrggbb code, ansi-color-0 to ansi-color-255, or \"default\""
         );
     }
 

@@ -11,7 +11,6 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
-use ratatui::widgets::Clear;
 use throbber_widgets_tui::Throbber;
 use throbber_widgets_tui::ThrobberState;
 
@@ -22,6 +21,7 @@ use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::dialog::MessagePopup;
+use crate::ui::styles::clear;
 use crate::ui::utils::centered_rect_fixed;
 
 /// A transient popup to be shown during possibly time consuming actions
@@ -119,7 +119,7 @@ impl Component for LoaderPopup {
         let popup_height = content_height + 2;
 
         let popup_area = centered_rect_fixed(area, popup_width, popup_height);
-        f.render_widget(Clear, popup_area);
+        clear(f, popup_area);
         f.render_widget(&block, popup_area);
 
         let inner = block.inner(popup_area);

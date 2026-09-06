@@ -63,6 +63,7 @@ use crate::ui::op_log_tab::OpLogTab;
 use crate::ui::settings_tab::SettingsTab;
 use crate::ui::status_bar;
 use crate::ui::status_bar::Status;
+use crate::ui::styles::paint;
 use crate::ui::styles::panel_block;
 use crate::ui::styles::panel_title;
 
@@ -614,6 +615,8 @@ impl<'a> App<'a> {
 
     #[instrument(level = "trace", skip(self, f))]
     pub fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+        paint(f, area);
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([

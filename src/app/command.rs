@@ -9,7 +9,6 @@ as an [AppAction].
 use std::fmt::Display;
 use std::path::Path;
 
-use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::execute;
@@ -53,6 +52,7 @@ use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
 use crate::ui::dialog::describe_action;
 use crate::ui::dialog::new_insert;
+use crate::ui::styles::AnsiText;
 
 /// What a new change is created from, which decides whether the log is
 /// done marking it.
@@ -646,7 +646,7 @@ fn ask_push(target: PushTarget, preview: String) -> AppAction {
 
     // The preview is laid out as jj wrote it, colors and indentation
     // included.
-    let text = preview.into_text().ok();
+    let text = preview.owned_ansi_text().ok();
     let preview = text.unwrap_or_else(|| Text::raw(preview));
 
     let mut question = Text::from("The push would perform the following actions:");

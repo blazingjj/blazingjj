@@ -12,7 +12,6 @@ use ratatui::text::Span;
 use ratatui::text::Text;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Padding;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Scrollbar;
@@ -26,6 +25,7 @@ use crate::keybinds::PopupKeybinds;
 use crate::theme::Role;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::clear;
 use crate::ui::utils::LargeString;
 use crate::ui::utils::centered_rect;
 use crate::ui::utils::centered_rect_fixed;
@@ -143,7 +143,7 @@ impl Component for MessagePopup<'_> {
             .padding(Padding::horizontal(1));
 
         let popup_rect = self.popup_rect(area, &block, title.width() as u16);
-        f.render_widget(Clear, popup_rect);
+        clear(f, popup_rect);
 
         let inner = block.inner(popup_rect);
         let content_rect = inner.inner(Margin {

@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bound to keys of their own: `[blazingjj.keybinds.log-tab] push`, `push-new`,
   `push-all` and `push-all-new` are still there and can bind `p`, `ctrl+p`,
   `shift+p` and `ctrl+shift+p` back
+- Color names are now read as jj reads them, so `white` is the dim one of the
+  sixteen rather than the bright one. The names blazingjj took before are all
+  still taken, `white` alone having changed which color it means
+- `blazingjj.highlight-color` is gone: `blazingjj.colors.highlight.bg` is what
+  sets the background of the selected row, and the colors tab is where it is
+  set from
 
 ### Added
 
@@ -48,6 +54,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   working in and where it is, the revset the log is showing and how many
   changes it has marked. It has taken over the `q`/`?`/`R` hints and the
   runtime counter from the header, which now holds the tab bar alone
+- Every element of the interface can be given a foreground and a background
+  under `blazingjj.colors`, as either the color to draw it in or a table of
+  `fg` and `bg`. An element that says nothing about a color takes
+  `blazingjj.colors.default`'s, and where that says nothing either the
+  terminal's own shows through, so a background can be set once for the whole
+  interface without giving up the terminal's when it is left alone. An element
+  that is a kind of another falls back to that one first: `button-active`
+  takes the `highlight`'s colors and `separator` takes the `hint`'s, unless
+  given their own
+- A color can be written as one of the sixteen names, an `#rrggbb` code,
+  `ansi-color-0` through `ansi-color-255`, or `default` for the terminal's own
 - `+` (`goto-child`) moves the log tab selection to the child of the selected
   change, asking which one when it has several in the log view, the way `-`
   does for its parents

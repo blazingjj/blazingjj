@@ -105,7 +105,11 @@ To build and install a pre-release version: `cargo install --git https://github.
 
 You can optionally configure the following options through your jj config:
 
-- `blazingjj.highlight-color`: Changes the highlight color. Can use named colors. Defaults to `#323264`
+- `blazingjj.colors.<element>`: The color an element of the interface is drawn in, as either the foreground color or a table of `fg` and `bg`: `jj config set --user blazingjj.colors.hint '{ fg = "#7aa2f7" }'`
+  - The elements are `default`, `highlight`, `hint`, `separator`, `border`, `panel-title`, `heading`, `workspace`, `popup-border`, `popup-title`, `button`, `button-active`, `error`, `warning`, `success`, `change-id`, `bookmark`, `file-added`, `file-modified`, `file-renamed`, `file-copied`, `file-deleted` and `conflict`
+  - An element that is a kind of another falls back to that one before `default`: `button-active`, the button Enter presses, takes the `highlight`'s colors, and `separator` takes the `hint`'s, unless given their own
+  - `default` is what the rest fall back to: an element that says nothing about a color takes `default`'s, and where that says nothing either the terminal's own shows through. So setting `blazingjj.colors.default.bg` gives the whole interface a background, while leaving it unset keeps your terminal's
+  - A color is one of the sixteen names (`red`, `bright black`, ...), an `#rrggbb` code, `ansi-color-0` through `ansi-color-255`, or `default` for the terminal's own. Names are read as jj reads them, so `white` is the dim one and `bright white` the bright one
 - `blazingjj.diff-format`: Change the default diff format. Can be `color-words`, `git`, `pager`, `summary` or `stat`. Defaults to `color_words`
   - If `blazingjj.diff-format` is not set but `ui.diff.format` is, the latter will be used
 - `blazingjj.diff-tool`: Specify which diff tool to use by default
