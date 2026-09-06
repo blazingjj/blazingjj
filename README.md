@@ -67,7 +67,7 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Change any of the options below from within blazingjj, without leaving for
     an editor
   - Change the selected setting with `Enter`, take it back out of your config
-    with `x`
+    with `x` or by clearing the field the value is typed in
   - Rebind any key from the `blazingjj.keybinds` row: `Enter` on an action
     takes the next key you press for it, `a` takes one more key beside the
     keys it has, `X` leaves it bound to nothing

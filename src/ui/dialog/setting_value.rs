@@ -92,9 +92,11 @@ impl Component for SettingValuePopup<'_> {
         }
 
         f.render_widget(
-            popup_footer(vec![self.keybinds.hint("accept").into()])
-                .fg(Color::DarkGray)
-                .alignment(Alignment::Center),
+            popup_footer(vec![
+                format!("{} | empty: take out", self.keybinds.hint("accept")).into(),
+            ])
+            .fg(Color::DarkGray)
+            .alignment(Alignment::Center),
             chunks[2],
         );
 
@@ -107,25 +109,31 @@ impl Component for SettingValuePopup<'_> {
         {
             match self.keybinds.match_event(key) {
                 PopupEvent::Accept => {
-                    // A value the setting cannot be read from is one to
-                    // correct rather than one to give up on, so the
-                    // question stays up with what was said about it.
-                    let value = match self.setting.value_of(&self.textarea.lines().join("\n")) {
-                        Ok(value) => value,
-                        Err(err) => {
-                            self.error = Some(err);
-                            return Ok(ComponentInputResult::Handled);
+                    let typed = self.textarea.lines().join("\n");
+                    let key = self.setting.key.to_owned();
+
+                    // Clearing the field is asking for the option to be
+                    // taken out rather than for it to be set to nothing:
+                    // there is no value that stands for "as if it were
+                    // never set", so what says so is saying nothing.
+                    let command = if typed.trim().is_empty() {
+                        Command::UnsetSetting { key }
+                    } else {
+                        // A value the setting cannot be read from is one
+                        // to correct rather than one to give up on, so
+                        // the question stays up with what was said about
+                        // it.
+                        match self.setting.value_of(&typed) {
+                            Ok(value) => Command::SetSetting { key, value },
+                            Err(err) => {
+                                self.error = Some(err);
+                                return Ok(ComponentInputResult::Handled);
+                            }
                         }
                     };
 
                     return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                        vec![
-                            AppAction::ClosePopup,
-                            AppAction::Run(Command::SetSetting {
-                                key: self.setting.key.to_owned(),
-                                value,
-                            }),
-                        ],
+                        vec![AppAction::ClosePopup, AppAction::Run(command)],
                     )));
                 }
                 PopupEvent::Cancel => {
@@ -137,5 +145,75 @@ impl Component for SettingValuePopup<'_> {
 
         self.textarea.input(event);
         Ok(ComponentInputResult::Handled)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::crossterm::event::KeyCode;
+    use ratatui::crossterm::event::KeyEvent;
+
+    use super::*;
+    use crate::env::set_test_env;
+    use crate::settings::SETTINGS;
+
+    fn setting(key: &str) -> &'static Setting {
+        SETTINGS
+            .iter()
+            .find(|setting| setting.key == key)
+            .expect("the setting is one the app has")
+    }
+
+    /// What accepting the popup asks for, having started from `value`.
+    fn accepted(key: &str, value: &str) -> Command {
+        set_test_env();
+        let mut popup = SettingValuePopup::new(setting(key), value.to_owned());
+
+        let result = popup
+            .input(Event::Key(KeyEvent::from(KeyCode::Enter)))
+            .expect("the key is handled");
+        let ComponentInputResult::HandledAction(AppAction::Multiple(actions)) = result else {
+            panic!("accepting asks for something to be done");
+        };
+        let Some(AppAction::Run(command)) = actions.into_iter().nth(1) else {
+            panic!("what it asks for is an operation");
+        };
+
+        command
+    }
+
+    #[test]
+    fn what_is_typed_is_what_the_option_is_set_to() {
+        let Command::SetSetting { key, value } = accepted("blazingjj.layout", "vertical") else {
+            panic!("a value is set");
+        };
+
+        assert_eq!(key, "blazingjj.layout");
+        assert_eq!(value, "\"vertical\"");
+    }
+
+    /// There is no value that stands for "as if it were never set", so
+    /// clearing the field is what says it: the option goes out of the
+    /// config rather than being set to nothing.
+    #[test]
+    fn clearing_the_field_takes_the_option_out_of_the_config() {
+        let Command::UnsetSetting { key } = accepted("blazingjj.layout", "") else {
+            panic!("the option is taken out");
+        };
+
+        assert_eq!(key, "blazingjj.layout");
+    }
+
+    /// Including for an option that would otherwise refuse an empty
+    /// field for not being the kind of value it takes.
+    #[test]
+    fn clearing_the_field_takes_out_an_option_that_takes_a_number() {
+        assert!(setting("blazingjj.layout-percent").value_of("  ").is_err());
+
+        let Command::UnsetSetting { key } = accepted("blazingjj.layout-percent", "  ") else {
+            panic!("the option is taken out");
+        };
+
+        assert_eq!(key, "blazingjj.layout-percent");
     }
 }
