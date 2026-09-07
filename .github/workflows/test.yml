@@ -170,3 +170,22 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+
+  nix:
+    name: Nix
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
+        with:
+          name: blazingjj
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          # Only main is what a consumer of the flake resolves to.
+          skipPush: ${{ github.event_name == 'pull_request' }}
+      - run: nix build --print-build-logs
+      - run: nix develop --command just check
