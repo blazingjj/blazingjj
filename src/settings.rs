@@ -13,12 +13,17 @@ use anyhow::Result;
 use anyhow::bail;
 
 use crate::env::check_config_value;
+use crate::env::get_env;
 
 /// What kind of value an option takes, which decides both how it is
 /// asked for and how what is typed becomes a TOML expression.
 pub enum SettingKind {
     /// One of a fixed set of values.
     Choice(&'static [&'static str]),
+    /// On or off, written as a boolean. The function says which of the
+    /// two the app goes by, the configuration being free to say nothing
+    /// and leave it to the app.
+    Toggle(fn() -> bool),
     /// Free text.
     Text,
     /// A number, which is written as one rather than as the text of one.
@@ -64,6 +69,10 @@ impl Setting {
                     input => input.to_owned(),
                 }
             }
+            SettingKind::Toggle(_) => match input.trim() {
+                boolean @ ("true" | "false") => boolean.to_owned(),
+                input => bail!("The setting is either true or false, not {input:?}"),
+            },
             SettingKind::Choice(_) | SettingKind::Text => {
                 toml::Value::String(input.to_owned()).to_string()
             }
@@ -214,6 +223,13 @@ pub const SETTINGS: &[Setting] = &[
         kind: SettingKind::Text,
     },
     Setting {
+        key: "blazingjj.confirm-push",
+        section: "Changes",
+        doc: "Whether a push is shown and asked about before it is sent. What is shown is what `jj git push --dry-run` says the push would do, so putting the question takes a round trip to the remote.",
+        fallback: "true",
+        kind: SettingKind::Toggle(|| get_env().jj_config.confirm_push()),
+    },
+    Setting {
         key: "blazingjj.poll-interval",
         section: "Watching the repo",
         doc: "Seconds between checks for work done outside the app, or 0 to only check when asked.",
@@ -317,6 +333,7 @@ mod tests {
             JJLayout::Vertical
         );
         assert_eq!(set("blazingjj.layout-percent", "40").layout_percent(), 40);
+        assert!(!set("blazingjj.confirm-push", "false").confirm_push());
         assert!(
             set("blazingjj.keybinds", "{ quit = \"x\" }")
                 .keybinds()
@@ -349,6 +366,10 @@ mod tests {
             default.layout_percent()
         );
         assert_eq!(
+            as_fallback("blazingjj.confirm-push").confirm_push(),
+            default.confirm_push()
+        );
+        assert_eq!(
             as_fallback("blazingjj.poll-interval").poll_interval(),
             default.poll_interval()
         );
@@ -360,6 +381,19 @@ mod tests {
 
         assert_eq!(color.value_of("#123456").unwrap(), "\"#123456\"");
         assert!(color.value_of("chartreuse").is_err());
+    }
+
+    /// An option that is either on or off is written as the boolean it
+    /// is, and anything else is refused for not being one.
+    #[test]
+    fn what_is_neither_true_nor_false_is_refused_for_not_being_either() {
+        let confirm = setting("blazingjj.confirm-push");
+
+        assert_eq!(confirm.value_of(" false ").unwrap(), "false");
+        assert_eq!(
+            confirm.value_of("no").unwrap_err().to_string(),
+            "The setting is either true or false, not \"no\""
+        );
     }
 
     #[test]

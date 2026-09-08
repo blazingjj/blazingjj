@@ -99,6 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a restart. Clearing the field a value is typed in also takes the option out,
   which is the only way to reach one of several options written under the same
   key
+  - An option that is either on or off, such as `blazingjj.confirm-push`, is
+    turned over on `Enter` rather than asked about
 - Keybindings tab, opened from the settings tab's `blazingjj.keybinds` row,
   listing every action a key can be bound to under the heading of where its
   keys take effect. `Enter` takes the next key you press for the selected
