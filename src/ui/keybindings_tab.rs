@@ -275,7 +275,7 @@ impl KeybindingsTab {
                         let keys = if bindable.binding.keys.is_empty() {
                             keys.patch_style(Role::Hint.style())
                         } else {
-                            keys
+                            keys.patch_style(Role::Value.style())
                         };
 
                         Line::from(vec![
@@ -323,7 +323,9 @@ impl KeybindingsTab {
             Line::raw(""),
             Line::from(vec![
                 Span::raw("Current binding: "),
-                Span::raw(bindable.shown_keys.clone()).bold(),
+                Span::raw(bindable.shown_keys.clone())
+                    .patch_style(Role::Value.style())
+                    .bold(),
                 Span::raw(source).patch_style(Role::Hint.style()),
             ]),
             Line::raw(format!(

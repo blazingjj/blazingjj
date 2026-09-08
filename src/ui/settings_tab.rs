@@ -245,7 +245,7 @@ impl SettingsTab {
                     }
                     SectionRow::Item(setting) => {
                         let value = match values.value(setting) {
-                            Some(value) => Span::raw(value),
+                            Some(value) => Span::raw(value).patch_style(Role::Value.style()),
                             None => Span::raw(setting.fallback.to_owned())
                                 .patch_style(Role::Hint.style())
                                 .italic(),
@@ -283,7 +283,7 @@ impl SettingsTab {
         lines.push(match values.value(setting) {
             Some(value) => Line::from(vec![
                 Span::raw("Set to:      "),
-                Span::raw(value).bold(),
+                Span::raw(value).patch_style(Role::Value.style()).bold(),
                 Span::raw(if values.is_users(setting) {
                     "  (in your config)"
                 } else {

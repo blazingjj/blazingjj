@@ -59,14 +59,16 @@ pub enum Role {
     FileCopied,
     FileDeleted,
     Conflict,
+    Value,
 }
 
 impl Role {
     /// Every role there is, in the order the colours tab lists them.
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 24] = [
         Self::Default,
         Self::Highlight,
         Self::Hint,
+        Self::Value,
         Self::Separator,
         Self::Border,
         Self::Workspace,
@@ -121,6 +123,7 @@ impl Role {
             Self::FileCopied => "file-copied",
             Self::FileDeleted => "file-deleted",
             Self::Conflict => "conflict",
+            Self::Value => "value",
         }
     }
 
@@ -158,6 +161,9 @@ impl Role {
             Self::FileCopied => "A file the change copies.",
             Self::FileDeleted => "A file the change deletes.",
             Self::Conflict => "A file left conflicted.",
+            Self::Value => {
+                "What an option or a binding is set to, where the settings and keybindings tabs list them."
+            }
         }
     }
 
@@ -171,7 +177,8 @@ impl Role {
             | Self::Border
             | Self::Workspace
             | Self::PanelTitle
-            | Self::Heading => "The frame",
+            | Self::Heading
+            | Self::Value => "The frame",
             Self::PopupBorder | Self::PopupTitle | Self::Button | Self::ButtonActive => "Popups",
             Self::Error | Self::Warning | Self::Success => "What the app has to say",
             Self::ChangeId | Self::Bookmark => "The repo",
@@ -208,6 +215,7 @@ impl Role {
             },
             Self::Separator => ansi(Ansi::BrightBlack),
             Self::Hint => ansi(Ansi::White),
+            Self::Value => ansi(Ansi::Blue),
             Self::PopupBorder | Self::Success | Self::FileAdded => ansi(Ansi::Green),
             Self::PopupTitle
             | Self::Workspace

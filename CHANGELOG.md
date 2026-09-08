@@ -91,6 +91,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `b` what it is drawn on, and `x` takes both back out of your config, while
   clearing either field takes just that one out. The keys are configured
   under `[blazingjj.keybinds.colors-tab]`
+- The settings and keybindings tabs draw what an option or a binding is set to
+  in the `value` color
 - `+` (`goto-child`) moves the log tab selection to the child of the selected
   change, asking which one when it has several in the log view, the way `-`
   does for its parents
