@@ -117,8 +117,18 @@ impl SettingsTab {
     /// it takes, when it only takes one of a few, or what it is to be.
     fn change_selected(&self) -> Option<AppAction> {
         let setting = self.selected()?;
-        if matches!(setting.kind, SettingKind::Keybindings) {
-            return Some(AppAction::ViewTab(TabId::Keybindings));
+        match setting.kind {
+            SettingKind::Keybindings => return Some(AppAction::ViewTab(TabId::Keybindings)),
+            SettingKind::Toggle(now) => {
+                return Some(AppAction::Run(Command::SetSetting {
+                    key: setting.key.to_owned(),
+                    value: setting.value_of(&(!now()).to_string()).ok()?,
+                }));
+            }
+            SettingKind::Choice(_)
+            | SettingKind::Text
+            | SettingKind::Number
+            | SettingKind::CommandLine => {}
         }
 
         let values = self.values.as_ref().ok()?;
@@ -429,6 +439,20 @@ mod tests {
         tab
     }
 
+    /// Put the selection on the option `key` names, which the tab has to
+    /// list for the test to be testing anything.
+    fn select(tab: &mut SettingsTab, key: &str) {
+        for _ in 0..SETTINGS.len() {
+            if tab.selected().is_some_and(|setting| setting.key == key) {
+                return;
+            }
+
+            tab.settings.scroll(1);
+        }
+
+        panic!("the tab lists {key}");
+    }
+
     /// What the whole tab says, as one string per row of the terminal.
     fn screen(tab: &mut SettingsTab) -> Vec<String> {
         drawn(tab, 100, 20)
@@ -505,15 +529,27 @@ mod tests {
         );
     }
 
+    /// An option that is either on or off has nothing worth asking
+    /// about, so changing it turns it over where it stands rather than
+    /// putting up a list of the two values it can take.
+    #[test]
+    fn an_option_that_is_on_or_off_is_turned_over_rather_than_asked_about() {
+        let mut tab = tab("");
+        select(&mut tab, "blazingjj.confirm-push");
+
+        // A push is asked about unless the configuration says
+        // otherwise, so turning it over asks for false.
+        let Some(AppAction::Run(Command::SetSetting { key, value })) = tab.change_selected() else {
+            panic!("changing it asks for it to be set");
+        };
+        assert_eq!(key, "blazingjj.confirm-push");
+        assert_eq!(value, "false");
+    }
+
     #[test]
     fn only_what_the_users_own_config_sets_can_be_taken_back_out() {
         let mut tab = tab("blazingjj.layout = \"vertical\"\n");
-        while !tab
-            .selected()
-            .is_some_and(|setting| setting.key == "blazingjj.layout")
-        {
-            tab.settings.scroll(1);
-        }
+        select(&mut tab, "blazingjj.layout");
 
         assert!(tab.unset_selected().is_some());
 

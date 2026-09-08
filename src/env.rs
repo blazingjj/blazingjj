@@ -131,6 +131,9 @@ pub struct JjConfigBlazingjj {
     /// the most.
     #[serde(deserialize_with = "deserialize_layout_percent")]
     layout_percent: u16,
+    /// Whether the main panel keeps its share of a resized tab, rather
+    /// than the cells it has.
+    layout_preserve_ratio: bool,
     keybinds: Option<KeybindsConfig>,
     /// How long to wait between checks for work done outside the app, or
     /// None to only check when one is asked for.
@@ -144,6 +147,7 @@ impl Default for JjConfigBlazingjj {
             highlight_color: Color::Rgb(50, 50, 150),
             confirm_push: true,
             layout_percent: 50,
+            layout_preserve_ratio: true,
             poll_interval: Some(Duration::from_secs(1)),
             // Standard defaults for the rest
             describe_mode: DescribeMode::default(),
@@ -308,6 +312,12 @@ impl JjConfig {
 
     pub fn layout_percent(&self) -> u16 {
         self.blazingjj.layout_percent
+    }
+
+    /// Whether a pane split keeps its ratio when the terminal is
+    /// resized, rather than the size of the main panel.
+    pub fn layout_preserve_ratio(&self) -> bool {
+        self.blazingjj.layout_preserve_ratio
     }
 
     pub fn keybinds(&self) -> Option<&KeybindsConfig> {

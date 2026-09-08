@@ -27,16 +27,19 @@ use crate::keybinds::Shortcut;
 /// Tracks the split position between two panes and handles drag-to-resize mouse events.
 #[derive(Default)]
 pub struct PaneDivider {
-    /// Which way round the panes sit and what share of the area the
-    /// first one takes, as the configuration read when the divider was
-    /// last placed; it is placed afresh whenever either changes. Its
-    /// position counts cells along the axis the panes are divided on,
-    /// so it says nothing about them once they turn.
-    configured: Option<(JJLayout, u16)>,
+    /// Which way round the panes sit, what share of the area the first
+    /// one takes and whether that share is what a resize holds on to, as
+    /// the configuration read when the divider was last placed; it is
+    /// placed afresh whenever any of them changes. Its position counts
+    /// cells along the axis the panes are divided on, so it says nothing
+    /// about them once they turn.
+    configured: Option<(JJLayout, u16, bool)>,
     /// The way round the panes have been turned at runtime, which the
     /// configured layout takes back over from when it changes.
     turned_to: Option<JJLayout>,
-    size: Option<u16>,
+    /// Where the divider was put, as the cells the first pane took of
+    /// the cells there were for both.
+    placed: Option<(u16, u16)>,
     dragging: bool,
     rects: [Rect; 2],
 }
@@ -46,7 +49,11 @@ impl PaneDivider {
     /// the resulting rects for hit-testing in `handle_mouse`.
     pub fn split(&mut self, area: Rect) -> [Rect; 2] {
         let config = &get_env().jj_config;
-        let configured = (config.layout(), config.layout_percent());
+        let configured = (
+            config.layout(),
+            config.layout_percent(),
+            config.layout_preserve_ratio(),
+        );
         // Reading the configuration for the first time is not a change
         // to it, so a tab drawn only now still shows what it was told
         // to while it was not.
@@ -56,24 +63,16 @@ impl PaneDivider {
             .is_some_and(|was| was != configured)
         {
             self.turned_to = None;
-            self.size = None;
+            self.placed = None;
         }
-        let (_, percent) = configured;
+        let (_, percent, preserve_ratio) = configured;
 
         let layout = self.layout();
         let total = match layout {
             JJLayout::Horizontal => area.width,
             JJLayout::Vertical => area.height,
         };
-        let size = match self.size {
-            None => {
-                let s = ((total as u32 * percent as u32) / 100) as u16;
-                self.size = Some(s);
-                s
-            }
-            Some(s) => s,
-        };
-        let size = size.min(total);
+        let size = self.place(total, percent, preserve_ratio);
 
         let chunks = Layout::default()
             .direction(layout.into())
@@ -81,6 +80,30 @@ impl PaneDivider {
             .split(area);
         self.rects = [chunks[0], chunks[1]];
         self.rects
+    }
+
+    /// How many of the `total` cells the first pane takes, being
+    /// `percent` of them until the divider has been put anywhere else.
+    /// A divider that preserves the ratio moves along with an area that
+    /// has changed size, one that does not stays where it was put.
+    fn place(&mut self, total: u16, percent: u16, preserve_ratio: bool) -> u16 {
+        // Every size is worked out from where the divider was put, so
+        // that a pane an area has become too small for is itself again
+        // once there is room, and so that rescaling it again and again
+        // does not walk it away from the ratio it was put at.
+        let size = match self.placed {
+            None => {
+                let size = ((total as u32 * percent as u32) / 100) as u16;
+                self.placed = Some((size, total));
+                size
+            }
+            Some((size, was)) if was != total && was != 0 && preserve_ratio => {
+                ((size as u32 * total as u32 + was as u32 / 2) / was as u32) as u16
+            }
+            Some((size, _)) => size,
+        };
+
+        size.min(total)
     }
 
     /// Handle a mouse event. Returns true if the event was consumed.
@@ -138,7 +161,7 @@ impl PaneDivider {
     /// says otherwise, placing the divider afresh as it does.
     pub fn toggle_layout(&mut self) {
         self.turned_to = Some(self.layout().toggle());
-        self.size = None;
+        self.placed = None;
     }
 
     fn update_size(&mut self, position: Position, layout: JJLayout) {
@@ -161,7 +184,7 @@ impl PaneDivider {
         } else {
             pos.max(1)
         };
-        self.size = Some(size);
+        self.placed = Some((size, total));
     }
 }
 
@@ -459,9 +482,25 @@ mod tests {
 
         // What the divider remembers is what the configuration said
         // when it was last placed, so it stands in for a change of it.
-        divider.configured = Some((JJLayout::Horizontal, 80));
+        divider.configured = Some((JJLayout::Horizontal, 80, true));
         let [main, _] = divider.split(area);
         assert_eq!(main.width, 50);
+    }
+
+    /// Turning what a resize holds on to over is a change like any
+    /// other, so the divider is placed afresh rather than going back to
+    /// a size it had before the last resize.
+    #[test]
+    fn test_a_divider_goes_back_when_what_a_resize_holds_on_to_changes() {
+        set_test_env();
+        let mut divider = PaneDivider::default();
+
+        divider.split(Rect::new(0, 0, 100, 10));
+        divider.update_size(Position::new(20, 0), JJLayout::Horizontal);
+        divider.configured = Some((JJLayout::Horizontal, 50, false));
+
+        let [main, _] = divider.split(Rect::new(0, 0, 60, 10));
+        assert_eq!(main.width, 30);
     }
 
     /// It goes back to it when the panes turn as well.
@@ -473,7 +512,7 @@ mod tests {
 
         divider.split(area);
         divider.update_size(Position::new(20, 0), JJLayout::Horizontal);
-        divider.configured = Some((JJLayout::Vertical, 50));
+        divider.configured = Some((JJLayout::Vertical, 50, true));
 
         let [main, _] = divider.split(area);
         assert_eq!(main.width, 50);
@@ -492,6 +531,69 @@ mod tests {
         let [main, _] = divider.split(area);
 
         assert_eq!(main.width, 100);
+    }
+
+    /// A divider that keeps the size it was given leaves the growing
+    /// and the shrinking to the second pane.
+    #[test]
+    fn test_a_divider_that_does_not_preserve_the_ratio_stays_where_it_was_put() {
+        let mut divider = PaneDivider::default();
+
+        assert_eq!(divider.place(100, 50, false), 50);
+        assert_eq!(divider.place(60, 50, false), 50);
+        assert_eq!(divider.place(200, 50, false), 50);
+    }
+
+    /// A divider that preserves the ratio moves along with the area,
+    /// keeping the ratio it was dragged to rather than the configured one.
+    #[test]
+    fn test_a_divider_that_preserves_the_ratio_moves_with_the_area() {
+        let mut divider = PaneDivider::default();
+
+        assert_eq!(divider.place(100, 50, true), 50);
+        assert_eq!(divider.place(60, 50, true), 30);
+
+        divider.placed = Some((20, 100));
+        assert_eq!(divider.place(50, 50, true), 10);
+    }
+
+    /// One resize after another is worked out from where the divider
+    /// was put, so the ratio does not walk away from it.
+    #[test]
+    fn test_resizing_again_and_again_keeps_the_ratio() {
+        let mut divider = PaneDivider::default();
+
+        assert_eq!(divider.place(100, 30, true), 30);
+        for total in [93, 71, 70, 45, 44, 43, 17, 100] {
+            divider.place(total, 30, true);
+        }
+
+        assert_eq!(divider.place(100, 30, true), 30);
+    }
+
+    /// The panes are split where the configuration says, and follow the
+    /// area from there while it says to keep the ratio.
+    #[test]
+    fn test_the_panes_are_split_where_configured_and_follow_the_area() {
+        set_test_env();
+        let mut divider = PaneDivider::default();
+
+        let [main, _] = divider.split(Rect::new(0, 0, 100, 10));
+        assert_eq!(main.width, 50);
+
+        let [main, _] = divider.split(Rect::new(0, 0, 60, 10));
+        assert_eq!(main.width, 30);
+    }
+
+    /// An area too small for the pane does not cut it down to what fits:
+    /// once there is room again, the pane is the size it was given.
+    #[test]
+    fn test_a_pane_squeezed_out_comes_back() {
+        let mut divider = PaneDivider::default();
+
+        assert_eq!(divider.place(100, 80, false), 80);
+        assert_eq!(divider.place(40, 80, false), 40);
+        assert_eq!(divider.place(100, 80, false), 80);
     }
 
     /// A label marks the key that picks it in place where the key is one

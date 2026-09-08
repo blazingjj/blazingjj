@@ -99,6 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a restart. Clearing the field a value is typed in also takes the option out,
   which is the only way to reach one of several options written under the same
   key
+  - An option that is either on or off, such as `blazingjj.confirm-push`, is
+    turned over on `Enter` rather than asked about
 - Keybindings tab, opened from the settings tab's `blazingjj.keybinds` row,
   listing every action a key can be bound to under the heading of where its
   keys take effect. `Enter` takes the next key you press for the selected
@@ -179,6 +181,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A resized terminal now keeps the ratio a tab is split in, so that both panels
+  grow and shrink, rather than the main panel keeping the columns or rows it
+  has; `blazingjj.layout-preserve-ratio = false` goes back to that
 - The tab bar now scrolls the current tab into the middle of what it shows
   when the window is too narrow for every tab, rather than cutting off the
   tabs that do not fit. The header no longer says which numbers pick a tab,
