@@ -232,7 +232,7 @@ pub const SETTINGS: &[Setting] = &[
     Setting {
         key: "blazingjj.confirm-push",
         section: "Changes",
-        doc: "Whether a push is shown and asked about before it is sent. What is shown is what `jj git push --dry-run` says the push would do, so putting the question takes a round trip to the remote.",
+        doc: "Whether a push is shown and asked about before it is sent. What is shown is what `jj git push --dry-run` says the push would do, worked out from the repo's own record of the remote.",
         fallback: "true",
         kind: SettingKind::Toggle(|| get_env().jj_config.confirm_push()),
     },
