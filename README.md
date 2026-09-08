@@ -125,7 +125,7 @@ You can optionally configure the following options through your jj config:
   - If `blazingjj.bookmark-template` is not set but `templates.git_push_bookmark` is, the latter will be used
 - `blazingjj.describe-mode`: What describing a change puts up. Can be `popup` (default) for the built-in editor, or `jj` to hand the terminal to `jj describe` and your own editor
 - `blazingjj.confirm-push`: Whether a push is shown and asked about before it is sent. Defaults to `true`
-  - What is shown is what `jj git push --dry-run` says the push would do, so it takes a round trip to the remote to put the question
+  - What is shown is what `jj git push --dry-run` says the push would do, which is worked out from the repo's own record of the remote, without asking it
 - `blazingjj.layout`: Changes the layout of the main and details panel. Can be `horizontal` (default) or `vertical`
 - `blazingjj.layout-percent`: Changes the layout split of the main page. Should be number between 0 and 100. Defaults to `50`
 - `blazingjj.layout-preserve-ratio`: Whether a resized terminal keeps the ratio the tab is split in, so that both panels grow and shrink, rather than the size of the main panel. Defaults to `true`
