@@ -8,6 +8,7 @@ use super::Section;
 use super::Shortcut;
 use super::config::KeybindingsTabKeybindsConfig;
 use super::config::KeybindsConfig;
+use super::hint_line;
 use super::keybinds_store::KeybindsStore;
 use crate::env::keybinds_config;
 use crate::make_bindings;
@@ -82,29 +83,18 @@ impl KeybindingsTabKeybinds {
     /// is least worth saying goes first, down to binding a key and
     /// leaving the list again.
     pub fn hint(&self, width: usize) -> String {
-        let mut parts: Vec<String> = [
-            (KeybindingsTabEvent::Bind, "bind"),
-            (KeybindingsTabEvent::BindBesides, "add a key"),
-            (KeybindingsTabEvent::Disable, "bind nothing"),
-            (KeybindingsTabEvent::Unset, "take out"),
-            (KeybindingsTabEvent::Back, "back"),
-        ]
-        .into_iter()
-        .filter_map(|(event, what)| Some(format!("{}: {what}", self.shortcut(event)?)))
-        .collect();
-
-        while parts.len() > 2 && Self::hint_width(&parts) > width {
-            parts.remove(parts.len() - 2);
-        }
-
-        parts.join(" | ")
-    }
-
-    /// How wide the hint `parts` are with what joins them.
-    fn hint_width(parts: &[String]) -> usize {
-        let joins = 3 * parts.len().saturating_sub(1);
-
-        joins + parts.iter().map(|part| part.chars().count()).sum::<usize>()
+        hint_line(
+            [
+                (KeybindingsTabEvent::Bind, "bind"),
+                (KeybindingsTabEvent::BindBesides, "add a key"),
+                (KeybindingsTabEvent::Disable, "bind nothing"),
+                (KeybindingsTabEvent::Unset, "take out"),
+                (KeybindingsTabEvent::Back, "back"),
+            ]
+            .into_iter()
+            .filter_map(|(event, what)| Some((self.shortcut(event)?, what))),
+            width,
+        )
     }
 
     /// The shortcut to name `event` by, of those bound to it.

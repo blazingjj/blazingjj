@@ -552,6 +552,29 @@ impl Display for Shortcut {
     }
 }
 
+/// The line under a list saying what it answers to, `shortcuts` written
+/// out in as much of `width` as they take. Where there is no room for
+/// all of them, what is least worth saying goes first, down to the first
+/// and the last.
+fn hint_line(shortcuts: impl Iterator<Item = (Shortcut, &'static str)>, width: usize) -> String {
+    /// How wide the parts are with what joins them.
+    fn line_width(parts: &[String]) -> usize {
+        let joins = 3 * parts.len().saturating_sub(1);
+
+        joins + parts.iter().map(|part| part.chars().count()).sum::<usize>()
+    }
+
+    let mut parts: Vec<String> = shortcuts
+        .map(|(shortcut, what)| format!("{shortcut}: {what}"))
+        .collect();
+
+    while parts.len() > 2 && line_width(&parts) > width {
+        parts.remove(parts.len() - 2);
+    }
+
+    parts.join(" | ")
+}
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ShortcutParseError {
     #[error("invalid number after f")]
