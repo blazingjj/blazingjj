@@ -181,6 +181,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A resized terminal now keeps the ratio a tab is split in, so that both panels
+  grow and shrink, rather than the main panel keeping the columns or rows it
+  has; `blazingjj.layout-preserve-ratio = false` goes back to that
 - The tab bar now scrolls the current tab into the middle of what it shows
   when the window is too narrow for every tab, rather than cutting off the
   tabs that do not fit. The header no longer says which numbers pick a tab,

@@ -128,6 +128,7 @@ You can optionally configure the following options through your jj config:
   - What is shown is what `jj git push --dry-run` says the push would do, so it takes a round trip to the remote to put the question
 - `blazingjj.layout`: Changes the layout of the main and details panel. Can be `horizontal` (default) or `vertical`
 - `blazingjj.layout-percent`: Changes the layout split of the main page. Should be number between 0 and 100. Defaults to `50`
+- `blazingjj.layout-preserve-ratio`: Whether a resized terminal keeps the ratio the tab is split in, so that both panels grow and shrink, rather than the size of the main panel. Defaults to `true`
 - `blazingjj.poll-interval`: Seconds between checks for work done outside the app. Set to `0` to only check when asked. Defaults to `1`
   - What is found is picked up while the terminal window has no focus; while it has focus, the header's `R: refresh` hint turns red instead, as refreshing what is being read moves it
   - A terminal that does not report focus changes counts as always focused, so there the hint is all you get

@@ -167,6 +167,13 @@ pub const SETTINGS: &[Setting] = &[
         kind: SettingKind::Number,
     },
     Setting {
+        key: "blazingjj.layout-preserve-ratio",
+        section: "Appearance",
+        doc: "Whether a resized terminal keeps the ratio a tab is split in, rather than the size of the main panel.",
+        fallback: "true",
+        kind: SettingKind::Toggle(|| get_env().jj_config.layout_preserve_ratio()),
+    },
+    Setting {
         key: "blazingjj.diff-format",
         section: "Diffs",
         doc: "How a diff is rendered. Without one, a configured diff pager or diff tool is used.",
@@ -334,6 +341,7 @@ mod tests {
         );
         assert_eq!(set("blazingjj.layout-percent", "40").layout_percent(), 40);
         assert!(!set("blazingjj.confirm-push", "false").confirm_push());
+        assert!(set("blazingjj.layout-preserve-ratio", "true").layout_preserve_ratio());
         assert!(
             set("blazingjj.keybinds", "{ quit = \"x\" }")
                 .keybinds()
@@ -368,6 +376,10 @@ mod tests {
         assert_eq!(
             as_fallback("blazingjj.confirm-push").confirm_push(),
             default.confirm_push()
+        );
+        assert_eq!(
+            as_fallback("blazingjj.layout-preserve-ratio").layout_preserve_ratio(),
+            default.layout_preserve_ratio()
         );
         assert_eq!(
             as_fallback("blazingjj.poll-interval").poll_interval(),
