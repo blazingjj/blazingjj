@@ -10,12 +10,12 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
-use ratatui::style::Style;
 use ratatui::symbols;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
+
+use crate::theme::Role;
 
 /// The keys the bar names, in the two pieces the refresh key is lit up
 /// on its own in.
@@ -70,16 +70,10 @@ fn where_we_are(status: &Status) -> Line<'static> {
     let mut spans = vec![Span::raw(" ")];
 
     if let Some(workspace) = status.workspace {
-        spans.push(Span::styled(
-            workspace.to_owned(),
-            Style::default().fg(Color::Cyan),
-        ));
+        spans.push(Span::styled(workspace.to_owned(), Role::Workspace.style()));
         spans.push(Span::raw(" "));
     }
-    spans.push(Span::styled(
-        in_home(status.root),
-        Style::default().fg(Color::DarkGray),
-    ));
+    spans.push(Span::styled(in_home(status.root), Role::Hint.style()));
 
     if let Some(revset) = status.revset {
         spans.extend(divider());
@@ -96,10 +90,7 @@ fn where_we_are(status: &Status) -> Line<'static> {
 
 /// What sits between two things the bar says.
 fn divider() -> [Span<'static>; 3] {
-    let divider = Span::styled(
-        symbols::line::VERTICAL,
-        Style::default().fg(Color::DarkGray),
-    );
+    let divider = Span::styled(symbols::line::VERTICAL, Role::Separator.style());
 
     [Span::raw(" "), divider, Span::raw(" ")]
 }
@@ -108,17 +99,17 @@ fn divider() -> [Span<'static>; 3] {
 /// while the app is not going to pick the repo up by itself.
 fn hints(status: &Status) -> Line<'static> {
     let refresh_style = if status.stale {
-        Style::default().fg(Color::Red)
+        Role::Error.style()
     } else {
-        Style::default().fg(Color::DarkGray)
+        Role::Hint.style()
     };
 
     Line::from(vec![
         Span::styled(HINTS_REFRESH, refresh_style),
-        Span::styled(HINTS_AFTER_REFRESH, Style::default().fg(Color::DarkGray)),
+        Span::styled(HINTS_AFTER_REFRESH, Role::Hint.style()),
         Span::styled(
             format!(" {}ms ", status.elapsed.as_millis()),
-            Style::default().fg(Color::DarkGray),
+            Role::Hint.style(),
         ),
     ])
 }

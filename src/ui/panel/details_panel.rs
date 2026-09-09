@@ -21,13 +21,10 @@ use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Margin;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Text;
-use ratatui::widgets::Block;
-use ratatui::widgets::BorderType;
 use ratatui::widgets::Padding;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Scrollbar;
@@ -41,6 +38,8 @@ use super::PanelMouseInput;
 use crate::event::CLICK_PAUSE;
 use crate::event::Mouse;
 use crate::keybinds::DetailsPanelEvent;
+use crate::theme::Role;
+use crate::ui::styles::panel_block;
 use crate::ui::utils::LargeString;
 
 /// Details panel used for the right side of each tab.
@@ -289,9 +288,7 @@ where
         self.panel.fade();
 
         // Define border block
-        let mut border = Block::bordered()
-            .border_type(BorderType::Rounded)
-            .padding(Padding::horizontal(1));
+        let mut border = panel_block().padding(Padding::horizontal(1));
         // Apply title if provided
         if let Some(title) = &self.title {
             border = border.title_top(title.clone());
@@ -435,7 +432,7 @@ impl DetailsPanel {
     fn copied_note(&self) -> Option<Line<'static>> {
         self.copied
             .is_some()
-            .then(|| Line::styled(" Copied ", Style::new().fg(Color::Green)))
+            .then(|| Line::styled(" Copied ", Role::Success.style()))
     }
 
     /// Take down where each row on screen picks up the content it shows,

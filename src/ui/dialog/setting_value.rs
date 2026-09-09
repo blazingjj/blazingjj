@@ -2,7 +2,6 @@
 operation that writes it to the user's config.
 */
 
-use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;
@@ -12,9 +11,6 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::prelude::Stylize;
-use ratatui::style::Color;
-use ratatui::widgets::Clear;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
 
@@ -22,18 +18,31 @@ use crate::app::command::Command;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::settings::Setting;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::AnsiText;
 use crate::ui::styles::POPUP_WIDTH_PERCENT;
+use crate::ui::styles::clear;
 use crate::ui::styles::create_popup_block;
 use crate::ui::styles::popup_footer;
 use crate::ui::styles::popup_text_width;
 use crate::ui::styles::wrapped_height;
 use crate::ui::utils::centered_rect_line_height;
 
+type ValueOf = Box<dyn Fn(&str) -> Result<String>>;
+
 pub struct SettingValuePopup<'a> {
-    setting: &'static Setting,
+    /// The config key the value is written to, which the popup is also
+    /// titled by.
+    key: String,
+    /// The config key clearing the field takes out, where there is one
+    /// to take out. It is the key written to unless what is written is
+    /// only part of a value that was set as a whole.
+    taken_out: Option<String>,
+    /// What the typed text is written as, or why it cannot be.
+    value_of: ValueOf,
     textarea: TextArea<'a>,
     /// What was said about the value that was typed, if it was refused.
     error: Option<anyhow::Error>,
@@ -44,11 +53,30 @@ impl SettingValuePopup<'static> {
     /// Ask for the value of `setting`, starting from `value` as it reads
     /// on screen rather than as the TOML it is written as.
     pub fn new(setting: &'static Setting, value: String) -> Self {
+        let key = setting.key.to_owned();
+
+        Self::for_key(key.clone(), Some(key), value, |input| {
+            setting.value_of(input)
+        })
+    }
+
+    /// Ask for what `key` is to be set to, starting from `value`, with
+    /// `value_of` saying what the typed text is written as and
+    /// `taken_out` the key clearing the field takes out, if any. For a
+    /// key that is no option of the settings tab's.
+    pub fn for_key(
+        key: String,
+        taken_out: Option<String>,
+        value: String,
+        value_of: impl Fn(&str) -> Result<String> + 'static,
+    ) -> Self {
         let mut textarea = TextArea::new(vec![value]);
         textarea.move_cursor(CursorMove::End);
 
         Self {
-            setting,
+            key,
+            taken_out,
+            value_of: Box::new(value_of),
             textarea,
             error: None,
             keybinds: PopupKeybinds::text_line(),
@@ -58,12 +86,12 @@ impl SettingValuePopup<'static> {
 
 impl Component for SettingValuePopup<'_> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
-        let block = create_popup_block(self.setting.key);
+        let block = create_popup_block(&self.key);
 
         let error_lines = self
             .error
             .as_ref()
-            .map(|err| format!("{err:#}").into_text())
+            .map(|err| format!("{err:#}").owned_ansi_text())
             .transpose()?
             .map(|text| text.lines);
         // What jj says about a value is a sentence rather than a line,
@@ -73,7 +101,7 @@ impl Component for SettingValuePopup<'_> {
             .map_or(0, |lines| wrapped_height(lines, popup_text_width(area)) + 1);
 
         let area = centered_rect_line_height(area, POPUP_WIDTH_PERCENT, 5 + error_height);
-        f.render_widget(Clear, area);
+        clear(f, area);
         f.render_widget(&block, area);
 
         let chunks = Layout::default()
@@ -95,7 +123,7 @@ impl Component for SettingValuePopup<'_> {
             popup_footer(vec![
                 format!("{} | empty: take out", self.keybinds.hint("accept")).into(),
             ])
-            .fg(Color::DarkGray)
+            .style(Role::Hint.style())
             .alignment(Alignment::Center),
             chunks[2],
         );
@@ -110,20 +138,25 @@ impl Component for SettingValuePopup<'_> {
             match self.keybinds.match_event(key) {
                 PopupEvent::Accept => {
                     let typed = self.textarea.lines().join("\n");
-                    let key = self.setting.key.to_owned();
+                    let key = self.key.clone();
 
                     // Clearing the field is asking for the option to be
                     // taken out rather than for it to be set to nothing:
                     // there is no value that stands for "as if it were
-                    // never set", so what says so is saying nothing.
+                    // never set", so what says so is saying nothing. An
+                    // option nothing has set is already out.
                     let command = if typed.trim().is_empty() {
+                        let Some(key) = self.taken_out.clone() else {
+                            return Ok(ComponentInputResult::HandledAction(AppAction::ClosePopup));
+                        };
+
                         Command::UnsetSetting { key }
                     } else {
                         // A value the setting cannot be read from is one
                         // to correct rather than one to give up on, so
                         // the question stays up with what was said about
                         // it.
-                        match self.setting.value_of(&typed) {
+                        match (self.value_of)(&typed) {
                             Ok(value) => Command::SetSetting { key, value },
                             Err(err) => {
                                 self.error = Some(err);

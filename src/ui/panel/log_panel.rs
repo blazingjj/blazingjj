@@ -3,7 +3,6 @@ the log, or the entries of the operation log. */
 
 use std::collections::HashSet;
 
-use ansi_to_tui::IntoText;
 use anyhow::Result;
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
@@ -15,10 +14,14 @@ use super::PanelMouseInput;
 use crate::commander::CommandError;
 use crate::commander::log::LogItem;
 use crate::commander::log::LogOutput;
-use crate::env::get_env;
 use crate::event::Mouse;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
+use crate::ui::styles::AnsiText;
+use crate::ui::styles::panel_block;
+use crate::ui::styles::panel_title;
+use crate::ui::styles::patched;
 use crate::ui::utils::error_text;
 
 /**
@@ -134,7 +137,7 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
         self.log_output_text = match self.log_output.as_ref() {
             Ok(log_output) => log_output
                 .graph
-                .into_text()
+                .owned_ansi_text()
                 .unwrap_or(Text::from("Could not turn text into TUI text (coloring)")),
             Err(_) => Text::default(),
         };
@@ -157,18 +160,7 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
             line.spans.insert(0, span);
         };
 
-        // Set the background color of the line
-        fn set_bg(line: &mut Line, bg_color: Color) {
-            // Set background to use when no Span is present
-            // This makes the highlight continue beyond the last Span
-            line.style = line.style.patch(Style::default().bg(bg_color));
-
-            for span in line.spans.iter_mut() {
-                span.style = span.style.bg(bg_color)
-            }
-        }
-
-        let highlight = get_env().jj_config.highlight_color();
+        let highlight = Role::Highlight.style();
 
         self.log_output_text
             .iter()
@@ -181,7 +173,7 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
 
                 // Highlight lines that correspond to self.selected
                 if log_output.item_at(i) == Some(&self.selected) {
-                    set_bg(&mut line, highlight);
+                    line = patched(line, highlight);
                 };
 
                 line
@@ -324,9 +316,7 @@ impl<T: LogItem> Component for LogPanel<'_, T> {
 
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let log_lines = self.log_lines();
-        let log_block = Block::bordered()
-            .title(self.title.clone())
-            .border_type(BorderType::Rounded);
+        let log_block = panel_block().title(panel_title(self.title.clone()));
         self.log_list_state.select(self.selected_log_line());
         let log = List::new(log_lines);
         let log = if self.scroll_padding_active {

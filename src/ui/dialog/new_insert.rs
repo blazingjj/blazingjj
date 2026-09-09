@@ -4,17 +4,12 @@
 use ratatui::text::Line;
 
 use crate::commander::jj::NewInsertMode;
-use crate::env::JjConfig;
 use crate::ui::AppAction;
 use crate::ui::dialog::ChoicePopup;
 
 /// A popup offering the insertion points around `target`, which names
 /// what the new change is created from.
-pub fn new_insert(
-    config: JjConfig,
-    target: &str,
-    action: impl Fn(NewInsertMode) -> AppAction,
-) -> ChoicePopup {
+pub fn new_insert(target: &str, action: impl Fn(NewInsertMode) -> AppAction) -> ChoicePopup {
     let items = vec![
         (
             Line::raw(format!("New child of {target}")),
@@ -30,5 +25,5 @@ pub fn new_insert(
         ),
     ];
 
-    ChoicePopup::new(config, None, "New", items)
+    ChoicePopup::new(None, "New", items)
 }

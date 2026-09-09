@@ -1,0 +1,35 @@
+# Catppuccin Mocha, by the Catppuccin org.
+# https://github.com/catppuccin/catppuccin
+#
+# The darkest of the four. The palette is the mapping the style guide
+# gives for the sixteen terminal colours, which leaves the six chromatic
+# ones the same bright as dim and spends the greys on the flavour's own
+# surface and text tones.
+
+[palette]
+fg = "#cdd6f4"                # text
+bg = "#1e1e2e"                # base
+black = "#45475a"             # surface1
+red = "#f38ba8"
+green = "#a6e3a1"
+yellow = "#f9e2af"
+blue = "#89b4fa"
+magenta = "#f5c2e7"           # pink
+cyan = "#94e2d5"              # teal
+white = "#a6adc8"             # subtext0
+bright-black = "#585b70"      # surface2
+bright-red = "#f38ba8"
+bright-green = "#a6e3a1"
+bright-yellow = "#f9e2af"
+bright-blue = "#89b4fa"
+bright-magenta = "#f5c2e7"
+bright-cyan = "#94e2d5"
+bright-white = "#bac2de"      # subtext1
+
+[colors]
+# Catppuccin gives the selection as overlay2 at a quarter of its
+# opacity, which a terminal cannot draw, so we name what that comes out
+# as over the background.
+highlight = { bg = "#3b3d4f" }
+# overlay2, Catppuccin's colour for comments.
+hint = "#9399b2"

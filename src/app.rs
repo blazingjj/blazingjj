@@ -15,7 +15,6 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::prelude::*;
-use ratatui::style::Style;
 use ratatui::symbols;
 use ratatui::widgets::*;
 use tracing::info;
@@ -45,6 +44,7 @@ use crate::keybinds::GlobalKeybinds;
 use crate::keybinds::HelpSection;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -52,6 +52,7 @@ use crate::ui::Interactive;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::bookmarks_tab::BookmarksTab;
+use crate::ui::colors_tab::ColorsTab;
 use crate::ui::dialog::CommandMode;
 use crate::ui::dialog::CommandPopup;
 use crate::ui::dialog::HelpPopup;
@@ -63,6 +64,9 @@ use crate::ui::op_log_tab::OpLogTab;
 use crate::ui::settings_tab::SettingsTab;
 use crate::ui::status_bar;
 use crate::ui::status_bar::Status;
+use crate::ui::styles::paint;
+use crate::ui::styles::panel_block;
+use crate::ui::styles::panel_title;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum TabId {
@@ -75,6 +79,9 @@ pub enum TabId {
     /// The keybindings, which the settings tab opens and which has no
     /// place of its own in the tab bar.
     Keybindings,
+    /// The colours, which the settings tab opens and which has no place
+    /// of its own in the tab bar.
+    Colors,
 }
 
 impl fmt::Display for TabId {
@@ -87,13 +94,14 @@ impl fmt::Display for TabId {
             TabId::OpLog => write!(f, "Op log"),
             TabId::Settings => write!(f, "Settings"),
             TabId::Keybindings => write!(f, "Keybindings"),
+            TabId::Colors => write!(f, "Colors"),
         }
     }
 }
 
 impl TabId {
     /// Every tab there is, the transient one included
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         TabId::Log,
         TabId::Files,
         TabId::Bookmarks,
@@ -101,6 +109,7 @@ impl TabId {
         TabId::OpLog,
         TabId::Settings,
         TabId::Keybindings,
+        TabId::Colors,
     ];
 
     /// The tabs the tab bar lists, in the order it lists them
@@ -117,7 +126,7 @@ impl TabId {
     /// place of its own is the place of the tab that opens it.
     pub fn in_tab_bar(self) -> Self {
         match self {
-            TabId::Keybindings => TabId::Settings,
+            TabId::Keybindings | TabId::Colors => TabId::Settings,
             tab => tab,
         }
     }
@@ -127,7 +136,7 @@ impl TabId {
     /// come first by their number and last in the bar.
     pub fn number(self) -> usize {
         match self {
-            TabId::Settings | TabId::Keybindings => 0,
+            TabId::Settings | TabId::Keybindings | TabId::Colors => 0,
             TabId::Log => 1,
             TabId::Files => 2,
             TabId::Bookmarks => 3,
@@ -164,7 +173,7 @@ fn tab_bar_layout(titles: &[String]) -> impl Iterator<Item = (u16, u16)> {
 /// The whole tab bar, however much of it shows, with the selected tab
 /// highlighted.
 fn tab_bar_line(titles: &[String], selected: usize) -> Line<'static> {
-    let highlight = get_env().jj_config.highlight_color();
+    let highlight = Role::Highlight.style();
 
     let mut spans = Vec::new();
     for (i, title) in titles.iter().enumerate() {
@@ -173,7 +182,7 @@ fn tab_bar_line(titles: &[String], selected: usize) -> Line<'static> {
         }
         let title = format!(" {title} ");
         spans.push(if i == selected {
-            Span::styled(title, Style::default().bg(highlight))
+            Span::styled(title, highlight)
         } else {
             Span::raw(title)
         });
@@ -226,6 +235,7 @@ pub struct App<'a> {
     pub op_log: OpLogTab<'a>,
     pub settings: SettingsTab,
     pub keybindings: KeybindingsTab,
+    pub colors: ColorsTab,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     /// Where the tabs overview was last drawn, for mouse input.
@@ -274,6 +284,7 @@ impl<'a> App<'a> {
             op_log: OpLogTab::new(background_tasks.clone()),
             settings: SettingsTab::new(),
             keybindings: KeybindingsTab::new(),
+            colors: ColorsTab::new(),
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
@@ -408,7 +419,7 @@ impl<'a> App<'a> {
         }
         self.stale_workspace = true;
 
-        self.handle_action(ask_update_stale_workspace(get_env().jj_config.clone()))
+        self.handle_action(ask_update_stale_workspace())
     }
 
     /// Read what operation the repo is at, keeping the slot until the
@@ -462,6 +473,14 @@ impl<'a> App<'a> {
         }
     }
 
+    /// Every tab throws away the output it is holding, so that what it
+    /// comes to show is produced afresh.
+    fn drop_all_caches(&mut self) {
+        for tab in TabId::ALL {
+            self.get_tab(tab).drop_caches();
+        }
+    }
+
     /// Every tab is behind on what it shows, whoever moved the repo.
     fn mark_all_stale(&mut self) {
         for tab in TabId::ALL {
@@ -494,6 +513,7 @@ impl<'a> App<'a> {
             TabId::OpLog => &mut self.op_log,
             TabId::Settings => &mut self.settings,
             TabId::Keybindings => &mut self.keybindings,
+            TabId::Colors => &mut self.colors,
         }
     }
 
@@ -571,10 +591,21 @@ impl<'a> App<'a> {
                 self.pending_interactive = Some(interactive);
             }
             AppAction::ConfigChanged => {
+                // The environment we are leaving stays where it is, so
+                // what it told jj is still there to be compared with.
+                let before = get_env();
                 // Whatever went wrong reading it, the app goes on with
                 // the configuration it has rather than coming down.
                 if let Err(err) = reload_env() {
                     warn!("Could not read the configuration again: {err:#}");
+                }
+
+                // Output jj wrote is held onto until the repo moves, and
+                // it was written in the colours jj was told to write in
+                // at the time. Told others now, what is held is what the
+                // app no longer looks like, so it goes.
+                if get_env().tells_jj_other_colors_than(before) {
+                    self.drop_all_caches();
                 }
 
                 self.repo_watch
@@ -612,6 +643,8 @@ impl<'a> App<'a> {
 
     #[instrument(level = "trace", skip(self, f))]
     pub fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
+        paint(f, area);
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -632,9 +665,7 @@ impl<'a> App<'a> {
                 .position(|tab| *tab == self.current_tab.in_tab_bar())
                 .unwrap_or(0);
 
-            let block = Block::bordered()
-                .title(" blazingjj ")
-                .border_type(BorderType::Rounded);
+            let block = panel_block().title(panel_title(" blazingjj "));
             let inner = block.inner(chunks[0]);
 
             let scroll = tab_bar_scroll(&titles, selected, inner.width);

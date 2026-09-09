@@ -225,3 +225,13 @@ disable = "shift+x"
 unset = "x"
 back = "esc"
 ```
+
+### Colors tab
+
+```toml
+[blazingjj.keybinds.colors-tab]
+change-foreground = "enter"
+change-background = "b"
+unset = "x"
+back = "esc"
+```

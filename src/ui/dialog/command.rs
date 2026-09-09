@@ -5,14 +5,10 @@ use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
-use ratatui::style::Color;
-use ratatui::style::Style;
-use ratatui::style::Stylize;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
 use ratatui::widgets::Borders;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui_textarea::TextArea;
 use shell_words::split;
@@ -23,11 +19,13 @@ use crate::commander::new_commander;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::selection::Selection;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Interactive;
 use crate::ui::dialog::MessagePopup;
+use crate::ui::styles::clear;
 use crate::ui::utils::centered_rect_line_height;
 
 /// What to tell someone whose command turned out to want an editor.
@@ -175,12 +173,12 @@ impl Component for CommandPopup<'_> {
             CommandMode::Interactive => " Interactive command ",
         };
         let block = Block::bordered()
-            .title(Span::styled(title, Style::new().bold().cyan()))
+            .title(Span::styled(title, Role::PopupTitle.style().bold()))
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Green));
+            .border_style(Role::PopupBorder.style());
         let area = centered_rect_line_height(area, 60, 5);
-        f.render_widget(Clear, area);
+        clear(f, area);
         f.render_widget(&block, area);
 
         let popup_chunks = Layout::default()
@@ -191,13 +189,13 @@ impl Component for CommandPopup<'_> {
         f.render_widget(&self.command_textarea, popup_chunks[0]);
 
         let help = Paragraph::new(vec![self.keybinds.hint("run").into()])
-            .fg(Color::DarkGray)
+            .style(Role::Hint.style())
             .alignment(Alignment::Center)
             .block(
                 Block::default()
                     .borders(Borders::TOP)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::DarkGray)),
+                    .border_style(Role::Separator.style()),
             );
 
         f.render_widget(help, popup_chunks[1]);

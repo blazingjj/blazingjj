@@ -4,7 +4,6 @@ use std::fmt;
 use std::time::Duration;
 use std::time::Instant;
 
-use ansi_to_tui::IntoText;
 pub use large_string::LargeString;
 use ratatui::crossterm::event::MouseButton;
 use ratatui::crossterm::event::MouseEventKind;
@@ -13,7 +12,6 @@ use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Text;
@@ -23,6 +21,8 @@ use crate::env::JJLayout;
 use crate::env::get_env;
 use crate::event::Mouse;
 use crate::keybinds::Shortcut;
+use crate::theme::Role;
+use crate::ui::styles::AnsiText;
 
 /// Tracks the split position between two panes and handles drag-to-resize mouse events.
 #[derive(Default)]
@@ -280,11 +280,11 @@ pub fn error_text<'a>(
     error: &impl fmt::Display,
 ) -> Result<Text<'a>, ansi_to_tui::Error> {
     let mut lines = vec![
-        Line::raw(title).bold().fg(Color::Red),
+        Line::raw(title).bold().patch_style(Role::Error.style()),
         Line::raw(""),
         Line::raw(""),
     ];
-    lines.append(&mut error.to_string().into_text()?.lines);
+    lines.append(&mut error.to_string().owned_ansi_text()?.lines);
 
     Ok(Text::from(lines))
 }
@@ -620,7 +620,7 @@ mod tests {
 
         let lines: Vec<String> = text.lines.iter().map(ToString::to_string).collect();
         assert_eq!(lines, ["Error getting diff", "", "", "no such revision"]);
-        assert_eq!(text.lines[0].style.fg, Some(Color::Red));
+        assert_eq!(text.lines[0].style.fg, Role::Error.style().fg);
         // The escape sequence is a style rather than something to read.
         assert_eq!(text.lines[3].spans.len(), 2);
 

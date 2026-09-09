@@ -20,10 +20,7 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
-use ratatui::style::Stylize;
 use ratatui::text::Line;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 
@@ -31,10 +28,12 @@ use crate::app::command::Command;
 use crate::keybinds::Binding;
 use crate::keybinds::Context;
 use crate::keybinds::Shortcut;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::styles::POPUP_WIDTH_PERCENT;
+use crate::ui::styles::clear;
 use crate::ui::styles::create_popup_block;
 use crate::ui::styles::popup_footer;
 use crate::ui::styles::popup_text_width;
@@ -155,9 +154,9 @@ impl Component for BindKeyPopup {
             Line::raw(format!("{asked} “{}”.", self.binding.description)),
             Line::raw(""),
             match self.error.as_ref() {
-                Some(error) => Line::raw(format!("{error:#}")).fg(Color::Red),
+                Some(error) => Line::raw(format!("{error:#}")).patch_style(Role::Error.style()),
                 None => Line::raw(format!("It answers to {} now.", self.binding.keys_text()))
-                    .fg(Color::DarkGray),
+                    .patch_style(Role::Hint.style()),
             },
         ];
 
@@ -167,7 +166,7 @@ impl Component for BindKeyPopup {
         let text_height = wrapped_height(&lines, popup_text_width(area));
 
         let area = centered_rect_line_height(area, POPUP_WIDTH_PERCENT, text_height + 4);
-        f.render_widget(Clear, area);
+        clear(f, area);
         f.render_widget(&block, area);
 
         let chunks = Layout::default()
@@ -180,7 +179,7 @@ impl Component for BindKeyPopup {
             popup_footer(vec![Line::raw(
                 "every key is one to bind, so there is none to leave by",
             )])
-            .fg(Color::DarkGray)
+            .style(Role::Hint.style())
             .alignment(Alignment::Center),
             chunks[1],
         );

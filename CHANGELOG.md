@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bound to keys of their own: `[blazingjj.keybinds.log-tab] push`, `push-new`,
   `push-all` and `push-all-new` are still there and can bind `p`, `ctrl+p`,
   `shift+p` and `ctrl+shift+p` back
+- Color names are now read as jj reads them, so `white` is the dim one of the
+  sixteen rather than the bright one. The names blazingjj took before are all
+  still taken, `white` alone having changed which color it means
+- `blazingjj.highlight-color` is gone: `blazingjj.colors.highlight.bg` is what
+  sets the background of the selected row, and the colors tab is where it is
+  set from
 
 ### Added
 
@@ -48,6 +54,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   working in and where it is, the revset the log is showing and how many
   changes it has marked. It has taken over the `q`/`?`/`R` hints and the
   runtime counter from the header, which now holds the tab bar alone
+- Every element of the interface can be given a foreground and a background
+  under `blazingjj.colors`, as either the color to draw it in or a table of
+  `fg` and `bg`. An element that says nothing about a color takes
+  `blazingjj.colors.default`'s, and where that says nothing either the
+  terminal's own shows through, so a background can be set once for the whole
+  interface without giving up the terminal's when it is left alone. An element
+  that is a kind of another falls back to that one first: `button-active`
+  takes the `highlight`'s colors and `separator` takes the `hint`'s, unless
+  given their own
+- A color can be written as one of the sixteen names, an `#rrggbb` code,
+  `ansi-color-0` through `ansi-color-255`, or `default` for the terminal's own
+- `blazingjj.colors.scheme` draws the app in one of the color schemes it comes
+  with: `catppuccin-mocha`, `catppuccin-macchiato`, `catppuccin-frappe`,
+  `catppuccin-latte`, `solarized-dark`, `solarized-light`, `tokyo-night`,
+  `tokyo-night-storm`, `tokyo-night-moon` or `tokyo-night-day`. A scheme
+  says what the sixteen colors of the terminal palette look like, and almost
+  everything is drawn in one of the sixteen, so picking one recolors all of
+  it. What is set under `blazingjj.colors` still wins over the scheme
+  - jj is told to write in the scheme's colors too, so the log, the diffs and
+    the operation log match the frame around them rather than being the one
+    part of the app a scheme does not reach. That overrides whatever is set
+    under jj's own `colors` and can be turned down with
+    `blazingjj.colors.apply-to-jj = false`. It reaches only the runs blazingjj
+    renders itself: a program handed the terminal, like `jj describe` in your
+    editor or a diff tool, stays as you configured it
+  - `change-id` and `bookmark` are handed to jj the same way, with or without
+    a scheme: they name jj's own output rather than anything blazingjj draws,
+    so that is the only way they reach the screen. A channel you say nothing
+    about stays as jj draws it, so the working copy's change id keeps the
+    brighter tone jj tells it apart by. Without a scheme and without either of
+    those set, jj is left entirely alone
+- The `blazingjj.colors` row of the settings tab opens the colors, which are
+  changed there one element at a time, the way the keybindings are. Each is
+  listed drawn in its own colors; `Enter` asks what an element is drawn in,
+  `b` what it is drawn on, and `x` takes both back out of your config, while
+  clearing either field takes just that one out. The keys are configured
+  under `[blazingjj.keybinds.colors-tab]`
+- The settings and keybindings tabs draw what an option or a binding is set to
+  in the `value` color
+- The labels in the settings tab's details panel are dimmed
 - `+` (`goto-child`) moves the log tab selection to the child of the selected
   change, asking which one when it has several in the log view, the way `-`
   does for its parents

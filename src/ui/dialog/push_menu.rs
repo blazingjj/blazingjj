@@ -7,7 +7,6 @@ use ratatui::text::Line;
 
 use crate::app::command;
 use crate::commander::log::Head;
-use crate::env::JjConfig;
 use crate::keybinds::PushScope;
 use crate::ui::dialog::Choice;
 use crate::ui::dialog::ChoicePopup;
@@ -33,7 +32,7 @@ const SCOPES: [(PushScope, char, &str); 6] = [
 
 /// The push menu for `selected`, put where it was opened. Every entry
 /// asks for what the keybinding of its scope would.
-pub fn push_menu(config: JjConfig, anchor: Option<Position>, selected: &Head) -> ChoicePopup {
+pub fn push_menu(anchor: Option<Position>, selected: &Head) -> ChoicePopup {
     let items = SCOPES.iter().map(|(scope, key, label)| {
         Choice::new(
             Line::raw(format!("[{key}] {label}")),
@@ -42,5 +41,5 @@ pub fn push_menu(config: JjConfig, anchor: Option<Position>, selected: &Head) ->
         .key(*key)
     });
 
-    ChoicePopup::new(config, anchor, "Push", items)
+    ChoicePopup::new(anchor, "Push", items)
 }

@@ -6,15 +6,12 @@ use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Alignment;
 use ratatui::layout::Margin;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
-use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::text::Text;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Padding;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Scrollbar;
@@ -25,8 +22,10 @@ use ratatui::widgets::Wrap;
 use crate::event::Mouse;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
+use crate::theme::Role;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::clear;
 use crate::ui::utils::LargeString;
 use crate::ui::utils::centered_rect;
 use crate::ui::utils::centered_rect_fixed;
@@ -134,17 +133,17 @@ impl Component for MessagePopup<'_> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let mut title = self.title.clone();
         title.spans = [vec![Span::raw(" ")], title.spans, vec![Span::raw(" ")]].concat();
-        title = title.fg(Color::Cyan).bold();
+        title = title.patch_style(Role::PopupTitle.style()).bold();
 
         let block = Block::bordered()
             .title(title.clone())
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Green))
+            .border_style(Role::PopupBorder.style())
             .padding(Padding::horizontal(1));
 
         let popup_rect = self.popup_rect(area, &block, title.width() as u16);
-        f.render_widget(Clear, popup_rect);
+        clear(f, popup_rect);
 
         let inner = block.inner(popup_rect);
         let content_rect = inner.inner(Margin {
@@ -171,7 +170,7 @@ impl Component for MessagePopup<'_> {
         f.render_widget(paragraph, content_rect);
 
         let max_scroll = self.max_scroll();
-        let indicator_style = Style::default().fg(Color::DarkGray);
+        let indicator_style = Role::Hint.style();
         if self.scroll > 0 {
             let top_gap = Rect {
                 y: inner.y,

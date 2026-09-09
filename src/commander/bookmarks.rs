@@ -9,7 +9,6 @@ It is mostly used in the [bookmarks_tab][crate::ui::bookmarks_tab] module.
 use std::collections::HashMap;
 use std::fmt::Display;
 
-use ansi_to_tui::IntoText;
 use anyhow::Result;
 use itertools::Itertools;
 use ratatui::text::Text;
@@ -23,6 +22,7 @@ use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::log::head_template;
 use crate::commander::revset::Revset;
+use crate::ui::styles::AnsiText;
 
 /// A bookmark as [bookmark_template] describes it. The field names are the
 /// ones the template writes.
@@ -124,8 +124,8 @@ pub enum BookmarkLine {
 impl BookmarkLine {
     pub fn to_text(&self) -> Result<Text<'_>, ansi_to_tui::Error> {
         match self {
-            BookmarkLine::Unparsable(text) => text.to_text(),
-            BookmarkLine::Parsed { text, .. } => text.to_text(),
+            BookmarkLine::Unparsable(text) => text.to_ansi_text(),
+            BookmarkLine::Parsed { text, .. } => text.to_ansi_text(),
         }
     }
 }

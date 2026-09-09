@@ -71,6 +71,9 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Rebind any key from the `blazingjj.keybinds` row: `Enter` on an action
     takes the next key you press for it, `a` takes one more key beside the
     keys it has, `X` leaves it bound to nothing
+  - Recolor any element from the `blazingjj.colors` row: `Enter` on an element
+    asks what it is drawn in, `b` what it is drawn on, `x` takes both back out;
+    clearing either field takes just that one out
 - Config: Configure blazingjj with your jj config
 - Command box: Run jj commands directly in blazingjj with `:`
 - Help: See all key mappings with `?`
@@ -105,7 +108,19 @@ To build and install a pre-release version: `cargo install --git https://github.
 
 You can optionally configure the following options through your jj config:
 
-- `blazingjj.highlight-color`: Changes the highlight color. Can use named colors. Defaults to `#323264`
+- `blazingjj.colors.scheme`: The colors the app is drawn in. One of `catppuccin-mocha`, `catppuccin-macchiato`, `catppuccin-frappe`, `catppuccin-latte`, `solarized-dark`, `solarized-light`, `tokyo-night`, `tokyo-night-storm`, `tokyo-night-moon` or `tokyo-night-day`. Without one, the terminal's own colors are used
+  - A scheme says what the sixteen colors of the terminal palette look like, and the app draws almost everything in one of the sixteen, so picking one recolors all of it — including the dim text that is otherwise your terminal's `bright black`, which some palettes put too close to the background to read
+  - Individual elements can still be given colors of their own under `blazingjj.colors`, which win over the scheme
+- `blazingjj.colors.apply-to-jj`: Whether jj is told what to write its own output in, so the log, diffs and operation log match the frame around them. A scheme is, and so are `change-id` and `bookmark`, which jj draws rather than blazingjj and which are drawn in nothing else. Without either, jj is left entirely alone
+  - jj names colors rather than giving them — all but a handful of its own `colors` settings name one of the sixteen — so what is handed over is jj's own settings with each name replaced by what the palette makes of it. jj goes on deciding which label is which color
+  - It overrides whatever you have set under `colors` yourself, on the grounds that you set that for using jj on the command line. It only reaches the runs blazingjj renders itself: `jj describe` in your editor, a diff tool or a pager handed the terminal stays as you configured it
+- `blazingjj.colors.<element>`: The color an element of the interface is drawn in, as either the foreground color or a table of `fg` and `bg`: `jj config set --user blazingjj.colors.hint '{ fg = "#7aa2f7" }'`
+  - The elements are `default`, `highlight`, `hint`, `value`, `separator`, `border`, `panel-title`, `heading`, `workspace`, `popup-border`, `popup-title`, `button`, `button-active`, `error`, `warning`, `success`, `change-id`, `bookmark`, `file-added`, `file-modified`, `file-renamed`, `file-copied`, `file-deleted` and `conflict`
+  - `change-id` and `bookmark` are jj's output rather than blazingjj's, so they reach the screen by being handed to jj, which `blazingjj.colors.apply-to-jj = false` turns off along with the scheme. A channel you say nothing about stays as jj draws it, so the working copy's own change id keeps the brighter tone jj tells it apart by
+  - An element that is a kind of another falls back to that one before `default`: `button-active`, the button Enter presses, takes the `highlight`'s colors, and `separator` takes the `hint`'s, unless given their own
+  - `default` is what the rest fall back to: an element that says nothing about a color takes `default`'s, and where that says nothing either the terminal's own shows through. So setting `blazingjj.colors.default.bg` gives the whole interface a background, while leaving it unset keeps your terminal's
+  - A color is one of the sixteen names (`red`, `bright black`, ...), an `#rrggbb` code, `ansi-color-0` through `ansi-color-255`, or `default` for the terminal's own. Names are read as jj reads them, so `white` is the dim one and `bright white` the bright one
+  - The `blazingjj.colors` row of the settings tab opens the list of elements, showing each drawn in its own colors, and changes them one at a time
 - `blazingjj.diff-format`: Change the default diff format. Can be `color-words`, `git`, `pager`, `summary` or `stat`. Defaults to `color_words`
   - If `blazingjj.diff-format` is not set but `ui.diff.format` is, the latter will be used
 - `blazingjj.diff-tool`: Specify which diff tool to use by default

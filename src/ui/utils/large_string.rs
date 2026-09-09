@@ -4,9 +4,10 @@ output to a Text but this require more space. Instead, the LargeString
 findes all line breaks, and provide methods for converting only the
 visible lines into a Text. */
 
-use ansi_to_tui::IntoText;
 use ratatui::text::Text;
 use tracing::error;
+
+use crate::ui::styles::AnsiText;
 
 /// Store a large ANSI colour coded string in a way that allows you
 /// to quickly extract a small range and convert it into Text
@@ -125,7 +126,7 @@ impl LargeString {
     pub fn render(&self, top_line: usize, line_count: usize) -> Text<'_> {
         let content_str: &str =
             &self.content[self.line_start(top_line)..self.line_start(top_line + line_count)];
-        match content_str.into_text() {
+        match content_str.owned_ansi_text() {
             Ok(text) => text,
             Err(err) => {
                 error!("Error converting \"{}\" into ratatui::Text", content_str);

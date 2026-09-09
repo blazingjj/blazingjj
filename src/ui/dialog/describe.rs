@@ -10,14 +10,10 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::prelude::Stylize;
-use ratatui::style::Color;
-use ratatui::style::Style;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
 use ratatui::widgets::Borders;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
@@ -29,10 +25,12 @@ use crate::env::DescribeMode;
 use crate::env::get_env;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
 use crate::ui::Interactive;
+use crate::ui::styles::clear;
 use crate::ui::styles::refusal;
 use crate::ui::utils::centered_rect_fixed;
 
@@ -89,10 +87,10 @@ impl DescribePopup<'_> {
 impl Component for DescribePopup<'_> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let block = Block::bordered()
-            .title(Span::styled(" Describe ", Style::new().bold().cyan()))
+            .title(Span::styled(" Describe ", Role::PopupTitle.style().bold()))
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Green));
+            .border_style(Role::PopupBorder.style());
 
         const MAX_COMMIT_WIDTH: u16 = 72;
         const MIN_COMMIT_HEIGHT: u16 = 5;
@@ -108,7 +106,7 @@ impl Component for DescribePopup<'_> {
             width,
             max(MIN_COMMIT_HEIGHT + 4 + error_height, area.height / 2),
         );
-        f.render_widget(Clear, area);
+        clear(f, area);
         f.render_widget(&block, area);
 
         let popup_chunks = Layout::default()
@@ -127,13 +125,13 @@ impl Component for DescribePopup<'_> {
         }
 
         let help = Paragraph::new(vec![self.keybinds.hint("accept").into()])
-            .fg(Color::DarkGray)
+            .style(Role::Hint.style())
             .alignment(Alignment::Center)
             .block(
                 Block::default()
                     .borders(Borders::TOP)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(Color::DarkGray)),
+                    .border_style(Role::Separator.style()),
             );
         f.render_widget(help, popup_chunks[2]);
 

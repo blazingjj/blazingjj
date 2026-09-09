@@ -26,6 +26,7 @@ use crate::keybinds::SettingsTabKeybinds;
 use crate::settings::SETTINGS;
 use crate::settings::Setting;
 use crate::settings::SettingKind;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
@@ -39,6 +40,10 @@ use crate::ui::panel::PanelMouseInput;
 use crate::ui::panel::Row as SectionRow;
 use crate::ui::panel::Sections;
 use crate::ui::panel::copy_marked;
+use crate::ui::styles::panel_block;
+use crate::ui::styles::panel_title;
+use crate::ui::styles::patched;
+use crate::ui::styles::section_heading;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::error_text;
 
@@ -119,6 +124,7 @@ impl SettingsTab {
         let setting = self.selected()?;
         match setting.kind {
             SettingKind::Keybindings => return Some(AppAction::ViewTab(TabId::Keybindings)),
+            SettingKind::Colors => return Some(AppAction::ViewTab(TabId::Colors)),
             SettingKind::Toggle(now) => {
                 return Some(AppAction::Run(Command::SetSetting {
                     key: setting.key.to_owned(),
@@ -162,7 +168,6 @@ impl SettingsTab {
 
         Some(AppAction::SetPopup(Box::new(
             ChoicePopup::new(
-                get_env().jj_config.clone(),
                 self.settings_pane
                     .item_anchor(self.settings.selected_row(), 1),
                 setting.key,
@@ -176,9 +181,10 @@ impl SettingsTab {
     /// whatever the rest of the configuration says.
     fn unset_selected(&self) -> Option<AppAction> {
         let setting = self.selected()?;
-        // Taking the keybindings out would be taking out every binding
-        // at once, which is the keybindings tab's to do one at a time.
-        if matches!(setting.kind, SettingKind::Keybindings) {
+        // Taking the keybindings or the colours out would be taking out
+        // every one of them at once, which the tab that opens is what
+        // does one at a time.
+        if matches!(setting.kind, SettingKind::Keybindings | SettingKind::Colors) {
             return None;
         }
 
@@ -201,7 +207,6 @@ impl SettingsTab {
         }
 
         Some(AppAction::SetPopup(Box::new(ChoicePopup::new(
-            get_env().jj_config.clone(),
             anchor,
             "Setting actions",
             items,
@@ -235,15 +240,14 @@ impl SettingsTab {
                 let line = match row {
                     // The indent is no part of the heading, so it is no
                     // part of what is underlined either.
-                    SectionRow::Heading(heading) => Line::from(vec![
-                        Span::raw(" "),
-                        Span::raw(*heading).bold().underlined(),
-                    ]),
+                    SectionRow::Heading(heading) => {
+                        Line::from(vec![Span::raw(" "), section_heading(*heading)])
+                    }
                     SectionRow::Item(setting) => {
                         let value = match values.value(setting) {
-                            Some(value) => Span::raw(value),
+                            Some(value) => Span::raw(value).patch_style(Role::Value.style()),
                             None => Span::raw(setting.fallback.to_owned())
-                                .fg(Color::DarkGray)
+                                .patch_style(Role::Hint.style())
                                 .italic(),
                         };
 
@@ -255,7 +259,7 @@ impl SettingsTab {
                 };
 
                 if index == self.settings.selected_row() {
-                    line.bg(get_env().jj_config.highlight_color())
+                    patched(line, Role::Highlight.style())
                 } else {
                     line
                 }
@@ -276,23 +280,31 @@ impl SettingsTab {
             Line::raw(""),
         ];
 
+        let label = |what: &str| Span::raw(format!("{what:13}")).patch_style(Role::Hint.style());
+
         lines.push(match values.value(setting) {
             Some(value) => Line::from(vec![
-                Span::raw("Set to:      "),
-                Span::raw(value).bold(),
+                label("Set to:"),
+                Span::raw(value).patch_style(Role::Value.style()).bold(),
                 Span::raw(if values.is_users(setting) {
                     "  (in your config)"
                 } else {
                     "  (elsewhere in your configuration)"
                 })
-                .fg(Color::DarkGray),
+                .patch_style(Role::Hint.style()),
             ]),
-            None => Line::raw("Not set."),
+            None => Line::from(Span::raw("Not set.").patch_style(Role::Hint.style())),
         });
-        lines.push(Line::raw(format!("When unset:  {}", setting.fallback)));
+        lines.push(Line::from(vec![
+            label("When unset:"),
+            Span::raw(setting.fallback),
+        ]));
 
         if let Some(choices) = setting.choices() {
-            lines.push(Line::raw(format!("One of:      {}", choices.join(", "))));
+            lines.push(Line::from(vec![
+                label("One of:"),
+                Span::raw(choices.join(", ")),
+            ]));
         }
 
         Text::from(lines)
@@ -361,9 +373,7 @@ impl Component for SettingsTab {
             ),
         };
 
-        let block = Block::bordered()
-            .title(" Settings ")
-            .border_type(BorderType::Rounded);
+        let block = panel_block().title(panel_title(" Settings "));
         *self.settings_list_state.selected_mut() = Some(self.settings.selected_row());
         self.settings_pane.render(
             f,
@@ -375,9 +385,8 @@ impl Component for SettingsTab {
 
         f.render_widget(
             Paragraph::new(details).wrap(Wrap { trim: false }).block(
-                Block::bordered()
-                    .title(" About ")
-                    .border_type(BorderType::Rounded)
+                panel_block()
+                    .title(panel_title(" About "))
                     .padding(Padding::horizontal(1)),
             ),
             chunks[1],
@@ -519,12 +528,14 @@ mod tests {
 
     #[test]
     fn the_details_panel_says_what_the_selected_option_does() {
-        let screen = screen(&mut tab("blazingjj.highlight-color = \"#123456\"\n"));
+        let mut tab = tab("blazingjj.layout = \"vertical\"\n");
+        select(&mut tab, "blazingjj.layout");
+        let screen = screen(&mut tab);
 
         assert!(
             screen
                 .iter()
-                .any(|row| row.contains("Background colour of the selected row")),
+                .any(|row| row.contains("How a tab divides itself")),
             "{screen:?}"
         );
     }

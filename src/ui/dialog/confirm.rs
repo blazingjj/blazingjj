@@ -12,26 +12,24 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
-use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::text::Text;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Padding;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 
-use crate::env::JjConfig;
 use crate::keybinds::ConfirmPopupEvent;
 use crate::keybinds::ConfirmPopupKeybinds;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::clear;
 use crate::ui::utils::centered_rect_fixed;
 use crate::ui::utils::mark_key;
 
@@ -60,19 +58,13 @@ pub struct ConfirmPopup {
     question_height: u16,
     /// Rows the question takes once wrapped, updated on every draw
     question_rows: usize,
-    config: JjConfig,
     keybinds: PopupKeybinds,
     own_keybinds: ConfirmPopupKeybinds,
 }
 
 impl ConfirmPopup {
     /// A question titled `title`, raising `confirmed` when answered yes.
-    pub fn new(
-        config: JjConfig,
-        title: &'static str,
-        question: Text<'static>,
-        confirmed: AppAction,
-    ) -> Self {
+    pub fn new(title: &'static str, question: Text<'static>, confirmed: AppAction) -> Self {
         Self {
             title,
             question,
@@ -81,7 +73,6 @@ impl ConfirmPopup {
             scroll: 0,
             question_height: 0,
             question_rows: 0,
-            config,
             keybinds: PopupKeybinds::dialog(),
             own_keybinds: ConfirmPopupKeybinds::new(),
         }
@@ -156,11 +147,9 @@ impl ConfirmPopup {
     /// A button, marked when Enter is what presses it.
     fn button(&self, label: String, selected: bool) -> Paragraph<'static> {
         let style = if selected {
-            Style::default()
-                .bg(self.config.highlight_color())
-                .underlined()
+            Role::ButtonActive.style().underlined()
         } else {
-            Style::default()
+            Role::Button.style()
         };
 
         Paragraph::new(Span::styled(label, style))
@@ -169,7 +158,7 @@ impl ConfirmPopup {
     /// Say which way there is more of the question to see, in the blank
     /// rows the padding leaves either side of it.
     fn draw_scroll_indicators(&self, f: &mut Frame<'_>, area: Rect) {
-        let style = Style::default().fg(Color::DarkGray);
+        let style = Role::Hint.style();
         let arrow = |f: &mut Frame<'_>, y: u16, arrow: &'static str| {
             f.render_widget(
                 Paragraph::new(Line::from(arrow).centered()).style(style),
@@ -227,7 +216,7 @@ impl Component for ConfirmPopup {
         // scroll past the end of the question.
         self.scroll(0);
 
-        f.render_widget(Clear, area);
+        clear(f, area);
         // The question is padded away from the border the block draws
         // over it afterwards.
         f.render_widget(
@@ -241,11 +230,11 @@ impl Component for ConfirmPopup {
             Block::bordered()
                 .title(Span::styled(
                     format!(" {} ", self.title),
-                    Style::new().bold().cyan(),
+                    Role::PopupTitle.style().bold(),
                 ))
                 .title_alignment(Alignment::Center)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Green)),
+                .border_style(Role::PopupBorder.style()),
             area,
         );
         self.draw_buttons(f, chunks[1]);
@@ -316,7 +305,6 @@ mod tests {
     /// A question raising a recognisable action when answered yes.
     fn popup() -> ConfirmPopup {
         ConfirmPopup::new(
-            JjConfig::default(),
             "Abandon",
             Text::from(vec![
                 Line::from("Are you sure you want to abandon this change?"),
@@ -335,7 +323,6 @@ mod tests {
     /// of them.
     fn long_popup(lines: usize) -> ConfirmPopup {
         ConfirmPopup::new(
-            JjConfig::default(),
             "Push",
             Text::from(
                 (0..lines)
@@ -395,7 +382,8 @@ mod tests {
             .collect()
     }
 
-    /// Whether the cell the label starts in is the highlighted one.
+    /// Whether the cell the label starts in is drawn as the active
+    /// button.
     fn is_selected(buffer: &Buffer, label: &str) -> bool {
         let rows = rows(buffer);
         let (row, line) = rows
@@ -409,8 +397,7 @@ mod tests {
             .chars()
             .count();
 
-        buffer[(column as u16, row as u16)].style().bg
-            == Some(JjConfig::default().highlight_color())
+        buffer[(column as u16, row as u16)].style().bg == Role::ButtonActive.style().bg
     }
 
     #[test]

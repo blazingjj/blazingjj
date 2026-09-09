@@ -7,14 +7,10 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
-use ratatui::prelude::Stylize;
-use ratatui::style::Color;
-use ratatui::style::Style;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
 use ratatui::widgets::Borders;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui_textarea::CursorMove;
 use ratatui_textarea::TextArea;
@@ -25,9 +21,11 @@ use crate::commander::jj::PushTarget;
 use crate::commander::revset::Revset;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
+use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
 use crate::ui::ComponentInputResult;
+use crate::ui::styles::clear;
 use crate::ui::styles::refusal;
 use crate::ui::utils::centered_rect_line_height;
 
@@ -114,10 +112,10 @@ impl BookmarkNamePopup<'_> {
 impl Component for BookmarkNamePopup<'_> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let block = Block::bordered()
-            .title(Span::styled(self.title(), Style::new().bold().cyan()))
+            .title(Span::styled(self.title(), Role::PopupTitle.style().bold()))
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Green));
+            .border_style(Role::PopupBorder.style());
 
         // The width the popup is about to get, which the answer has to
         // be wrapped to before we know how tall to make it.
@@ -129,7 +127,7 @@ impl Component for BookmarkNamePopup<'_> {
         let error_height = error.as_ref().map_or(0, |(_, height)| *height);
 
         let area = centered_rect_line_height(area, 30, 5 + error_height);
-        f.render_widget(Clear, area);
+        clear(f, area);
         f.render_widget(&block, area);
 
         let popup_chunks = Layout::default()
@@ -149,13 +147,13 @@ impl Component for BookmarkNamePopup<'_> {
 
         f.render_widget(
             Paragraph::new(vec![self.keybinds.hint("accept").into()])
-                .fg(Color::DarkGray)
+                .style(Role::Hint.style())
                 .alignment(Alignment::Center)
                 .block(
                     Block::default()
                         .borders(Borders::TOP)
                         .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(Color::DarkGray)),
+                        .border_style(Role::Separator.style()),
                 ),
             popup_chunks[2],
         );

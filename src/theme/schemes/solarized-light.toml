@@ -1,0 +1,34 @@
+# Solarized Light, by Ethan Schoonover.
+# https://ethanschoonover.com/solarized/
+#
+# The same sixteen as Solarized Dark: the scheme keeps the palette and
+# swaps only which end of its tones the app is drawn on and in.
+
+[palette]
+fg = "#657b83"                # base00
+bg = "#fdf6e3"                # base3
+black = "#073642"             # base02
+red = "#dc322f"
+green = "#859900"
+yellow = "#b58900"
+blue = "#268bd2"
+magenta = "#d33682"
+cyan = "#2aa198"
+white = "#eee8d5"             # base2
+bright-black = "#002b36"      # base03
+bright-red = "#cb4b16"        # orange
+bright-green = "#586e75"      # base01
+bright-yellow = "#657b83"     # base00
+bright-blue = "#839496"       # base0
+bright-magenta = "#6c71c4"    # violet
+bright-cyan = "#93a1a1"       # base1
+bright-white = "#fdf6e3"      # base3
+
+[colors]
+button = "#657b83"
+# base2, Solarized's highlight background.
+highlight = { bg = "#eee8d5" }
+# base0 and base1, the two tones above the text: `bright black` is
+# base03, as dark as the text, so neither can be left to the palette.
+hint = "#839496"
+separator = "#93a1a1"
