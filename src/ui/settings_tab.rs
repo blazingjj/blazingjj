@@ -280,9 +280,11 @@ impl SettingsTab {
             Line::raw(""),
         ];
 
+        let label = |what: &str| Span::raw(format!("{what:13}")).patch_style(Role::Hint.style());
+
         lines.push(match values.value(setting) {
             Some(value) => Line::from(vec![
-                Span::raw("Set to:      "),
+                label("Set to:"),
                 Span::raw(value).patch_style(Role::Value.style()).bold(),
                 Span::raw(if values.is_users(setting) {
                     "  (in your config)"
@@ -291,12 +293,18 @@ impl SettingsTab {
                 })
                 .patch_style(Role::Hint.style()),
             ]),
-            None => Line::raw("Not set."),
+            None => Line::from(Span::raw("Not set.").patch_style(Role::Hint.style())),
         });
-        lines.push(Line::raw(format!("When unset:  {}", setting.fallback)));
+        lines.push(Line::from(vec![
+            label("When unset:"),
+            Span::raw(setting.fallback),
+        ]));
 
         if let Some(choices) = setting.choices() {
-            lines.push(Line::raw(format!("One of:      {}", choices.join(", "))));
+            lines.push(Line::from(vec![
+                label("One of:"),
+                Span::raw(choices.join(", ")),
+            ]));
         }
 
         Text::from(lines)
