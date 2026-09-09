@@ -66,7 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A color can be written as one of the sixteen names, an `#rrggbb` code,
   `ansi-color-0` through `ansi-color-255`, or `default` for the terminal's own
 - `blazingjj.colors.scheme` draws the app in one of the color schemes it comes
-  with: `solarized-dark`, `solarized-light`, `tokyo-night`,
+  with: `catppuccin-mocha`, `catppuccin-macchiato`, `catppuccin-frappe`,
+  `catppuccin-latte`, `solarized-dark`, `solarized-light`, `tokyo-night`,
   `tokyo-night-storm`, `tokyo-night-moon` or `tokyo-night-day`. A scheme
   says what the sixteen colors of the terminal palette look like, and almost
   everything is drawn in one of the sixteen, so picking one recolors all of

@@ -105,7 +105,7 @@ To build and install a pre-release version: `cargo install --git https://github.
 
 You can optionally configure the following options through your jj config:
 
-- `blazingjj.colors.scheme`: The colors the app is drawn in. One of `solarized-dark`, `solarized-light`, `tokyo-night`, `tokyo-night-storm`, `tokyo-night-moon` or `tokyo-night-day`. Without one, the terminal's own colors are used
+- `blazingjj.colors.scheme`: The colors the app is drawn in. One of `catppuccin-mocha`, `catppuccin-macchiato`, `catppuccin-frappe`, `catppuccin-latte`, `solarized-dark`, `solarized-light`, `tokyo-night`, `tokyo-night-storm`, `tokyo-night-moon` or `tokyo-night-day`. Without one, the terminal's own colors are used
   - A scheme says what the sixteen colors of the terminal palette look like, and the app draws almost everything in one of the sixteen, so picking one recolors all of it — including the dim text that is otherwise your terminal's `bright black`, which some palettes put too close to the background to read
   - Individual elements can still be given colors of their own under `blazingjj.colors`, which win over the scheme
 - `blazingjj.colors.apply-to-jj`: Whether jj is told what to write its own output in, so the log, diffs and operation log match the frame around them. A scheme is, and so are `change-id` and `bookmark`, which jj draws rather than blazingjj and which are drawn in nothing else. Without either, jj is left entirely alone

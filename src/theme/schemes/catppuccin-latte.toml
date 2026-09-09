@@ -1,0 +1,36 @@
+# Catppuccin Latte, by the Catppuccin org.
+# https://github.com/catppuccin/catppuccin
+#
+# The light one of the four. The greys run the other way round from the
+# dark flavours: the style guide takes the dim colours from the text
+# tones and the bright ones from the surfaces.
+
+[palette]
+fg = "#4c4f69"                # text
+bg = "#eff1f5"                # base
+black = "#5c5f77"             # subtext1
+red = "#d20f39"
+green = "#40a02b"
+yellow = "#df8e1d"
+blue = "#1e66f5"
+magenta = "#ea76cb"           # pink
+cyan = "#179299"              # teal
+white = "#acb0be"             # surface2
+bright-black = "#6c6f85"      # subtext0
+bright-red = "#d20f39"
+bright-green = "#40a02b"
+bright-yellow = "#df8e1d"
+bright-blue = "#1e66f5"
+bright-magenta = "#ea76cb"
+bright-cyan = "#179299"
+bright-white = "#bcc0cc"      # surface1
+
+[colors]
+# The buttons and the hints would take a surface tone, which is what
+# the app is drawn on rather than something to read off it.
+button = "#4c4f69"
+# overlay2 at a quarter of its opacity over the background, which is
+# how Catppuccin gives the selection.
+highlight = { bg = "#d2d5dd" }
+# overlay2, Catppuccin's colour for comments.
+hint = "#7c7f93"

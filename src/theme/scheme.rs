@@ -28,7 +28,23 @@ use crate::theme::roles_from_table;
 
 /// The schemes the app comes with, by name and by the file each is read
 /// from, in the order they are offered.
-const SOURCES: [(&str, &str); 6] = [
+const SOURCES: [(&str, &str); 10] = [
+    (
+        "catppuccin-mocha",
+        include_str!("schemes/catppuccin-mocha.toml"),
+    ),
+    (
+        "catppuccin-macchiato",
+        include_str!("schemes/catppuccin-macchiato.toml"),
+    ),
+    (
+        "catppuccin-frappe",
+        include_str!("schemes/catppuccin-frappe.toml"),
+    ),
+    (
+        "catppuccin-latte",
+        include_str!("schemes/catppuccin-latte.toml"),
+    ),
     (
         "solarized-dark",
         include_str!("schemes/solarized-dark.toml"),
