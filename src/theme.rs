@@ -60,11 +60,18 @@ pub enum Role {
     FileDeleted,
     Conflict,
     Value,
+    DiffHeader,
+    DiffFileHeader,
+    DiffHunkHeader,
+    DiffAdded,
+    DiffAddedWord,
+    DiffRemoved,
+    DiffRemovedWord,
 }
 
 impl Role {
     /// Every role there is, in the order the colours tab lists them.
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 31] = [
         Self::Default,
         Self::Highlight,
         Self::Hint,
@@ -89,6 +96,13 @@ impl Role {
         Self::FileCopied,
         Self::FileDeleted,
         Self::Conflict,
+        Self::DiffHeader,
+        Self::DiffFileHeader,
+        Self::DiffHunkHeader,
+        Self::DiffAdded,
+        Self::DiffAddedWord,
+        Self::DiffRemoved,
+        Self::DiffRemovedWord,
     ];
 
     /// Where the role's own colours sit, which is where it is declared
@@ -124,6 +138,13 @@ impl Role {
             Self::FileDeleted => "file-deleted",
             Self::Conflict => "conflict",
             Self::Value => "value",
+            Self::DiffHeader => "diff-header",
+            Self::DiffFileHeader => "diff-file-header",
+            Self::DiffHunkHeader => "diff-hunk-header",
+            Self::DiffAdded => "diff-added",
+            Self::DiffAddedWord => "diff-added-word",
+            Self::DiffRemoved => "diff-removed",
+            Self::DiffRemovedWord => "diff-removed-word",
         }
     }
 
@@ -164,6 +185,19 @@ impl Role {
             Self::Value => {
                 "What an option or a binding is set to, where the settings and keybindings tabs list them."
             }
+            Self::DiffHeader => "The line a diff names a file under, in the color words format.",
+            Self::DiffFileHeader => {
+                "The block naming a file and what it was, above its hunks in the git format."
+            }
+            Self::DiffHunkHeader => "The line saying where in a file a hunk sits.",
+            Self::DiffAdded => "A line, or a word, a diff adds.",
+            Self::DiffAddedWord => {
+                "The words that changed inside an added line. Takes the added line's colors unless given its own."
+            }
+            Self::DiffRemoved => "A line, or a word, a diff removes.",
+            Self::DiffRemovedWord => {
+                "The words that changed inside a removed line. Takes the removed line's colors unless given its own."
+            }
         }
     }
 
@@ -188,6 +222,13 @@ impl Role {
             | Self::FileCopied
             | Self::FileDeleted
             | Self::Conflict => "Files",
+            Self::DiffHeader
+            | Self::DiffFileHeader
+            | Self::DiffHunkHeader
+            | Self::DiffAdded
+            | Self::DiffAddedWord
+            | Self::DiffRemoved
+            | Self::DiffRemovedWord => "Diffs",
         }
     }
 
@@ -208,7 +249,12 @@ impl Role {
             | Self::Border
             | Self::PanelTitle
             | Self::Heading
-            | Self::ButtonActive => RoleColors::default(),
+            | Self::ButtonActive
+            // jj tells the file header apart by boldness alone, and
+            // marks the changed words out by underlining them.
+            | Self::DiffFileHeader
+            | Self::DiffAddedWord
+            | Self::DiffRemovedWord => RoleColors::default(),
             Self::Highlight => RoleColors {
                 fg: None,
                 bg: Some(ThemeColor::Rgb(50, 50, 150)),
@@ -216,14 +262,19 @@ impl Role {
             Self::Separator => ansi(Ansi::BrightBlack),
             Self::Hint => ansi(Ansi::White),
             Self::Value => ansi(Ansi::Blue),
-            Self::PopupBorder | Self::Success | Self::FileAdded => ansi(Ansi::Green),
+            Self::PopupBorder | Self::Success | Self::FileAdded | Self::DiffAdded => {
+                ansi(Ansi::Green)
+            }
             Self::PopupTitle
             | Self::Workspace
             | Self::FileModified
             | Self::FileRenamed
-            | Self::FileCopied => ansi(Ansi::Cyan),
-            Self::Error | Self::FileDeleted | Self::Conflict => ansi(Ansi::Red),
-            Self::Warning => ansi(Ansi::Yellow),
+            | Self::FileCopied
+            | Self::DiffHunkHeader => ansi(Ansi::Cyan),
+            Self::Error | Self::FileDeleted | Self::Conflict | Self::DiffRemoved => {
+                ansi(Ansi::Red)
+            }
+            Self::Warning | Self::DiffHeader => ansi(Ansi::Yellow),
             Self::Button => ansi(Ansi::BrightWhite),
             Self::ChangeId | Self::Bookmark => ansi(Ansi::Magenta),
         }
@@ -246,6 +297,13 @@ impl Role {
                 "working_copy local_bookmarks",
                 "working_copy remote_bookmarks",
             ],
+            Self::DiffHeader => &["diff header"],
+            Self::DiffFileHeader => &["diff file_header"],
+            Self::DiffHunkHeader => &["diff hunk_header"],
+            Self::DiffAdded => &["diff added"],
+            Self::DiffAddedWord => &["diff added token"],
+            Self::DiffRemoved => &["diff removed"],
+            Self::DiffRemovedWord => &["diff removed token"],
             _ => &[],
         }
     }
@@ -259,6 +317,8 @@ impl Role {
         match self {
             Self::Default => None,
             Self::ButtonActive => Some(Self::Highlight),
+            Self::DiffAddedWord => Some(Self::DiffAdded),
+            Self::DiffRemovedWord => Some(Self::DiffRemoved),
             _ => Some(Self::Default),
         }
     }
