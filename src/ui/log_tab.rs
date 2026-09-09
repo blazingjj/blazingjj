@@ -294,6 +294,10 @@ impl<'a> LogTab<'a> {
                 self.log_panel.toggle_item_mark();
                 self.sync_head_output();
             }
+            LogTabEvent::ClearMarks => {
+                self.clear_marks();
+                self.sync_head_output();
+            }
             LogTabEvent::Duplicate => {
                 return Ok(Some(AppAction::Run(Command::Duplicate(Revset::from(
                     &self.head.change_id,

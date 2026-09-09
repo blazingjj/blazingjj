@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Ctrl+space` in the log tab unmarks every marked change, whether or not the
+  log is showing it
 - Status bar along the foot of the window, saying which workspace the app is
   working in and where it is, the revset the log is showing and how many
   changes it has marked. It has taken over the `q`/`?`/`R` hints and the
