@@ -115,6 +115,7 @@ pub struct LogTabKeybindsConfig {
     pub mark_head: Option<Keybind>,
     pub goto_parent: Option<Keybind>,
     pub goto_child: Option<Keybind>,
+    pub load_more: Option<Keybind>,
 
     pub duplicate: Option<Keybind>,
     pub create_new: Option<Keybind>,

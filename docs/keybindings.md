@@ -125,6 +125,7 @@ toggle-wrap = "shift+w"
 mark-head = "space"
 goto-parent = "-"
 goto-child = "+"
+load-more = "m"
 
 create-new = "n"
 create-new-describe = "shift+n"

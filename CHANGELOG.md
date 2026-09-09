@@ -229,6 +229,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The log tab now reads the newest 200 changes of the revset it shows and
+  reads twice as far back on `m` (`load-more`), the way the operation log tab
+  does
 - A resized terminal now keeps the ratio a tab is split in, so that both panels
   grow and shrink, rather than the main panel keeping the columns or rows it
   has; `blazingjj.layout-preserve-ratio = false` goes back to that
