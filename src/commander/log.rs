@@ -280,12 +280,18 @@ impl Commander {
         })
     }
 
-    /// Get log. Returns human readable log and mapping to log line to item.
+    /// Get log, no more than `limit` changes of it. Returns human readable
+    /// log and mapping to log line to item.
     /// Leaves the working copy alone.
     /// Maps to `jj log --ignore-working-copy`
     #[instrument(level = "trace", skip(self))]
-    pub fn get_log(&self, revset: &Option<String>) -> Result<LogOutput<Head>, CommandError> {
-        let mut command = vec!["log"];
+    pub fn get_log(
+        &self,
+        revset: &Option<String>,
+        limit: usize,
+    ) -> Result<LogOutput<Head>, CommandError> {
+        let limit = limit.to_string();
+        let mut command = vec!["log", "-n", &limit];
         if let Some(revset) = revset {
             command.push("-r");
             command.push(revset);
@@ -534,7 +540,7 @@ mod tests {
     fn get_log() -> Result<()> {
         let test_repo = TestRepo::new()?;
 
-        let log = test_repo.commander.get_log(&None)?;
+        let log = test_repo.commander.get_log(&None, 100)?;
 
         let mut settings = insta::Settings::clone_current();
         settings.add_filter(r"[k-z]{8} .*? [0-9a-fA-F]{8}", "[LINE]");
@@ -547,6 +553,19 @@ mod tests {
                 .as_ref()
                 .is_none_or(|graph_item| log.items.contains(graph_item))
         }));
+
+        Ok(())
+    }
+
+    #[test]
+    fn get_log_reads_no_more_changes_than_it_is_asked_for() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+
+        test_repo.commander.jj(["describe", "-m", "first"]).run()?;
+        test_repo.commander.jj(["new"]).run()?;
+        test_repo.commander.jj(["describe", "-m", "second"]).run()?;
+
+        assert_eq!(test_repo.commander.get_log(&None, 2)?.items.len(), 2);
 
         Ok(())
     }

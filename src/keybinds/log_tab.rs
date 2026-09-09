@@ -25,6 +25,7 @@ pub enum LogTabEvent {
     ToggleHeadMark,
 
     Goto(Relation),
+    LoadMore,
 
     CreateNew { describe: bool },
     Duplicate,
@@ -80,6 +81,7 @@ impl Default for LogTabKeybinds {
             LogTabEvent::ToggleHeadMark => "space",
             LogTabEvent::Goto(Relation::Parent) => "-",
             LogTabEvent::Goto(Relation::Child) => "+",
+            LogTabEvent::LoadMore => "m",
             LogTabEvent::Duplicate => "shift+d",
             LogTabEvent::CreateNew { describe: false } => "n",
             LogTabEvent::CreateNew { describe: true } => "shift+n",
@@ -135,6 +137,7 @@ impl LogTabKeybinds {
             LogTabEvent::ToggleHeadMark => config.mark_head,
             LogTabEvent::Goto(Relation::Parent) => config.goto_parent,
             LogTabEvent::Goto(Relation::Child) => config.goto_child,
+            LogTabEvent::LoadMore => config.load_more,
             LogTabEvent::Duplicate => config.duplicate,
             LogTabEvent::CreateNew { describe: false } => config.create_new,
             LogTabEvent::CreateNew { describe: true } => config.create_new_describe,
@@ -172,6 +175,7 @@ impl LogTabKeybinds {
             LogTabEvent::OpenFiles => "open-files", Some(Section::Navigation), "see files",
             LogTabEvent::OpenEvolog => "open-evolog", Some(Section::Navigation), "see how the change evolved",
             LogTabEvent::EditRevset => "edit-revset", Some(Section::Navigation), "set revset",
+            LogTabEvent::LoadMore => "load-more", Some(Section::Navigation), "read further back in the log",
 
             LogTabEvent::ToggleHeadMark => "mark-head", Some(Section::Changes), "mark change to act on",
             LogTabEvent::CreateNew { describe: false } => "create-new", Some(Section::Changes), "new change",

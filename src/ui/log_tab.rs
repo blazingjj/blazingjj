@@ -51,10 +51,18 @@ use crate::ui::styles::clear;
 use crate::ui::utils::PaneDivider;
 use crate::ui::utils::centered_rect_line_height;
 
+/// How far the tab reads before it is asked for more. A revset that puts
+/// every change of a long-lived repo in the log runs to thousands of them,
+/// which take as many jj has to render.
+const INITIAL_LIMIT: usize = 200;
+
 /// Log tab. Shows `jj log` in main panel and shows selected change details of in details panel.
 pub struct LogTab<'a> {
     /// The revset filter to apply to jj log
     log_revset: Option<String>,
+
+    /// How many changes the tab reads
+    limit: usize,
 
     /// Editor for the filter, up while it is being changed
     log_revset_textarea: Option<TextArea<'a>>,
@@ -108,6 +116,8 @@ impl<'a> LogTab<'a> {
             log_revset: get_env().default_revset.clone(),
             log_revset_textarea: None,
 
+            limit: INITIAL_LIMIT,
+
             log_panel: LogPanel::new(head.clone(), LOG_LINES_PER_ITEM),
 
             head,
@@ -149,12 +159,23 @@ impl<'a> LogTab<'a> {
     /// Update the log panel and diff panel. This will also refresh
     /// the diff cache.
     fn refresh_log_output(&mut self) {
-        let title = match &self.log_revset {
-            Some(log_revset) => format!(" Log for: {log_revset} "),
-            None => " Log ".to_owned(),
+        let log = new_commander().get_log(&self.log_revset, self.limit);
+
+        // Reading as many changes as were asked for says that there may
+        // well be more, which is when the key that reads further is worth
+        // mentioning.
+        let more = log.as_ref().is_ok_and(|log| log.items.len() >= self.limit);
+        let subject = match &self.log_revset {
+            Some(log_revset) => format!("Log for: {log_revset}"),
+            None => "Log".to_owned(),
         };
-        self.log_panel
-            .show(new_commander().get_log(&self.log_revset), title);
+        let title = if more {
+            format!(" {subject} (newest {}, m for more) ", self.limit)
+        } else {
+            format!(" {subject} ")
+        };
+
+        self.log_panel.show(log, title);
         self.head_panel.set_active(self.log_panel.items());
         self.sync_head_output();
     }
@@ -357,6 +378,10 @@ impl<'a> LogTab<'a> {
             }
             LogTabEvent::Goto(relation) => {
                 return self.handle_goto(relation);
+            }
+            LogTabEvent::LoadMore => {
+                self.limit = self.limit.saturating_mul(2);
+                self.refresh_log_output();
             }
 
             LogTabEvent::Unbound => {}
@@ -581,5 +606,39 @@ impl Component for LogTab<'_> {
         }
         self.sync_head_output();
         Ok(ComponentInputResult::Handled)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commander::ids::ChangeId;
+    use crate::env::set_test_env;
+
+    fn tab() -> LogTab<'static> {
+        set_test_env();
+        let (sender, _receiver) = std::sync::mpsc::channel();
+
+        let head = Head {
+            change_id: ChangeId(String::new()),
+            commit_id: CommitId(String::new()),
+            divergent: false,
+            immutable: false,
+        };
+
+        LogTab::new(BackgroundTasks::new(sender), head)
+    }
+
+    #[test]
+    fn asking_for_more_changes_reads_further_back_every_time() -> Result<()> {
+        let mut tab = tab();
+
+        tab.handle_event(LogTabEvent::LoadMore)?;
+        assert_eq!(tab.limit, INITIAL_LIMIT * 2);
+
+        tab.handle_event(LogTabEvent::LoadMore)?;
+        assert_eq!(tab.limit, INITIAL_LIMIT * 4);
+
+        Ok(())
     }
 }
