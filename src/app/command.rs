@@ -478,6 +478,7 @@ fn open_in_editor(editor: &Editor, target: &str) -> Option<AppAction> {
             // The editor leaves the file it edited on the screen, which
             // is not something to read once it is closed.
             hold_screen: false,
+            on_success: Vec::new(),
         })),
         EditorMode::Detached => match program.run_detached() {
             Ok(()) => None,

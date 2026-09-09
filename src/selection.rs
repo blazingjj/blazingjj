@@ -163,13 +163,22 @@ impl Selection {
     /// command has been split into arguments, so that what a placeholder
     /// stands for is one argument however it reads. `$$` is a `$` of its
     /// own rather than the start of a placeholder.
-    pub fn substitute(&self, args: &[String]) -> Result<Vec<String>, Missing> {
-        args.iter().map(|arg| self.substitute_one(arg)).collect()
+    pub fn substitute(&self, args: &[String]) -> Result<Substituted, Missing> {
+        let mut used = Vec::new();
+        let args = args
+            .iter()
+            .map(|arg| self.substitute_one(arg, &mut used))
+            .collect::<Result<_, _>>()?;
+
+        Ok(Substituted {
+            args,
+            uses_marks: used.contains(&Placeholder::Marked),
+        })
     }
 
     /// `arg` with every placeholder replaced by what the selection has
-    /// for it.
-    fn substitute_one(&self, arg: &str) -> Result<String, Missing> {
+    /// for it, noting in `used` which ones it named.
+    fn substitute_one(&self, arg: &str, used: &mut Vec<Placeholder>) -> Result<String, Missing> {
         let mut left = arg;
         let mut done = String::with_capacity(arg.len());
 
@@ -186,6 +195,7 @@ impl Selection {
             match Self::placeholder_at(rest) {
                 Some((placeholder, name)) => {
                     done.push_str(&self.value(placeholder).ok_or(Missing(placeholder))?);
+                    used.push(placeholder);
                     left = &rest[name.len()..];
                 }
                 // A `$` that starts no placeholder is a `$` like any
@@ -217,6 +227,15 @@ impl Selection {
             Some((placeholder, *name))
         })
     }
+}
+
+/// A command with the selection put in it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Substituted {
+    pub args: Vec<String>,
+    /// Whether it names what the log has marked, and so is a command the
+    /// marks were there for.
+    pub uses_marks: bool,
 }
 
 /// A placeholder the tab it was to be filled from has nothing for.
@@ -261,7 +280,7 @@ mod tests {
     fn substituted(selection: &Selection, command: &[&str]) -> Result<String, Missing> {
         let args: Vec<String> = command.iter().map(|arg| (*arg).to_owned()).collect();
 
-        Ok(selection.substitute(&args)?.join(" "))
+        Ok(selection.substitute(&args)?.args.join(" "))
     }
 
     #[test]
@@ -389,9 +408,28 @@ mod tests {
         let selection = Selection::default().file("a file with spaces.txt");
 
         assert_eq!(
-            selection.substitute(&["diff".to_owned(), "$file".to_owned()]),
+            selection
+                .substitute(&["diff".to_owned(), "$file".to_owned()])
+                .map(|substituted| substituted.args),
             Ok(vec!["diff".to_owned(), "a file with spaces.txt".to_owned()])
         );
+    }
+
+    /// The marks are there for the command that names them, so it is
+    /// worth knowing which command that was.
+    #[test]
+    fn a_command_says_whether_it_names_what_is_marked() {
+        let uses_marks = |command: &[&str]| {
+            let args: Vec<String> = command.iter().map(|arg| (*arg).to_owned()).collect();
+
+            log(&["a"]).substitute(&args).map(|s| s.uses_marks)
+        };
+
+        assert_eq!(uses_marks(&["abandon", "$m"]), Ok(true));
+        assert_eq!(uses_marks(&["abandon", "$s"]), Ok(false));
+        // A command with a `$marked` of its own to pass on is not one
+        // run against the marks.
+        assert_eq!(uses_marks(&["abandon", "$$marked"]), Ok(false));
     }
 
     #[test]

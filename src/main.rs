@@ -274,6 +274,13 @@ fn run_interactive(
     setup_terminal()?;
     terminal.clear()?;
     app.resume_input();
+
+    if ran {
+        for action in interactive.on_success {
+            app.handle_action(action)?;
+        }
+    }
+
     app.catch_up_with_repo()
 }
 

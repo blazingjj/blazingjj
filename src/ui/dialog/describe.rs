@@ -51,6 +51,7 @@ pub fn describe_action(
                 .jj(["describe", head.commit_id.as_str()])
                 .foreground(),
             hold_screen: false,
+            on_success: Vec::new(),
         }),
     })
 }
