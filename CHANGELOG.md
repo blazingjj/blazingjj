@@ -120,7 +120,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name what the tab has selected by a placeholder: `$selected` (`$s`) for
   whatever the tab is about, `$marked` (`$m`) for the changes the log has
   marked, and `$revision`, `$file`, `$bookmark` and `$operation` for a
-  selection of that one kind
+  selection of that one kind. A command that named the marked changes and ran
+  leaves them unmarked, the way the built-in operations on them do
 - Diff format rendering the Git format with a pager like
   [delta](https://github.com/dandavison/delta), configured as
   `blazingjj.diff-pager` and toggled through with `w` like the others

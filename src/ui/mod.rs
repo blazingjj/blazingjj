@@ -72,6 +72,8 @@ pub struct Interactive {
     /// a command run for its effect, whose output is beside the point
     /// unless it failed.
     pub hold_screen: bool,
+    /// What to do once it has run, and only if it came back happy.
+    pub on_success: Vec<AppAction>,
 }
 
 /// When a Component process an input event, it returns an ComponentInputResult

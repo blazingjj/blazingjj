@@ -19,6 +19,7 @@ use crate::commander::new_commander;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::selection::Selection;
+use crate::selection::Substituted;
 use crate::theme::Role;
 use crate::ui::AppAction;
 use crate::ui::Component;
@@ -74,11 +75,15 @@ impl CommandPopup<'_> {
 
 /// Run the command and put its output up. It is left without an editor, as
 /// it cannot have the terminal while we hold it.
-fn run_captured(title: String, args: &[String]) -> ComponentInputResult {
+fn run_captured(title: String, command: &Substituted) -> ComponentInputResult {
+    let args = &command.args;
+    let mut ran = true;
+
     let said = match new_commander().jj(args).no_editor().color().verbose().run() {
         Ok(output) if output.trim().is_empty() => AppAction::ClosePopup,
         Ok(output) => popup(title, output),
         Err(err) => {
+            ran = false;
             // Having named the editor ourselves, we know a command that
             // wanted one when we see it, and can offer the way out.
             let wants_editor = err.to_string().contains(NO_EDITOR);
@@ -88,6 +93,7 @@ fn run_captured(title: String, args: &[String]) -> ComponentInputResult {
                     title,
                     report,
                     new_commander().jj(args),
+                    command.uses_marks,
                 )))
             } else {
                 popup(title, report)
@@ -95,9 +101,17 @@ fn run_captured(title: String, args: &[String]) -> ComponentInputResult {
         }
     };
 
+    let mut actions = vec![said];
+    // A command that named the marks is what they were put there for, so
+    // once it has run there is nothing left to keep them for.
+    if ran && command.uses_marks {
+        actions.push(AppAction::ClearLogMarks);
+    }
     // Even a command that came back unhappy may have moved the repo, jj
     // snapshotting the working copy before it gets that far.
-    ComponentInputResult::HandledAction(AppAction::Multiple(vec![said, AppAction::MarkTabsStale]))
+    actions.push(AppAction::MarkTabsStale);
+
+    ComponentInputResult::HandledAction(AppAction::Multiple(actions))
 }
 
 /// Put `output` up under `title`.
@@ -109,10 +123,14 @@ fn popup(title: String, output: String) -> AppAction {
 
 /// Run `command` with the terminal handed over to it, holding it once the
 /// command is done so that what it printed can be read.
-fn run_interactively(command: JjCommand) -> AppAction {
+fn run_interactively(command: JjCommand, uses_marks: bool) -> AppAction {
     AppAction::RunInteractive(Interactive {
         program: command.foreground(),
         hold_screen: true,
+        on_success: uses_marks
+            .then_some(AppAction::ClearLogMarks)
+            .into_iter()
+            .collect(),
     })
 }
 
@@ -123,10 +141,12 @@ struct RetryInteractivelyPopup<'a> {
     keybinds: PopupKeybinds,
     /// Taken when the offer is accepted, which happens at most once.
     command: Option<JjCommand>,
+    /// Whether the command names what the log has marked.
+    uses_marks: bool,
 }
 
 impl RetryInteractivelyPopup<'_> {
-    fn new(title: String, report: String, command: JjCommand) -> Self {
+    fn new(title: String, report: String, command: JjCommand, uses_marks: bool) -> Self {
         let keybinds = PopupKeybinds::dialog();
         let offer = keybinds.hint("run it interactively");
 
@@ -138,6 +158,7 @@ impl RetryInteractivelyPopup<'_> {
             .text_align(Alignment::Left),
             keybinds,
             command: Some(command),
+            uses_marks,
         }
     }
 }
@@ -154,7 +175,10 @@ impl Component for RetryInteractivelyPopup<'_> {
             && let Some(command) = self.command.take()
         {
             return Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-                vec![AppAction::ClosePopup, run_interactively(command)],
+                vec![
+                    AppAction::ClosePopup,
+                    run_interactively(command, self.uses_marks),
+                ],
             )));
         }
 
@@ -223,21 +247,24 @@ impl Component for CommandPopup<'_> {
                     // What ran is what the command came to once the
                     // selection was put in it, which is what there is to
                     // read the output against.
-                    let args = match self.selection.substitute(&args) {
-                        Ok(args) => args,
+                    let command = match self.selection.substitute(&args) {
+                        Ok(command) => command,
                         Err(missing) => {
                             let report = format!("Nothing to run the command against\n\n{missing}");
                             return Ok(ComponentInputResult::HandledAction(popup(typed, report)));
                         }
                     };
-                    let title = format!("jj {}", args.join(" "));
+                    let title = format!("jj {}", command.args.join(" "));
 
                     return Ok(match self.mode {
-                        CommandMode::Capture => run_captured(title, &args),
+                        CommandMode::Capture => run_captured(title, &command),
                         CommandMode::Interactive => {
                             ComponentInputResult::HandledAction(AppAction::Multiple(vec![
                                 AppAction::ClosePopup,
-                                run_interactively(new_commander().jj(args)),
+                                run_interactively(
+                                    new_commander().jj(command.args),
+                                    command.uses_marks,
+                                ),
                             ]))
                         }
                     });
