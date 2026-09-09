@@ -8,6 +8,12 @@ on:
 
 permissions: read-all
 
+# Runs of the same preview race each other for the tag, and only the newest
+# one is worth having anyway.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
 jobs:
   preview-release:
     permissions:
