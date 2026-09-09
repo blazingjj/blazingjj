@@ -33,3 +33,18 @@ bright-white = "#bac2de"      # subtext1
 highlight = { bg = "#3b3d4f" }
 # overlay2, Catppuccin's colour for comments.
 hint = "#9399b2"
+# Catppuccin draws a diff's header in blue, its file paths in pink and
+# its hunk headers in peach. jj writes the index metadata under the same
+# label as the paths, which Catppuccin would have dimmer, so the paths
+# are what the label goes by.
+diff-header = "blue"
+diff-file-header = "magenta"
+diff-hunk-header = "#fab387"
+# The changed lines, and the changed words within them, are tinted with
+# the green and the red they are already written in, at the opacities
+# the style guide gives. A terminal cannot lay the word's tint over the
+# line's, so the word's is the two already blended.
+diff-added = { bg = "#394545" }
+diff-added-word = { bg = "#4a5d53" }
+diff-removed = { bg = "#493446" }
+diff-removed-word = { bg = "#624155" }

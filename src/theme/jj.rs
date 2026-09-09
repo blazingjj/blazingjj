@@ -31,6 +31,12 @@ use crate::theme::ThemeColor;
 /// them differently says nothing about it that we could hand jj: which
 /// of the two a label of jj's wanted is not ours to guess, so the colour
 /// is left to the palette as it would have been.
+///
+/// A role naming a label of jj's is left out. It is handed to jj as the
+/// label it names, so what a scheme says about it is about that label
+/// and nothing else: the diff's header being drawn in something other
+/// than the palette's yellow is no reason for the rest of jj's yellow to
+/// follow it.
 fn said_outright(scheme: &Scheme) -> [Option<ThemeColor>; 16] {
     /// What the roles drawn in one colour of the palette say it should
     /// be: the one thing they agree on, or more than one thing.
@@ -42,7 +48,8 @@ fn said_outright(scheme: &Scheme) -> [Option<ThemeColor>; 16] {
     let mut said: [Option<Said>; 16] = [const { None }; 16];
 
     for role in Role::ALL {
-        if let Some(ThemeColor::Ansi(ansi)) = role.builtin().fg
+        if role.jj_labels().is_empty()
+            && let Some(ThemeColor::Ansi(ansi)) = role.builtin().fg
             && let Some(color) = scheme.role(role).fg
         {
             let at = &mut said[ansi.index()];
@@ -166,6 +173,7 @@ fn said_about(theme: &Theme, role: Role, jj: &toml::Table, colors: &mut toml::Ta
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
     use std::process::Command;
 
     use tempfile::TempDir;
@@ -192,6 +200,34 @@ prefix.bold = true
 "#
         .parse()
         .expect("the listing parses")
+    }
+
+    /// A `jj` reading no configuration of the user's, whose colours are
+    /// no business of whoever runs the tests. `directory` is where the
+    /// nothing it reads instead is written.
+    fn jj(directory: &Path) -> Command {
+        let empty = directory.join("empty.toml");
+        fs::write(&empty, "").expect("the file is written");
+
+        let mut command = Command::new("jj");
+        command.env("JJ_CONFIG", empty).arg("--ignore-working-copy");
+        command
+    }
+
+    /// The colours jj lists, its own defaults among them.
+    fn jj_colors(directory: &Path) -> toml::Table {
+        let listed = jj(directory)
+            .args(["config", "list", "--include-defaults", "colors"])
+            .args(get_output_args(false, true))
+            .output()
+            .expect("jj runs");
+        let listed: toml::Table =
+            toml::from_slice(&listed.stdout).expect("what jj lists is what it takes");
+
+        listed["colors"]
+            .as_table()
+            .expect("the colours are a table")
+            .clone()
     }
 
     fn config(scheme: &str) -> Option<String> {
@@ -247,6 +283,79 @@ prefix.bold = true
 
         // Nothing is said about a label that is only ever drawn bold.
         assert_eq!(colors["prefix"].as_table().expect("a table").len(), 1);
+    }
+
+    /// A label a role names that jj knows nothing about under that name
+    /// is a colour that would go quietly undrawn, so the names are worth
+    /// checking against the labels jj lists.
+    #[test]
+    fn every_role_names_labels_jj_knows() {
+        let directory = TempDir::with_prefix("blazingjj").expect("a directory to write in");
+        let listed = jj_colors(directory.path());
+
+        for role in Role::ALL {
+            for label in role.jj_labels() {
+                assert!(
+                    listed.contains_key(*label)
+                        // A label jj sets nothing for of its own is one
+                        // it draws all the same, as long as it says
+                        // something about the label it is a kind of.
+                        || label
+                            .rsplit_once(' ')
+                            .is_some_and(|(kind, _)| listed.contains_key(kind)),
+                    "{} names {label:?}, which jj does not",
+                    role.key()
+                );
+            }
+        }
+    }
+
+    /// A role naming a label of jj's says nothing about the colour of
+    /// the palette it would otherwise have taken: Catppuccin draws the
+    /// diff's header in blue where jj draws it in the palette's yellow,
+    /// which is no reason for the rest of jj's yellow to turn blue.
+    #[test]
+    fn what_a_role_of_jjs_own_is_redrawn_in_stays_its_own() {
+        let colors = "\"diff header\" = \"yellow\"\nconflict_description = \"yellow\"\n"
+            .parse::<toml::Table>()
+            .expect("the listing parses");
+        let theme = toml::from_str::<JjConfig>("blazingjj.colors.scheme = \"catppuccin-mocha\"\n")
+            .expect("the configuration parses")
+            .theme();
+        let config: toml::Table = config_text(&theme, &colors)
+            .expect("the scheme is one to hand over")
+            .parse()
+            .expect("what we write reads back");
+        let colors = config["colors"]
+            .as_table()
+            .expect("the colours are a table");
+
+        let header = colors["diff header"].as_table().expect("a table");
+        assert_eq!(header["fg"].as_str(), Some("#89b4fa"), "{colors:?}");
+        // Mocha's yellow, rather than the blue the header took.
+        assert_eq!(
+            colors["conflict_description"].as_str(),
+            Some("#f9e2af"),
+            "{colors:?}"
+        );
+    }
+
+    /// A scheme tinting the diff's added lines is giving them a
+    /// background jj gives them none of, and the green jj writes them in
+    /// and the boldness stay jj's.
+    #[test]
+    fn a_background_a_scheme_gives_a_label_is_added_to_what_jj_says() {
+        let config = config("blazingjj.colors.scheme = \"catppuccin-mocha\"\n")
+            .expect("the scheme is one to hand over");
+        let config: toml::Table = config.parse().expect("what we write reads back");
+        let colors = config["colors"]
+            .as_table()
+            .expect("the colours are a table");
+
+        let added = colors["diff added"].as_table().expect("a table");
+        assert_eq!(added["bg"].as_str(), Some("#394545"));
+        assert_eq!(added["fg"].as_str(), Some("#a6e3a1"));
+        assert_eq!(added["bold"].as_bool(), Some(true));
     }
 
     /// The terminal's own is not one of the sixteen, so it stays what it
@@ -367,29 +476,7 @@ prefix.bold = true
     #[test]
     fn what_we_hand_jj_is_what_jj_takes() {
         let directory = TempDir::with_prefix("blazingjj").expect("a directory to write in");
-        // jj reads the user's own configuration unless it is pointed
-        // somewhere else, and what it lists there is no business of
-        // whoever is running the tests.
-        let empty = directory.path().join("empty.toml");
-        fs::write(&empty, "").expect("the file is written");
-        let jj = || {
-            let mut command = Command::new("jj");
-            command
-                .env("JJ_CONFIG", &empty)
-                .arg("--ignore-working-copy");
-            command
-        };
-
-        let listed = jj()
-            .args(["config", "list", "--include-defaults", "colors"])
-            .args(get_output_args(false, true))
-            .output()
-            .expect("jj runs");
-        let listed: toml::Table =
-            toml::from_slice(&listed.stdout).expect("what jj lists is what it takes");
-        let colors = listed["colors"]
-            .as_table()
-            .expect("the colours are a table");
+        let colors = &jj_colors(directory.path());
 
         for scheme in Scheme::NAMES.map(|name| Scheme::named(name).expect("the scheme reads")) {
             let theme = toml::from_str::<JjConfig>(&format!(
@@ -406,7 +493,7 @@ prefix.bold = true
             )
             .expect("the file is written");
 
-            let read = jj()
+            let read = jj(directory.path())
                 .arg("--config-file")
                 .arg(&path)
                 .args(["config", "list", "colors"])
