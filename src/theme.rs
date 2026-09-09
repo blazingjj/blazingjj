@@ -85,7 +85,8 @@ impl Theme {
             // being bold rather than by a colour.
             Role::Default | Role::Border | Role::PanelTitle | Role::Heading => Style::new(),
             Role::Highlight | Role::ButtonActive => Style::new().bg(self.highlight),
-            Role::Hint | Role::Separator => Style::new().fg(Color::DarkGray),
+            Role::Hint => Style::new().fg(Color::Gray),
+            Role::Separator => Style::new().fg(Color::DarkGray),
             Role::PopupBorder | Role::Success | Role::FileAdded => Style::new().fg(Color::Green),
             Role::PopupTitle
             | Role::Workspace
