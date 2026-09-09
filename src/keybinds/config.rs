@@ -113,6 +113,7 @@ pub enum Keybind {
 #[serde(rename_all = "kebab-case")]
 pub struct LogTabKeybindsConfig {
     pub mark_head: Option<Keybind>,
+    pub clear_marks: Option<Keybind>,
     pub goto_parent: Option<Keybind>,
     pub goto_child: Option<Keybind>,
     pub load_more: Option<Keybind>,

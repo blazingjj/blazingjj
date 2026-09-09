@@ -23,6 +23,7 @@ pub struct LogTabKeybinds {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum LogTabEvent {
     ToggleHeadMark,
+    ClearMarks,
 
     Goto(Relation),
     LoadMore,
@@ -79,6 +80,7 @@ impl Default for LogTabKeybinds {
         set_keybinds!(
             keys,
             LogTabEvent::ToggleHeadMark => "space",
+            LogTabEvent::ClearMarks => "ctrl+space",
             LogTabEvent::Goto(Relation::Parent) => "-",
             LogTabEvent::Goto(Relation::Child) => "+",
             LogTabEvent::LoadMore => "m",
@@ -135,6 +137,7 @@ impl LogTabKeybinds {
         update_keybinds!(
             self.keys,
             LogTabEvent::ToggleHeadMark => config.mark_head,
+            LogTabEvent::ClearMarks => config.clear_marks,
             LogTabEvent::Goto(Relation::Parent) => config.goto_parent,
             LogTabEvent::Goto(Relation::Child) => config.goto_child,
             LogTabEvent::LoadMore => config.load_more,
@@ -178,6 +181,7 @@ impl LogTabKeybinds {
             LogTabEvent::LoadMore => "load-more", Some(Section::Navigation), "read further back in the log",
 
             LogTabEvent::ToggleHeadMark => "mark-head", Some(Section::Changes), "mark change to act on",
+            LogTabEvent::ClearMarks => "clear-marks", Some(Section::Changes), "unmark every marked change",
             LogTabEvent::CreateNew { describe: false } => "create-new", Some(Section::Changes), "new change",
             LogTabEvent::CreateNew { describe: true } => "create-new-describe", Some(Section::Changes), "new with message",
             LogTabEvent::Describe => "describe", Some(Section::Changes), "describe change",

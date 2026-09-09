@@ -123,6 +123,7 @@ toggle-wrap = "shift+w"
 ```toml
 [blazingjj.keybinds.log-tab]
 mark-head = "space"
+clear-marks = "ctrl+space"
 goto-parent = "-"
 goto-child = "+"
 load-more = "m"
