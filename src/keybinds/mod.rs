@@ -5,8 +5,6 @@ pub use bookmark_set_popup::BookmarkSetPopupEvent;
 pub use bookmark_set_popup::BookmarkSetPopupKeybinds;
 pub use bookmarks_tab::BookmarksTabEvent;
 pub use bookmarks_tab::BookmarksTabKeybinds;
-pub use colors_tab::ColorsTabEvent;
-pub use colors_tab::ColorsTabKeybinds;
 pub use config::Keybind;
 pub use config::KeybindsConfig;
 pub use confirm_popup::ConfirmPopupEvent;
@@ -34,12 +32,13 @@ use ratatui::crossterm::event::KeyEvent;
 use ratatui::crossterm::event::KeyModifiers;
 pub use settings_tab::SettingsTabEvent;
 pub use settings_tab::SettingsTabKeybinds;
+pub use styles_tab::StylesTabEvent;
+pub use styles_tab::StylesTabKeybinds;
 
 use crate::env::keybinds_config;
 
 mod bookmark_set_popup;
 mod bookmarks_tab;
-mod colors_tab;
 mod config;
 mod confirm_popup;
 mod details_panel;
@@ -53,6 +52,7 @@ mod op_log_tab;
 mod popup;
 pub mod rebase_popup;
 mod settings_tab;
+mod styles_tab;
 
 /*#[derive(Debug)]
 pub struct Keybinds {
@@ -120,7 +120,7 @@ pub enum Context {
     OpLogTab,
     SettingsTab,
     KeybindingsTab,
-    ColorsTab,
+    StylesTab,
     DetailsPanel,
     Popup,
     TextPopup,
@@ -140,7 +140,7 @@ impl Context {
         Self::OpLogTab,
         Self::SettingsTab,
         Self::KeybindingsTab,
-        Self::ColorsTab,
+        Self::StylesTab,
         Self::DetailsPanel,
         Self::Popup,
         Self::TextPopup,
@@ -159,7 +159,7 @@ impl Context {
             Self::OpLogTab => "Operation log tab",
             Self::SettingsTab => "Settings tab",
             Self::KeybindingsTab => "Keybindings tab",
-            Self::ColorsTab => "Colors tab",
+            Self::StylesTab => "Styles tab",
             Self::DetailsPanel => "Details panel",
             Self::Popup => "Popups",
             Self::TextPopup => "Popups holding a text field",
@@ -182,7 +182,7 @@ impl Context {
             Self::OpLogTab => Some("op-log-tab"),
             Self::SettingsTab => Some("settings-tab"),
             Self::KeybindingsTab => Some("keybindings-tab"),
-            Self::ColorsTab => Some("colors-tab"),
+            Self::StylesTab => Some("styles-tab"),
             Self::DetailsPanel => Some("details-panel"),
             Self::Popup => Some("popup"),
             Self::TextPopup => Some("text-popup"),
@@ -242,7 +242,7 @@ impl Context {
             | Self::EvologTab
             | Self::OpLogTab => &[Self::Global, Self::DetailsPanel],
             // The tabs about the app have no details panel beside them.
-            Self::SettingsTab | Self::KeybindingsTab | Self::ColorsTab => &[Self::Global],
+            Self::SettingsTab | Self::KeybindingsTab | Self::StylesTab => &[Self::Global],
             Self::Popup => &IN_A_POPUP,
             Self::ConfirmPopup | Self::BookmarkSetPopup | Self::RebasePopup => &[Self::Popup],
             Self::TextPopup => &[],
@@ -265,7 +265,7 @@ impl Context {
             Self::OpLogTab => OpLogTabKeybinds::from_config(config).bindings(),
             Self::SettingsTab => SettingsTabKeybinds::from_config(config).bindings(),
             Self::KeybindingsTab => KeybindingsTabKeybinds::from_config(config).bindings(),
-            Self::ColorsTab => ColorsTabKeybinds::from_config(config).bindings(),
+            Self::StylesTab => StylesTabKeybinds::from_config(config).bindings(),
             Self::DetailsPanel => DetailsPanelKeybinds::from_config(config).bindings(),
             Self::Popup => PopupKeybinds::dialog_from_config(config).bindings(),
             Self::TextPopup => PopupKeybinds::text_from_config(config).text_bindings(),

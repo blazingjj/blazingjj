@@ -6,7 +6,6 @@ use ratatui::layout::Alignment;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
-use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::text::Text;
@@ -34,12 +33,10 @@ pub fn swatch(style: Style) -> Span<'static> {
     Span::styled(" x ", style)
 }
 
-/// The heading a list is divided under, which is underlined rather than
-/// indented like the rows beneath it.
+/// The heading a list is divided under, which is set off by its style
+/// rather than indented like the rows beneath it.
 pub fn section_heading(heading: impl Into<Cow<'static, str>>) -> Span<'static> {
     Span::styled(heading, Role::Heading.style())
-        .bold()
-        .underlined()
 }
 
 /// The block a panel of the frame is drawn in, which a caller titles
@@ -147,11 +144,6 @@ pub fn popup_block() -> Block<'static> {
         .border_style(Role::PopupBorder.style())
 }
 
-/// What the title of a popup is written in.
-pub fn popup_block_title_style() -> Style {
-    Role::PopupTitle.style().bold()
-}
-
 /// What a popup puts under the field it asks in when what was typed was
 /// turned down: the answer, boxed off from the field and wrapped to
 /// `width`, and the rows it takes there.
@@ -171,10 +163,7 @@ pub fn refusal(answer: &str, width: u16) -> (Paragraph<'static>, u16) {
 
 pub fn create_popup_block(title: &str) -> Block<'_> {
     popup_block()
-        .title(Span::styled(
-            format!(" {title} "),
-            popup_block_title_style(),
-        ))
+        .title(Span::styled(format!(" {title} "), Role::PopupTitle.style()))
         .title_alignment(Alignment::Center)
 }
 

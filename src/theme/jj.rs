@@ -16,6 +16,7 @@ hand jj that.
 
 use std::str::FromStr;
 
+use crate::theme::Attribute;
 use crate::theme::Channel;
 use crate::theme::Role;
 use crate::theme::Scheme;
@@ -139,13 +140,22 @@ fn recolored(scheme: &Scheme, colors: &toml::Table) -> toml::Table {
         .collect()
 }
 
-/// Write what `role` is said to be drawn in onto the labels jj draws it
-/// as, leaving the channels it says nothing about as `jj` has them.
+/// Write what `role` is said to be drawn in and how onto the labels jj
+/// draws it as, leaving what it says nothing about as `jj` has it. jj
+/// reads the attributes under the same names we do.
 fn said_about(theme: &Theme, role: Role, jj: &toml::Table, colors: &mut toml::Table) {
-    let said: Vec<(&str, ThemeColor)> = Channel::ALL
-        .into_iter()
-        .filter_map(|channel| Some((channel.key(), theme.said_of(role, channel)?)))
-        .collect();
+    let colors_said = Channel::ALL.into_iter().filter_map(|channel| {
+        let color = theme.said_of(role, channel)?;
+
+        Some((channel.key(), toml::Value::String(color.to_string())))
+    });
+    let attributes_said = Attribute::ALL.into_iter().filter_map(|attribute| {
+        let asked = theme.attribute_said_of(role, attribute)?;
+
+        Some((attribute.key(), toml::Value::Boolean(asked)))
+    });
+
+    let said: Vec<(&str, toml::Value)> = colors_said.chain(attributes_said).collect();
     if said.is_empty() {
         return;
     }
@@ -163,7 +173,7 @@ fn said_about(theme: &Theme, role: Role, jj: &toml::Table, colors: &mut toml::Ta
 
         let style = style.into_iter().chain(
             said.iter()
-                .map(|(key, color)| ((*key).to_owned(), toml::Value::String(color.to_string()))),
+                .map(|(key, value)| ((*key).to_owned(), value.clone())),
         );
 
         colors.insert((*label).to_owned(), toml::Value::Table(style.collect()));
@@ -242,7 +252,7 @@ prefix.bold = true
     /// what jj writes into a panel matches the frame around it.
     #[test]
     fn the_palette_is_what_jj_is_told_to_draw_in() {
-        let config = config("blazingjj.colors.scheme = \"tokyo-night\"\n")
+        let config = config("blazingjj.styles.scheme = \"tokyo-night\"\n")
             .expect("the scheme is one to hand over");
 
         // Tokyo Night draws magenta as #bb9af7.
@@ -259,7 +269,7 @@ prefix.bold = true
             ("solarized-dark", "#586e75"),
             ("solarized-light", "#93a1a1"),
         ] {
-            let config = config(&format!("blazingjj.colors.scheme = \"{scheme}\"\n"))
+            let config = config(&format!("blazingjj.styles.scheme = \"{scheme}\"\n"))
                 .expect("the scheme is one to hand over");
 
             assert!(config.contains(&format!("rest = \"{hint}\"")), "{config}");
@@ -270,7 +280,7 @@ prefix.bold = true
     /// like and leave the rest of what it says alone.
     #[test]
     fn how_a_label_is_drawn_is_left_to_jj() {
-        let config = config("blazingjj.colors.scheme = \"solarized-dark\"\n")
+        let config = config("blazingjj.styles.scheme = \"solarized-dark\"\n")
             .expect("the scheme is one to hand over");
         let config: toml::Table = config.parse().expect("what we write reads back");
         let colors = config["colors"]
@@ -283,6 +293,26 @@ prefix.bold = true
 
         // Nothing is said about a label that is only ever drawn bold.
         assert_eq!(colors["prefix"].as_table().expect("a table").len(), 1);
+    }
+
+    /// jj reads the attributes under the same names we do, so what a
+    /// role naming its output is asked to be drawn with is handed over
+    /// beside its colours.
+    #[test]
+    fn the_attributes_of_a_role_jj_draws_are_handed_over_too() {
+        let config = config("blazingjj.styles.change-id = { italic = true, bold = false }\n")
+            .expect("the attributes are something to hand over");
+        let config: toml::Table = config.parse().expect("what we write reads back");
+        let colors = config["colors"]
+            .as_table()
+            .expect("the colours are a table");
+
+        let change_id = colors["change_id"].as_table().expect("a table");
+        assert_eq!(change_id["italic"].as_bool(), Some(true));
+        assert_eq!(change_id["bold"].as_bool(), Some(false));
+        // The colour jj draws it in is left alone, nothing being said
+        // about it here.
+        assert_eq!(change_id["fg"].as_str(), Some("magenta"));
     }
 
     /// A label a role names that jj knows nothing about under that name
@@ -319,7 +349,7 @@ prefix.bold = true
         let colors = "\"diff header\" = \"yellow\"\nconflict_description = \"yellow\"\n"
             .parse::<toml::Table>()
             .expect("the listing parses");
-        let theme = toml::from_str::<JjConfig>("blazingjj.colors.scheme = \"catppuccin-mocha\"\n")
+        let theme = toml::from_str::<JjConfig>("blazingjj.styles.scheme = \"catppuccin-mocha\"\n")
             .expect("the configuration parses")
             .theme();
         let config: toml::Table = config_text(&theme, &colors)
@@ -345,7 +375,7 @@ prefix.bold = true
     /// and the boldness stay jj's.
     #[test]
     fn a_background_a_scheme_gives_a_label_is_added_to_what_jj_says() {
-        let config = config("blazingjj.colors.scheme = \"catppuccin-mocha\"\n")
+        let config = config("blazingjj.styles.scheme = \"catppuccin-mocha\"\n")
             .expect("the scheme is one to hand over");
         let config: toml::Table = config.parse().expect("what we write reads back");
         let colors = config["colors"]
@@ -362,7 +392,7 @@ prefix.bold = true
     /// was rather than being given a colour it never had.
     #[test]
     fn the_terminals_own_colour_stays_the_terminals() {
-        let config = config("blazingjj.colors.scheme = \"tokyo-night\"\n")
+        let config = config("blazingjj.styles.scheme = \"tokyo-night\"\n")
             .expect("the scheme is one to hand over");
         let config: toml::Table = config.parse().expect("what we write reads back");
         let colors = config["colors"]
@@ -407,7 +437,7 @@ prefix.bold = true
     /// back as the label it was, rather than as a table.
     #[test]
     fn a_label_of_several_words_reads_back_as_one_label() {
-        let config = config("blazingjj.colors.scheme = \"tokyo-night\"\n")
+        let config = config("blazingjj.styles.scheme = \"tokyo-night\"\n")
             .expect("the scheme is one to hand over");
         let config: toml::Table = config.parse().expect("what we write reads back");
         let colors = config["colors"]
@@ -434,7 +464,7 @@ prefix.bold = true
     /// only way the colour is drawn at all.
     #[test]
     fn what_is_said_about_jjs_own_output_is_handed_to_jj() {
-        let config = config("blazingjj.colors.change-id = { fg = \"cyan\", bg = \"#202030\" }\n")
+        let config = config("blazingjj.styles.change-id = { fg = \"cyan\", bg = \"#202030\" }\n")
             .expect("there is something to hand over");
         let config: toml::Table = config.parse().expect("what we write reads back");
         let colors = config["colors"]
@@ -457,7 +487,7 @@ prefix.bold = true
     /// a background of ours is no reason to lose.
     #[test]
     fn a_channel_the_role_leaves_alone_stays_as_jj_draws_it() {
-        let config = config("blazingjj.colors.change-id.bg = \"#202030\"\n")
+        let config = config("blazingjj.styles.change-id.bg = \"#202030\"\n")
             .expect("there is something to hand over");
         let config: toml::Table = config.parse().expect("what we write reads back");
         let colors = config["colors"]
@@ -480,7 +510,7 @@ prefix.bold = true
 
         for scheme in Scheme::NAMES.map(|name| Scheme::named(name).expect("the scheme reads")) {
             let theme = toml::from_str::<JjConfig>(&format!(
-                "blazingjj.colors.scheme = \"{}\"\nblazingjj.colors.apply-to-jj = true\n",
+                "blazingjj.styles.scheme = \"{}\"\nblazingjj.styles.apply-to-jj = true\n",
                 scheme.name
             ))
             .expect("the configuration parses")

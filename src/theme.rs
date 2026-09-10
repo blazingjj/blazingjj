@@ -1,13 +1,14 @@
-/*! The colours the app draws in.
+/*! The styles the app draws in.
 
-An element is drawn in a [Role], which gives a [Style] so that it carries
-a background as well as a foreground. Styles are patched onto what is
-already there rather than set: a role that says nothing about a channel
-keeps whatever was underneath, jj's own colouring included.
+An element is drawn in a [Role], which gives a [Style]: the colours it is
+drawn in and on, and whether it is drawn bold, dim, italic or underlined.
+Styles are patched onto what is already there rather than set: a role
+that says nothing about a part of a style keeps whatever was underneath,
+jj's own colouring included.
 
-A role falls back for a channel it says nothing about itself: to the role
-it is a kind of, where it is one, and in the end to [Role::Default], so
-that a background set there is set for the whole app. Left unset, the
+A role falls back for a part it says nothing about itself: to the role it
+is a kind of, where it is one, and in the end to [Role::Default], so that
+a background set there is set for the whole app. Left unset, the
 terminal's own shows through.
 */
 
@@ -22,6 +23,7 @@ use std::sync::LazyLock;
 pub use color::Ansi;
 pub use color::ThemeColor;
 use ratatui::style::Color;
+use ratatui::style::Modifier;
 use ratatui::style::Style;
 pub use scheme::Scheme;
 use serde::Deserialize;
@@ -33,7 +35,7 @@ use crate::env::configured_theme;
 
 /// What the app draws an element for. The colour of a role is the colour
 /// of every element drawn in it, and [Role::doc] is what each is drawn
-/// for, said once for the colours tab to show and to read here.
+/// for, said once for the styles tab to show and to read here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Role {
     Default,
@@ -70,7 +72,7 @@ pub enum Role {
 }
 
 impl Role {
-    /// Every role there is, in the order the colours tab lists them.
+    /// Every role there is, in the order the styles tab lists them.
     pub const ALL: [Self; 31] = [
         Self::Default,
         Self::Highlight,
@@ -111,7 +113,7 @@ impl Role {
         self as usize
     }
 
-    /// What the role is called under `blazingjj.colors`.
+    /// What the role is called under `blazingjj.styles`.
     pub fn key(self) -> &'static str {
         match self {
             Self::Default => "default",
@@ -148,7 +150,7 @@ impl Role {
         }
     }
 
-    /// What the role is drawn for, as the colours tab says it.
+    /// What the role is drawn for, as the styles tab says it.
     pub fn doc(self) -> &'static str {
         match self {
             Self::Default => {
@@ -172,7 +174,7 @@ impl Role {
             Self::Success => "What just worked, for as long as it is worth showing.",
             Self::Button => "A button that is not the one Enter presses.",
             Self::ButtonActive => {
-                "The button Enter presses. Takes the highlight's colors unless given its own."
+                "The button Enter presses. Takes the highlight's style unless given its own."
             }
             Self::ChangeId => "A change id.",
             Self::Bookmark => "The name of a bookmark.",
@@ -192,16 +194,16 @@ impl Role {
             Self::DiffHunkHeader => "The line saying where in a file a hunk sits.",
             Self::DiffAdded => "A line, or a word, a diff adds.",
             Self::DiffAddedWord => {
-                "The words that changed inside an added line. Takes the added line's colors unless given its own."
+                "The words that changed inside an added line. Takes the added line's style unless given its own."
             }
             Self::DiffRemoved => "A line, or a word, a diff removes.",
             Self::DiffRemovedWord => {
-                "The words that changed inside a removed line. Takes the removed line's colors unless given its own."
+                "The words that changed inside a removed line. Takes the removed line's style unless given its own."
             }
         }
     }
 
-    /// The heading the colours tab lists the role under.
+    /// The heading the styles tab lists the role under.
     pub fn section(self) -> &'static str {
         match self {
             Self::Default
@@ -233,31 +235,47 @@ impl Role {
     }
 
     /// What the role is drawn in while the configuration says nothing
-    /// about it. A channel left out here is one the role has no colour
-    /// of its own for, and so falls back to [Role::Default] for.
-    fn builtin(self) -> RoleColors {
-        let fg = |color| RoleColors {
+    /// about it. A part of a style left out here is one the role has
+    /// none of its own, and so falls back to [Role::Default] for.
+    fn builtin(self) -> RoleStyle {
+        let fg = |color| RoleStyle {
             fg: Some(color),
-            bg: None,
+            ..RoleStyle::default()
         };
         let ansi = |ansi| fg(ThemeColor::Ansi(ansi));
 
         match self {
-            // Told apart by placement and boldness, or by what they fall
-            // back to, rather than by a colour of their own.
+            // Told apart by placement, or by what they fall back to,
+            // rather than by anything of their own.
             Self::Default
             | Self::Border
             | Self::PanelTitle
-            | Self::Heading
-            | Self::ButtonActive
             // jj tells the file header apart by boldness alone, and
             // marks the changed words out by underlining them.
             | Self::DiffFileHeader
             | Self::DiffAddedWord
-            | Self::DiffRemovedWord => RoleColors::default(),
-            Self::Highlight => RoleColors {
-                fg: None,
+            | Self::DiffRemovedWord => RoleStyle::default(),
+            // Told apart by how they are drawn rather than by a colour:
+            // a heading stands above the rows it gathers, a popup's
+            // title above what it asks, and the button Enter presses
+            // takes the highlight's colours, so its own mark is the
+            // underline.
+            Self::Heading => RoleStyle {
+                bold: Some(true),
+                underline: Some(true),
+                ..RoleStyle::default()
+            },
+            Self::PopupTitle => RoleStyle {
+                bold: Some(true),
+                ..ansi(Ansi::Cyan)
+            },
+            Self::ButtonActive => RoleStyle {
+                underline: Some(true),
+                ..RoleStyle::default()
+            },
+            Self::Highlight => RoleStyle {
                 bg: Some(ThemeColor::Rgb(50, 50, 150)),
+                ..RoleStyle::default()
             },
             Self::Separator => ansi(Ansi::BrightBlack),
             Self::Hint => ansi(Ansi::White),
@@ -265,8 +283,7 @@ impl Role {
             Self::PopupBorder | Self::Success | Self::FileAdded | Self::DiffAdded => {
                 ansi(Ansi::Green)
             }
-            Self::PopupTitle
-            | Self::Workspace
+            Self::Workspace
             | Self::FileModified
             | Self::FileRenamed
             | Self::FileCopied
@@ -332,12 +349,16 @@ impl Role {
     }
 }
 
-/// The foreground and background of a role, either of which may be left
-/// for something else to say.
+/// What a role is drawn in and how, any part of which may be left for
+/// something else to say.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct RoleColors {
+pub struct RoleStyle {
     pub fg: Option<ThemeColor>,
     pub bg: Option<ThemeColor>,
+    pub bold: Option<bool>,
+    pub dim: Option<bool>,
+    pub italic: Option<bool>,
+    pub underline: Option<bool>,
 }
 
 /// Which of the two colours of a role is being asked for.
@@ -348,7 +369,7 @@ pub enum Channel {
 }
 
 impl Channel {
-    /// Both of them, in the order the colours tab asks for them.
+    /// Both of them, in the order the styles tab asks for them.
     pub const ALL: [Self; 2] = [Self::Fg, Self::Bg];
 
     /// What the channel is called under a role's table.
@@ -359,17 +380,64 @@ impl Channel {
         }
     }
 
-    fn of(self, colors: RoleColors) -> Option<ThemeColor> {
+    fn of(self, style: RoleStyle) -> Option<ThemeColor> {
         match self {
-            Self::Fg => colors.fg,
-            Self::Bg => colors.bg,
+            Self::Fg => style.fg,
+            Self::Bg => style.bg,
+        }
+    }
+}
+
+/// How a role is drawn beyond the colours it is drawn in and on. Each is
+/// either asked for, turned down, or left for something else to say,
+/// which is what lets a role take one from the role it falls back to and
+/// what lets it refuse one the app would otherwise draw it with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Attribute {
+    Bold,
+    Dim,
+    Italic,
+    Underline,
+}
+
+impl Attribute {
+    /// Every one of them, in the order the styles tab lists them.
+    pub const ALL: [Self; 4] = [Self::Bold, Self::Dim, Self::Italic, Self::Underline];
+
+    /// What the attribute is called under a role's table, which is what
+    /// jj calls it too.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Bold => "bold",
+            Self::Dim => "dim",
+            Self::Italic => "italic",
+            Self::Underline => "underline",
+        }
+    }
+
+    fn of(self, style: RoleStyle) -> Option<bool> {
+        match self {
+            Self::Bold => style.bold,
+            Self::Dim => style.dim,
+            Self::Italic => style.italic,
+            Self::Underline => style.underline,
+        }
+    }
+
+    /// How ratatui draws it.
+    fn modifier(self) -> Modifier {
+        match self {
+            Self::Bold => Modifier::BOLD,
+            Self::Dim => Modifier::DIM,
+            Self::Italic => Modifier::ITALIC,
+            Self::Underline => Modifier::UNDERLINED,
         }
     }
 }
 
 /// A role is written either as the colour to draw it in, which is its
-/// foreground, or as a table saying either of its colours.
-impl<'de> Deserialize<'de> for RoleColors {
+/// foreground, or as a table saying any of its colours and attributes.
+impl<'de> Deserialize<'de> for RoleStyle {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let read = |value: Option<toml::Value>| match value {
             None => Ok(None),
@@ -377,50 +445,68 @@ impl<'de> Deserialize<'de> for RoleColors {
                 .map(Some)
                 .map_err(de::Error::custom),
         };
+        let asked = |value: Option<toml::Value>| match value {
+            None => Ok(None),
+            Some(value) => bool::deserialize(value).map(Some).map_err(|_| {
+                de::Error::custom("an attribute is asked for with true and turned down with false")
+            }),
+        };
 
         match toml::Value::deserialize(deserializer)? {
             toml::Value::String(text) => Ok(Self {
                 fg: Some(text.parse().map_err(de::Error::custom)?),
-                bg: None,
+                ..Self::default()
             }),
             toml::Value::Table(mut table) => {
-                if let Some(key) = table
-                    .keys()
-                    .find(|key| !matches!(key.as_str(), "fg" | "bg"))
-                {
+                let keys = ["fg", "bg"];
+                if let Some(key) = table.keys().find(|key| {
+                    !keys.contains(&key.as_str())
+                        && !Attribute::ALL
+                            .into_iter()
+                            .any(|attribute| attribute.key() == *key)
+                }) {
                     return Err(de::Error::custom(format!(
-                        "a color says {key:?} about nothing; it says \"fg\" and \"bg\""
+                        "a style says {key:?} about nothing; it says {}",
+                        keys.into_iter()
+                            .chain(Attribute::ALL.map(Attribute::key))
+                            .map(|key| format!("{key:?}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     )));
                 }
 
                 Ok(Self {
                     fg: read(table.remove("fg"))?,
                     bg: read(table.remove("bg"))?,
+                    bold: asked(table.remove("bold"))?,
+                    dim: asked(table.remove("dim"))?,
+                    italic: asked(table.remove("italic"))?,
+                    underline: asked(table.remove("underline"))?,
                 })
             }
             _ => Err(de::Error::custom(
-                "a color is written as a name or a code, or as a table saying \"fg\" and \"bg\"",
+                "a style is written as a color name or a code, or as a table saying its colors and attributes",
             )),
         }
     }
 }
 
-/// What the configuration says about the colours: which scheme to draw
+/// What the configuration says about the styles: which scheme to draw
 /// in, and what of it to draw differently. A role it says nothing about
 /// is left out rather than held as saying nothing, so that what the
 /// scheme says can be told apart from what the user does.
 #[derive(Debug, Clone, Default)]
-pub struct Colors {
+pub struct Styles {
     scheme: Option<&'static Scheme>,
     /// Whether jj is to be told to write in the scheme's colours too,
     /// for as long as anything is said about it either way.
     apply_to_jj: Option<bool>,
-    roles: HashMap<Role, RoleColors>,
+    roles: HashMap<Role, RoleStyle>,
 }
 
-impl Colors {
+impl Styles {
     /// What the configuration says about `role`, which may be nothing.
-    fn role(&self, role: Role) -> RoleColors {
+    fn role(&self, role: Role) -> RoleStyle {
         self.roles.get(&role).copied().unwrap_or_default()
     }
 }
@@ -428,7 +514,7 @@ impl Colors {
 /// The scheme and whether it reaches jj are named alongside the roles
 /// rather than under a table of their own, so they are taken out before
 /// what is left is read as roles.
-impl<'de> Deserialize<'de> for Colors {
+impl<'de> Deserialize<'de> for Styles {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let mut table = toml::Table::deserialize(deserializer)?;
 
@@ -463,7 +549,7 @@ impl<'de> Deserialize<'de> for Colors {
 /// The roles `table` says something about, refusing a key that names no
 /// role with the roles there are: a misspelt one is a colour that would
 /// otherwise go quietly unset.
-fn roles_from_table(table: toml::Table) -> Result<HashMap<Role, RoleColors>, String> {
+fn roles_from_table(table: toml::Table) -> Result<HashMap<Role, RoleStyle>, String> {
     table
         .into_iter()
         .map(|(key, value)| {
@@ -479,7 +565,7 @@ fn roles_from_table(table: toml::Table) -> Result<HashMap<Role, RoleColors>, Str
 
             Ok((
                 role,
-                RoleColors::deserialize(value).map_err(|err| err.to_string())?,
+                RoleStyle::deserialize(value).map_err(|err| err.to_string())?,
             ))
         })
         .collect()
@@ -488,22 +574,22 @@ fn roles_from_table(table: toml::Table) -> Result<HashMap<Role, RoleColors>, Str
 /// The colours to draw the roles in.
 #[derive(Debug, Clone)]
 pub struct Theme {
-    colors: Colors,
+    styles: Styles,
     /// What each role is drawn in, by [Role::index].
-    styles: [Style; Role::ALL.len()],
+    role_styles: [Style; Role::ALL.len()],
 }
 
 impl Theme {
-    fn new(colors: Colors) -> Self {
+    fn new(styles: Styles) -> Self {
         let mut theme = Self {
-            colors,
-            styles: [Style::new(); Role::ALL.len()],
+            styles,
+            role_styles: [Style::new(); Role::ALL.len()],
         };
 
         for role in Role::ALL {
             let style = theme.worked_out(role);
 
-            theme.styles[role.index()] = style;
+            theme.role_styles[role.index()] = style;
         }
 
         theme
@@ -512,7 +598,7 @@ impl Theme {
     /// What `role` is drawn in. Channels the role says nothing about are
     /// left for whatever is underneath to fill in.
     pub fn style(&self, role: Role) -> Style {
-        self.styles[role.index()]
+        self.role_styles[role.index()]
     }
 
     fn worked_out(&self, role: Role) -> Style {
@@ -523,8 +609,34 @@ impl Theme {
         if let Some(bg) = self.color(role, Channel::Bg) {
             style = style.bg(bg);
         }
+        for attribute in Attribute::ALL {
+            style = match self.attribute_of(role, attribute) {
+                // An attribute turned down is taken off what is
+                // underneath rather than left unsaid, so that refusing
+                // one is not the same as saying nothing about it.
+                Some(true) => style.add_modifier(attribute.modifier()),
+                Some(false) => style.remove_modifier(attribute.modifier()),
+                None => style,
+            };
+        }
 
         style
+    }
+
+    /// What is said about `role`'s `part` outright: what the user says
+    /// about the role, else what the scheme says about it, else what the
+    /// role is drawn with without being said anything about.
+    fn said<T>(&self, role: Role, part: impl Fn(RoleStyle) -> Option<T>) -> Option<T> {
+        part(self.styles.role(role))
+            .or_else(|| part(self.styles.scheme?.role(role)))
+            .or_else(|| part(role.builtin()))
+    }
+
+    /// What the configuration or the scheme says about `role`'s `part`,
+    /// which is what it is drawn with beyond anything it only falls back
+    /// to.
+    fn said_outright<T>(&self, role: Role, part: impl Fn(RoleStyle) -> Option<T>) -> Option<T> {
+        part(self.styles.role(role)).or_else(|| part(self.styles.scheme?.role(role)))
     }
 
     /// What `role` is drawn in, as far as anything says: what the user
@@ -536,13 +648,7 @@ impl Theme {
     /// makes of it, which is how a scheme recolours the roles neither it
     /// nor the user says anything about.
     pub fn color_of(&self, role: Role, channel: Channel) -> Option<ThemeColor> {
-        let scheme = self.colors.scheme;
-        let said = |this: Role| {
-            channel
-                .of(self.colors.role(this))
-                .or_else(|| channel.of(scheme?.role(this)))
-                .or_else(|| channel.of(this.builtin()))
-        };
+        let said = |this: Role| self.said(this, |style| channel.of(style));
 
         // The role itself first, then what it falls back to and from
         // there to what is set for the app. A role that keeps the
@@ -553,10 +659,20 @@ impl Theme {
             None if role.keeps_off(channel) => return None,
             None => iter::successors(role.parent(), |this| this.parent())
                 .find_map(said)
-                .or_else(|| channel.of(scheme?.palette().default_colors()))?,
+                .or_else(|| channel.of(self.styles.scheme?.palette().default_colors()))?,
         };
 
         Some(self.through_palette(color))
+    }
+
+    /// Whether `role` is drawn with `attribute`, as far as anything
+    /// says, falling back the way its colours do. Nothing where nothing
+    /// says either way, which leaves the attribute as whatever the app
+    /// drew the element with itself.
+    pub fn attribute_of(&self, role: Role, attribute: Attribute) -> Option<bool> {
+        let said = |this: Role| self.said(this, |style| attribute.of(style));
+
+        said(role).or_else(|| iter::successors(role.parent(), |this| this.parent()).find_map(said))
     }
 
     /// What the configuration or the scheme draws `role`'s `channel` in
@@ -566,18 +682,21 @@ impl Theme {
     /// what the app draws in for want of anything said, and jj has its
     /// own answer for that already.
     pub fn said_of(&self, role: Role, channel: Channel) -> Option<ThemeColor> {
-        let scheme = self.colors.scheme;
-        let color = channel
-            .of(self.colors.role(role))
-            .or_else(|| channel.of(scheme?.role(role)))?;
+        let color = self.said_outright(role, |style| channel.of(style))?;
 
         Some(self.through_palette(color))
+    }
+
+    /// Whether `role` is said outright to be drawn with `attribute`,
+    /// which is what there is to hand jj about it.
+    pub fn attribute_said_of(&self, role: Role, attribute: Attribute) -> Option<bool> {
+        self.said_outright(role, |style| attribute.of(style))
     }
 
     /// `color` as the scheme's palette draws it, where it names one of
     /// the sixteen and a scheme is picked.
     fn through_palette(&self, color: ThemeColor) -> ThemeColor {
-        match (color, self.colors.scheme) {
+        match (color, self.styles.scheme) {
             (ThemeColor::Ansi(ansi), Some(scheme)) => scheme.palette().of(ansi),
             _ => color,
         }
@@ -589,29 +708,32 @@ impl Theme {
 
     /// The scheme the app is drawn in, if one is picked.
     pub fn scheme(&self) -> Option<&'static Scheme> {
-        self.colors.scheme
+        self.styles.scheme
     }
 
     /// Whether jj is to be told to write in the colours the app draws
     /// in: while a scheme is picked or a role naming jj's output is
-    /// given a colour, unless told not to.
+    /// given a style of its own, unless told not to.
     pub fn applies_to_jj(&self) -> bool {
         let says_what_jj_draws = || {
             Role::ALL.into_iter().any(|role| {
                 !role.jj_labels().is_empty()
-                    && Channel::ALL
+                    && (Channel::ALL
                         .into_iter()
                         .any(|channel| self.said_of(role, channel).is_some())
+                        || Attribute::ALL
+                            .into_iter()
+                            .any(|attribute| self.attribute_said_of(role, attribute).is_some()))
             })
         };
 
-        self.asked_to_apply_to_jj() && (self.colors.scheme.is_some() || says_what_jj_draws())
+        self.asked_to_apply_to_jj() && (self.styles.scheme.is_some() || says_what_jj_draws())
     }
 
     /// Whether telling jj is turned on, whether or not there is anything
     /// to tell it as things stand.
     pub fn asked_to_apply_to_jj(&self) -> bool {
-        self.colors.apply_to_jj.unwrap_or(true)
+        self.styles.apply_to_jj.unwrap_or(true)
     }
 
     /// What jj is to be told to write in, given `colors` as jj reads
@@ -623,14 +745,14 @@ impl Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::new(Colors::default())
+        Self::new(Styles::default())
     }
 }
 
 impl JjConfig {
     /// The colours the configuration draws the app in.
     pub fn theme(&self) -> Theme {
-        Theme::new(self.colors().clone())
+        Theme::new(self.styles().clone())
     }
 }
 
@@ -672,7 +794,7 @@ mod tests {
             .to_owned()
     }
 
-    /// The list of the roles is what the configuration and the colours
+    /// The list of the roles is what the configuration and the styles
     /// tab are built out of, so a role missing from it is one nothing
     /// can be said about. The list being what there is to iterate, only
     /// counting them catches one that was left out of it.
@@ -692,7 +814,7 @@ mod tests {
     fn every_role_is_a_key_of_the_configuration() {
         for role in Role::ALL {
             let theme = theme_of(&format!(
-                "blazingjj.colors.{} = {{ fg = \"#010203\" }}\n",
+                "blazingjj.styles.{} = {{ fg = \"#010203\" }}\n",
                 role.key()
             ));
 
@@ -706,7 +828,7 @@ mod tests {
     }
 
     /// The app looks as it always has while the configuration says
-    /// nothing about the colours.
+    /// nothing about the styles.
     #[test]
     fn without_a_word_the_roles_are_drawn_as_they_were() {
         let theme = Theme::default();
@@ -726,13 +848,13 @@ mod tests {
     /// table saying either of its colours.
     #[test]
     fn a_role_takes_a_colour_of_its_own_or_a_table_of_the_two() {
-        let bare = theme_of("blazingjj.colors.hint = \"#010203\"\n");
+        let bare = theme_of("blazingjj.styles.hint = \"#010203\"\n");
         assert_eq!(
             bare.color_of(Role::Hint, Channel::Fg),
             Some(ThemeColor::Rgb(1, 2, 3))
         );
 
-        let table = theme_of("blazingjj.colors.hint = { fg = \"red\", bg = \"blue\" }\n");
+        let table = theme_of("blazingjj.styles.hint = { fg = \"red\", bg = \"blue\" }\n");
         assert_eq!(
             table.color_of(Role::Hint, Channel::Fg),
             Some(ThemeColor::Ansi(Ansi::Red))
@@ -748,7 +870,7 @@ mod tests {
     /// rather than twenty-three times.
     #[test]
     fn a_role_falls_back_to_what_is_set_for_the_app() {
-        let theme = theme_of("blazingjj.colors.default = { fg = \"#010203\", bg = \"#040506\" }\n");
+        let theme = theme_of("blazingjj.styles.default = { fg = \"#010203\", bg = \"#040506\" }\n");
 
         // The hint has a foreground of its own and no background, so it
         // takes only the background.
@@ -772,11 +894,11 @@ mod tests {
     /// jj gave them rather than flattening to the one.
     #[test]
     fn the_highlight_takes_no_foreground_from_what_is_set_for_the_app() {
-        let for_the_app = theme_of("blazingjj.colors.default = { fg = \"red\", bg = \"blue\" }\n");
+        let for_the_app = theme_of("blazingjj.styles.default = { fg = \"red\", bg = \"blue\" }\n");
         assert_eq!(for_the_app.style(Role::Highlight).fg, None);
 
         // What is asked for outright is still what it is drawn in.
-        let asked = theme_of("blazingjj.colors.highlight.fg = \"red\"\n");
+        let asked = theme_of("blazingjj.styles.highlight.fg = \"red\"\n");
         assert_eq!(asked.style(Role::Highlight).fg, Some(Color::Red));
 
         // The button Enter presses is a kind of highlight, but it is a
@@ -791,14 +913,15 @@ mod tests {
     /// having to be named twice.
     #[test]
     fn a_role_falls_back_to_the_role_it_is_a_kind_of() {
+        let theme = Theme::default();
         assert_eq!(
-            Theme::default().style(Role::ButtonActive),
-            Theme::default().style(Role::Highlight)
+            theme.style(Role::ButtonActive).bg,
+            theme.style(Role::Highlight).bg
         );
 
         // Including where the highlight is what was set, rather than
         // only where it is what the app comes with.
-        let highlighted = theme_of("blazingjj.colors.highlight.bg = \"#010203\"\n");
+        let highlighted = theme_of("blazingjj.styles.highlight.bg = \"#010203\"\n");
         assert_eq!(
             highlighted.style(Role::ButtonActive).bg,
             Some(Color::Rgb(1, 2, 3))
@@ -806,8 +929,8 @@ mod tests {
 
         // What is said about the button itself still beats it.
         let both = theme_of(
-            "blazingjj.colors.highlight.bg = \"#010203\"\n\
-             blazingjj.colors.button-active.bg = \"#040506\"\n",
+            "blazingjj.styles.highlight.bg = \"#010203\"\n\
+             blazingjj.styles.button-active.bg = \"#040506\"\n",
         );
         assert_eq!(both.style(Role::ButtonActive).bg, Some(Color::Rgb(4, 5, 6)));
     }
@@ -827,22 +950,98 @@ mod tests {
     /// can of.
     #[test]
     fn a_colour_that_names_nothing_is_refused() {
-        assert!(refusal("blazingjj.colors.hint = \"chartreuse\"\n").contains("#rrggbb"));
-        assert!(refusal("blazingjj.colors.hint.fg = \"chartreuse\"\n").contains("#rrggbb"));
+        assert!(refusal("blazingjj.styles.hint = \"chartreuse\"\n").contains("#rrggbb"));
+        assert!(refusal("blazingjj.styles.hint.fg = \"chartreuse\"\n").contains("#rrggbb"));
     }
 
-    /// A role says a foreground and a background and nothing else, so
-    /// that a misspelt one is not taken for a colour that was set.
+    /// A role says its two colours and its attributes and nothing else,
+    /// so that a misspelt one is not taken for something that was set.
     #[test]
     fn a_role_is_refused_what_says_nothing_about_it() {
-        let refusal = refusal("blazingjj.colors.hint = { foreground = \"red\" }\n");
+        let refusal = refusal("blazingjj.styles.hint = { foreground = \"red\" }\n");
 
         assert!(refusal.contains("foreground"), "{refusal}");
+        assert!(refusal.contains("\"underline\""), "{refusal}");
+    }
+
+    /// An attribute is asked for and turned down with true and false,
+    /// there being nothing else to say about one.
+    #[test]
+    fn an_attribute_is_refused_what_is_no_answer_about_it() {
+        let refusal = refusal("blazingjj.styles.hint = { bold = \"yes\" }\n");
+
+        assert!(refusal.contains("true"), "{refusal}");
+    }
+
+    /// An attribute asked for is drawn with, and one turned down is
+    /// taken off what is underneath rather than left unsaid: the app
+    /// draws some elements bold itself, and refusing that has to reach
+    /// them.
+    #[test]
+    fn an_attribute_is_drawn_with_or_taken_off_as_it_is_asked_for() {
+        let asked = theme_of("blazingjj.styles.hint = { bold = true, italic = true }\n");
+        assert_eq!(
+            asked.style(Role::Hint).add_modifier,
+            Modifier::BOLD | Modifier::ITALIC
+        );
+        assert_eq!(asked.style(Role::Hint).sub_modifier, Modifier::empty());
+
+        let turned_down = theme_of("blazingjj.styles.hint.bold = false\n");
+        assert_eq!(
+            turned_down.style(Role::Hint).add_modifier,
+            Modifier::empty()
+        );
+        assert_eq!(turned_down.style(Role::Hint).sub_modifier, Modifier::BOLD);
+    }
+
+    /// What the app draws a role with is the role's own, so it can be
+    /// turned down like anything else: a heading is bold and underlined
+    /// for want of being told otherwise, not whatever it is told.
+    #[test]
+    fn what_a_role_comes_drawn_with_can_be_turned_down() {
+        assert_eq!(
+            Theme::default().style(Role::Heading).add_modifier,
+            Modifier::BOLD | Modifier::UNDERLINED
+        );
+
+        let plain = theme_of(
+            "blazingjj.styles.heading = { bold = false, underline = false }\n\
+             blazingjj.styles.popup-title.bold = false\n\
+             blazingjj.styles.button-active.underline = false\n",
+        );
+
+        for role in [Role::Heading, Role::PopupTitle, Role::ButtonActive] {
+            assert_eq!(
+                plain.style(role).add_modifier,
+                Modifier::empty(),
+                "{} is drawn with nothing it was told not to be",
+                role.key()
+            );
+        }
+    }
+
+    /// An attribute falls back the way a colour does: to the role it is
+    /// a kind of, and from there to what is set for the app as a whole.
+    #[test]
+    fn an_attribute_falls_back_to_what_the_role_is_a_kind_of() {
+        let theme = theme_of("blazingjj.styles.highlight.underline = true\n");
+
+        assert_eq!(
+            theme.attribute_of(Role::ButtonActive, Attribute::Underline),
+            Some(true)
+        );
+
+        let for_the_app = theme_of("blazingjj.styles.default.italic = true\n");
+
+        assert_eq!(
+            for_the_app.attribute_of(Role::Error, Attribute::Italic),
+            Some(true)
+        );
     }
 
     #[test]
     fn a_role_that_is_neither_a_colour_nor_a_table_is_refused() {
-        assert!(refusal("blazingjj.colors.hint = 5\n").contains("name or a code"));
+        assert!(refusal("blazingjj.styles.hint = 5\n").contains("name or a code"));
     }
 
     #[test]
@@ -867,20 +1066,21 @@ mod tests {
 
     #[test]
     fn the_highlight_is_drawn_on_what_the_configuration_says() {
-        let theme = theme_of("blazingjj.colors.highlight.bg = \"green\"\n");
+        let theme = theme_of("blazingjj.styles.highlight.bg = \"green\"\n");
 
         assert_eq!(theme.style(Role::Highlight).bg, Some(Color::Green));
     }
 
     /// The button Enter presses is a kind of highlight rather than a
-    /// colour of its own, so configuring the one colours both.
+    /// colour of its own, so configuring the one colours both. Its own
+    /// mark is the underline, which is not the highlight's.
     #[test]
     fn the_button_enter_presses_is_drawn_as_the_highlight_is() {
-        let theme = theme_of("blazingjj.colors.highlight.bg = \"green\"\n");
+        let theme = theme_of("blazingjj.styles.highlight.bg = \"green\"\n");
 
         assert_eq!(
             theme.style(Role::ButtonActive),
-            theme.style(Role::Highlight)
+            theme.style(Role::Highlight).underlined()
         );
     }
 
@@ -890,7 +1090,7 @@ mod tests {
     /// scheme is for: the app is recoloured without a role being named.
     #[test]
     fn a_scheme_recolours_the_roles_it_says_nothing_about() {
-        let theme = theme_of("blazingjj.colors.scheme = \"tokyo-night\"\n");
+        let theme = theme_of("blazingjj.styles.scheme = \"tokyo-night\"\n");
 
         // The error is `red`, which Tokyo Night draws as #f7768e, on the
         // background the scheme draws the app on.
@@ -909,7 +1109,7 @@ mod tests {
     #[test]
     fn no_scheme_gives_the_highlight_a_foreground() {
         for scheme in Scheme::NAMES.map(|name| Scheme::named(name).expect("the scheme reads")) {
-            let theme = theme_of(&format!("blazingjj.colors.scheme = \"{}\"\n", scheme.name));
+            let theme = theme_of(&format!("blazingjj.styles.scheme = \"{}\"\n", scheme.name));
 
             assert_eq!(theme.style(Role::Highlight).fg, None, "{}", scheme.name);
             assert!(theme.style(Role::Highlight).bg.is_some(), "{}", scheme.name);
@@ -920,7 +1120,7 @@ mod tests {
     /// picking a background as well as the colours on it.
     #[test]
     fn a_scheme_says_what_the_app_is_drawn_on() {
-        let theme = theme_of("blazingjj.colors.scheme = \"tokyo-night-storm\"\n");
+        let theme = theme_of("blazingjj.styles.scheme = \"tokyo-night-storm\"\n");
 
         assert_eq!(
             theme.style(Role::Default),
@@ -935,7 +1135,7 @@ mod tests {
     /// so outright is what keeps it visible.
     #[test]
     fn a_scheme_beats_what_a_role_is_drawn_in_without_one() {
-        let theme = theme_of("blazingjj.colors.scheme = \"solarized-dark\"\n");
+        let theme = theme_of("blazingjj.styles.scheme = \"solarized-dark\"\n");
 
         assert_eq!(
             theme.style(Role::Separator),
@@ -950,7 +1150,7 @@ mod tests {
     #[test]
     fn what_is_set_beats_the_scheme() {
         let theme = theme_of(
-            "blazingjj.colors.scheme = \"tokyo-night\"\nblazingjj.colors.error = \"#010203\"\n",
+            "blazingjj.styles.scheme = \"tokyo-night\"\nblazingjj.styles.error = \"#010203\"\n",
         );
 
         assert_eq!(theme.style(Role::Error).fg, Some(Color::Rgb(1, 2, 3)));
@@ -962,7 +1162,7 @@ mod tests {
     #[test]
     fn a_scheme_is_handed_to_jj_without_being_asked_twice() {
         assert!(
-            theme_of("blazingjj.colors.scheme = \"tokyo-night\"\n").applies_to_jj(),
+            theme_of("blazingjj.styles.scheme = \"tokyo-night\"\n").applies_to_jj(),
             "a scheme is handed over"
         );
     }
@@ -972,7 +1172,7 @@ mod tests {
     #[test]
     fn without_a_scheme_jj_is_left_as_it_was() {
         assert!(!Theme::default().applies_to_jj());
-        assert!(!theme_of("blazingjj.colors.apply-to-jj = true\n").applies_to_jj());
+        assert!(!theme_of("blazingjj.styles.apply-to-jj = true\n").applies_to_jj());
     }
 
     /// Handing the colours over is still something to turn down, for
@@ -980,8 +1180,8 @@ mod tests {
     #[test]
     fn handing_the_colours_to_jj_can_be_turned_down() {
         let theme = theme_of(
-            "blazingjj.colors.scheme = \"tokyo-night\"\n\
-             blazingjj.colors.apply-to-jj = false\n",
+            "blazingjj.styles.scheme = \"tokyo-night\"\n\
+             blazingjj.styles.apply-to-jj = false\n",
         );
 
         assert!(!theme.applies_to_jj());
@@ -992,7 +1192,7 @@ mod tests {
     /// stated reason.
     #[test]
     fn a_scheme_the_app_does_not_come_with_is_refused() {
-        let refusal = refusal("blazingjj.colors.scheme = \"dracula\"\n");
+        let refusal = refusal("blazingjj.styles.scheme = \"dracula\"\n");
 
         assert!(refusal.contains("dracula"), "{refusal}");
         assert!(refusal.contains("tokyo-night"), "{refusal}");

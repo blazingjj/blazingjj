@@ -37,9 +37,9 @@ pub enum SettingKind {
     /// The keybindings, which are a table rather than a value to type,
     /// so they are changed one binding at a time in a tab of their own.
     Keybindings,
-    /// The colours, which are a table rather than a value to type, so
+    /// The styles, which are a table rather than a value to type, so
     /// they are changed one element at a time in a tab of their own.
-    Colors,
+    Styles,
 }
 
 /// One option the settings tab shows.
@@ -61,7 +61,7 @@ impl Setting {
     pub fn value_of(&self, input: &str) -> Result<String> {
         let value = match self.kind {
             SettingKind::Keybindings => bail!("The keybindings are not an option to type"),
-            SettingKind::Colors => bail!("The colors are not an option to type"),
+            SettingKind::Styles => bail!("The styles are not an option to type"),
             SettingKind::Number => {
                 let input = input.trim();
                 // TOML reads anything but a number here as text that
@@ -107,13 +107,13 @@ impl Setting {
                 1 => "1 binding set".to_owned(),
                 set => format!("{set} bindings set"),
             },
-            // As for the keybindings, what the colours are is the
-            // colours tab's to say. The scheme sits under the same table
+            // As for the keybindings, what the styles are is the
+            // styles tab's to say. The scheme sits under the same table
             // and is an option of its own, so it is not counted here.
-            (SettingKind::Colors, _) => match colors_set(value) {
+            (SettingKind::Styles, _) => match styles_set(value) {
                 0 => "as the scheme has them".to_owned(),
-                1 => "1 element given a color".to_owned(),
-                set => format!("{set} elements given colors"),
+                1 => "1 element given a style".to_owned(),
+                set => format!("{set} elements given styles"),
             },
             (SettingKind::CommandLine, toml::Value::Array(words)) => words
                 .iter()
@@ -146,9 +146,9 @@ fn is_number(input: &str) -> bool {
     )
 }
 
-/// How many elements `value` gives a colour, of the keys under
-/// `blazingjj.colors` that name one.
-fn colors_set(value: &toml::Value) -> usize {
+/// How many elements `value` gives a style, of the keys under
+/// `blazingjj.styles` that name one.
+fn styles_set(value: &toml::Value) -> usize {
     let Some(table) = value.as_table() else {
         return 0;
     };
@@ -173,25 +173,25 @@ fn bindings_set(value: &toml::Value) -> usize {
 /// gathers them under it.
 pub const SETTINGS: &[Setting] = &[
     Setting {
-        key: "blazingjj.colors.scheme",
+        key: "blazingjj.styles.scheme",
         section: "Appearance",
-        doc: "The colors the app is drawn in. A scheme says what the sixteen colors of the terminal palette look like, which is what every element that is not given a color of its own under blazingjj.colors is drawn in.",
+        doc: "The colors the app is drawn in. A scheme says what the sixteen colors of the terminal palette look like, which is what every element that is not given a color of its own under blazingjj.styles is drawn in.",
         fallback: "the terminal's own colors",
         kind: SettingKind::Choice(&Scheme::NAMES),
     },
     Setting {
-        key: "blazingjj.colors.apply-to-jj",
+        key: "blazingjj.styles.apply-to-jj",
         section: "Appearance",
         doc: "Whether jj is told what to write its own output in, so that the log, the diffs and the operation log match the frame around them. A scheme is told to it, and so is what you set for the change id and the bookmark, those being jj's output rather than ours and drawn in nothing else. It overrides whatever you have set under jj's own colors, and reaches only the runs blazingjj renders itself: a program handed the terminal, such as your editor or a diff tool, is left as you configured it.",
         fallback: "true while there is anything to tell jj",
         kind: SettingKind::Toggle(|| get_env().theme.asked_to_apply_to_jj()),
     },
     Setting {
-        key: "blazingjj.colors",
+        key: "blazingjj.styles",
         section: "Appearance",
-        doc: "What each element of the app is drawn in and on. Opens the list of them.",
+        doc: "What each element of the app is drawn in and on, and whether it is drawn bold, dim, italic or underlined. Opens the list of them.",
         fallback: "the colors of the scheme, else the terminal's own",
-        kind: SettingKind::Colors,
+        kind: SettingKind::Styles,
     },
     Setting {
         key: "blazingjj.layout",
@@ -338,11 +338,11 @@ mod tests {
     fn handing_jj_our_colours_shows_what_the_option_says() {
         for (config, asked) in [
             ("", true),
-            ("blazingjj.colors.apply-to-jj = false\n", false),
-            ("blazingjj.colors.scheme = \"tokyo-night\"\n", true),
+            ("blazingjj.styles.apply-to-jj = false\n", false),
+            ("blazingjj.styles.scheme = \"tokyo-night\"\n", true),
             (
-                "blazingjj.colors.scheme = \"tokyo-night\"\n\
-                 blazingjj.colors.apply-to-jj = false\n",
+                "blazingjj.styles.scheme = \"tokyo-night\"\n\
+                 blazingjj.styles.apply-to-jj = false\n",
                 false,
             ),
         ] {
@@ -364,14 +364,14 @@ mod tests {
         // hand over, so the option is read alongside one.
         assert!(
             toml::from_str::<JjConfig>(
-                "blazingjj.colors.scheme = \"tokyo-night\"\nblazingjj.colors.apply-to-jj = true\n"
+                "blazingjj.styles.scheme = \"tokyo-night\"\nblazingjj.styles.apply-to-jj = true\n"
             )
             .expect("the configuration parses")
             .theme()
             .applies_to_jj()
         );
         assert_eq!(
-            set("blazingjj.colors.highlight.bg", "\"#010203\"")
+            set("blazingjj.styles.highlight.bg", "\"#010203\"")
                 .theme()
                 .style(Role::Highlight)
                 .bg,

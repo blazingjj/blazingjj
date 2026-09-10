@@ -6,7 +6,6 @@ use ratatui::crossterm::event::MouseEventKind;
 use ratatui::layout::Alignment;
 use ratatui::layout::Margin;
 use ratatui::layout::Rect;
-use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::text::Text;
@@ -133,7 +132,7 @@ impl Component for MessagePopup<'_> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let mut title = self.title.clone();
         title.spans = [vec![Span::raw(" ")], title.spans, vec![Span::raw(" ")]].concat();
-        title = title.patch_style(Role::PopupTitle.style()).bold();
+        title = title.patch_style(Role::PopupTitle.style());
 
         let block = Block::bordered()
             .title(title.clone())

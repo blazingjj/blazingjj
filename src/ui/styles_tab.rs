@@ -1,7 +1,7 @@
-/*! The colours tab lists every element the app draws and what it is
-drawn in, and shows what the selected one is for in the details panel.
+/*! The styles tab lists every element the app draws, what it is drawn
+in and how, and shows what the selected one is for in the details panel.
 
-It is the settings tab's, opened from the row for `blazingjj.colors` and
+It is the settings tab's, opened from the row for `blazingjj.styles` and
 left again for it, so it has no place of its own in the tab bar. What it
 writes are the keys under that table, in the user's own config file, just
 as the settings tab writes the options beside it.
@@ -21,8 +21,9 @@ use crate::commander::new_commander;
 use crate::env::check_config_value;
 use crate::event::Mouse;
 use crate::keybinds::Binding;
-use crate::keybinds::ColorsTabEvent;
-use crate::keybinds::ColorsTabKeybinds;
+use crate::keybinds::StylesTabEvent;
+use crate::keybinds::StylesTabKeybinds;
+use crate::theme::Attribute;
 use crate::theme::Channel;
 use crate::theme::Role;
 use crate::theme::ThemeColor;
@@ -56,34 +57,35 @@ const INDENT: &str = "   ";
 /// blanks that keep the two columns apart.
 const COLOR_WIDTH: usize = 16;
 
-/// The config key `role`'s `channel` is written under.
-fn key_of(role: Role, channel: Channel) -> String {
-    format!("blazingjj.colors.{}.{}", role.key(), channel.key())
+/// The config key `part` of `role`'s style is written under, `part`
+/// being what a channel or an attribute is called there.
+fn key_of(role: Role, part: &str) -> String {
+    format!("blazingjj.styles.{}.{part}", role.key())
 }
 
-/// The table `role`'s colours are written under, which is a key of its
-/// own for a role written as the single colour to draw it in.
+/// The table `role`'s style is written under, which is a key of its own
+/// for a role written as the single colour to draw it in.
 fn table_of(role: Role) -> String {
-    format!("blazingjj.colors.{}", role.key())
+    format!("blazingjj.styles.{}", role.key())
 }
 
-/// What the user's own config file says about the colours, which is the
+/// What the user's own config file says about the styles, which is the
 /// layer the tab writes and the only one it can take a colour out of.
 #[derive(Default)]
-struct UserColors {
-    /// Its `blazingjj.colors` table, empty where it has none.
-    colors: toml::Table,
+struct UserStyles {
+    /// Its `blazingjj.styles` table, empty where it has none.
+    styles: toml::Table,
 }
 
-impl UserColors {
+impl UserStyles {
     fn read() -> Result<Self> {
         Ok(Self::of(&new_commander().get_user_config()?))
     }
 
-    /// What `config`, the user's own config file, says about the colours.
+    /// What `config`, the user's own config file, says about the styles.
     fn of(config: &toml::Table) -> Self {
         Self {
-            colors: config_value(config, "blazingjj.colors")
+            styles: config_value(config, "blazingjj.styles")
                 .and_then(toml::Value::as_table)
                 .cloned()
                 .unwrap_or_default(),
@@ -91,20 +93,20 @@ impl UserColors {
     }
 
     /// What the user's own config file says about `role`: a table of its
-    /// two colours, or the one colour to draw it in, which is its
-    /// foreground.
+    /// colours and attributes, or the one colour to draw it in, which is
+    /// its foreground.
     fn said_about(&self, role: Role) -> Option<&toml::Value> {
-        self.colors.get(role.key())
+        self.styles.get(role.key())
     }
 
-    /// The key a colour asked for `role`'s `channel` is written under.
-    /// jj refuses to set any key under a value that is not a table, so a
-    /// role written as the one colour to draw it in is written afresh as
-    /// a table of both rather than given a key under it.
-    fn asked_key(&self, role: Role, channel: Channel) -> String {
+    /// The key what is asked for `part` of `role`'s style is written
+    /// under. jj refuses to set any key under a value that is not a
+    /// table, so a role written as the one colour to draw it in is
+    /// written afresh as a table rather than given a key under it.
+    fn asked_key(&self, role: Role, part: &str) -> String {
         match self.said_alone(role) {
             Some(_) => table_of(role),
-            None => key_of(role, channel),
+            None => key_of(role, part),
         }
     }
 
@@ -118,68 +120,82 @@ impl UserColors {
     }
 
     /// Whether `said`, what the user's own config file says about a
-    /// role, is what draws its `channel`.
-    fn gives(said: Option<&toml::Value>, channel: Channel) -> bool {
+    /// role, is what says `part` of its style.
+    fn gives(said: Option<&toml::Value>, part: &str) -> bool {
         match said {
-            Some(toml::Value::Table(colors)) => colors.contains_key(channel.key()),
-            Some(_) => channel == Channel::Fg,
+            Some(toml::Value::Table(style)) => style.contains_key(part),
+            Some(_) => part == Channel::Fg.key(),
             None => false,
         }
     }
 
-    /// Whether the user's own config file is what draws `role`'s
-    /// `channel`, which is what makes it the tab's to take back out.
-    fn is_users(&self, role: Role, channel: Channel) -> bool {
-        Self::gives(self.said_about(role), channel)
+    /// Whether the user's own config file is what says `part` of
+    /// `role`'s style, which is what makes it the tab's to take back
+    /// out.
+    fn is_users(&self, role: Role, part: &str) -> bool {
+        Self::gives(self.said_about(role), part)
     }
 
-    /// The key that takes `role`'s `channel` back out of the user's own
-    /// config file, where that is what draws it. A role written as the
-    /// single colour to draw it in is a key of its own, so its
-    /// foreground goes by taking the role out and there is nothing
-    /// under it to take a background out of.
-    fn taken_out_by(&self, role: Role, channel: Channel) -> Option<String> {
-        self.is_users(role, channel)
-            .then(|| self.asked_key(role, channel))
+    /// The key that takes `part` of `role`'s style back out of the
+    /// user's own config file, where that is what says it. A role
+    /// written as the single colour to draw it in is a key of its own,
+    /// so its foreground goes by taking the role out and there is
+    /// nothing under it to take anything else out of.
+    fn taken_out_by(&self, role: Role, part: &str) -> Option<String> {
+        self.is_users(role, part)
+            .then(|| self.asked_key(role, part))
     }
 
-    /// The keys the user's own config file draws `role` in, which are
+    /// What of `role`'s style the user's own config file says, by the
+    /// names it says them under.
+    fn parts_of(&self, role: Role) -> Vec<&'static str> {
+        Channel::ALL
+            .into_iter()
+            .map(Channel::key)
+            .chain(Attribute::ALL.into_iter().map(Attribute::key))
+            .filter(|part| self.is_users(role, part))
+            .collect()
+    }
+
+    /// The keys the user's own config file styles `role` by, which are
     /// what there is to take back out of it.
     fn keys_of(&self, role: Role) -> Vec<String> {
         Channel::ALL
             .into_iter()
-            .filter_map(|channel| self.taken_out_by(role, channel))
+            .map(Channel::key)
+            .chain(Attribute::ALL.into_iter().map(Attribute::key))
+            .filter_map(|part| self.taken_out_by(role, part))
             .collect()
     }
 }
 
-pub struct ColorsTab {
+pub struct StylesTab {
     /// What the user's own config file says, or why it could not be read.
-    colors: Result<UserColors>,
+    styles: Result<UserStyles>,
 
     /// The elements under the headings they are listed by.
     roles: Sections<Role>,
     roles_pane: ListPane,
     roles_list_state: ListState,
 
-    keybinds: ColorsTabKeybinds,
+    keybinds: StylesTabKeybinds,
     pane_divider: PaneDivider,
 
     stale: bool,
 }
 
-impl ColorsTab {
+impl StylesTab {
     /// A stale tab, holding nothing of what the configuration says yet.
-    #[instrument(level = "info", name = "Initializing colors tab", parent = None)]
+    #[instrument(level = "info", name = "Initializing styles tab", parent = None)]
     pub fn new() -> Self {
         Self {
-            colors: Ok(UserColors::default()),
+            styles: Ok(UserStyles::default()),
 
             roles: Sections::new(Role::ALL, |role: &Role| role.section()),
             roles_pane: ListPane::default(),
             roles_list_state: ListState::default(),
 
-            keybinds: ColorsTabKeybinds::new(),
+            keybinds: StylesTabKeybinds::new(),
             pane_divider: PaneDivider::default(),
 
             stale: true,
@@ -193,16 +209,16 @@ impl ColorsTab {
     /// Ask for a colour to draw the selected element in.
     fn change_selected(&self, channel: Channel) -> Option<AppAction> {
         let role = self.selected()?;
-        let colors = self.colors.as_ref().ok()?;
+        let styles = self.styles.as_ref().ok()?;
         // The colour an element written as one was written as is its
         // foreground, so that is what the other one is written beside,
         // in the one spelling it has. One that reads as no colour is
         // written back as it stands rather than dropped.
-        let beside = colors.said_alone(role).map(|said| {
+        let beside = styles.said_alone(role).map(|said| {
             said.parse::<ThemeColor>()
                 .map_or_else(|_| said.to_owned(), |color| color.to_string())
         });
-        let key = colors.asked_key(role, channel);
+        let key = styles.asked_key(role, channel.key());
         // What it is drawn in now is what to start from, so that a
         // colour is adjusted rather than typed out again.
         let current = theme()
@@ -213,22 +229,59 @@ impl ColorsTab {
         let asked = key.clone();
         Some(AppAction::SetPopup(Box::new(SettingValuePopup::for_key(
             key,
-            colors.taken_out_by(role, channel),
+            styles.taken_out_by(role, channel.key()),
             current,
             move |input| color_value(&asked, channel, beside.as_deref(), input),
         ))))
+    }
+
+    /// Turn `attribute` round on the selected element: whichever way it
+    /// is drawn now, it is asked for the other way, and asking again
+    /// takes that back out and leaves the element what it inherits.
+    fn toggle_selected(&self, attribute: Attribute) -> Option<AppAction> {
+        let role = self.selected()?;
+        let styles = self.styles.as_ref().ok()?;
+
+        let key = styles.asked_key(role, attribute.key());
+        // Turning it round is what the key is for, so it goes by what
+        // the element is drawn with rather than by what the config says:
+        // asking for an attribute an element comes with already would
+        // change nothing on screen.
+        if styles.is_users(role, attribute.key()) {
+            return Some(AppAction::Run(Command::UnsetSetting { key }));
+        }
+        let asked = !theme().attribute_of(role, attribute).unwrap_or(false);
+
+        // An element written as the one colour to draw it in is written
+        // afresh as a table, that colour beside the attribute, jj having
+        // no way to set a key under a value that is not a table.
+        let value = match styles.said_alone(role) {
+            None => toml::Value::Boolean(asked),
+            Some(beside) => toml::Value::Table(toml::Table::from_iter([
+                (
+                    Channel::Fg.key().to_owned(),
+                    toml::Value::String(beside.to_owned()),
+                ),
+                (attribute.key().to_owned(), toml::Value::Boolean(asked)),
+            ])),
+        };
+
+        Some(AppAction::Run(Command::SetSetting {
+            key,
+            value: value.to_string(),
+        }))
     }
 
     /// Take the selected element's colours out of the user's config
     /// file, leaving whatever the rest of the configuration says.
     fn unset_selected(&self) -> Option<AppAction> {
         let role = self.selected()?;
-        let colors = self.colors.as_ref().ok()?;
+        let styles = self.styles.as_ref().ok()?;
 
         // Only the colours the user's own config gives, a colour at a
         // time: what the rest of the configuration says about the role
         // is not the tab's to take away.
-        let taken_out: Vec<AppAction> = colors
+        let taken_out: Vec<AppAction> = styles
             .keys_of(role)
             .into_iter()
             .map(|key| AppAction::Run(Command::UnsetSetting { key }))
@@ -250,32 +303,45 @@ impl ColorsTab {
                 self.change_selected(Channel::Bg)?,
             ),
         ];
+        for attribute in Attribute::ALL {
+            items.push((
+                Line::raw(format!(
+                    "Draw it {} or not, against what it inherits",
+                    attribute.key()
+                )),
+                self.toggle_selected(attribute)?,
+            ));
+        }
         if let Some(unset) = self.unset_selected() {
             items.push((Line::raw("Take out of your config"), unset));
         }
 
         Some(AppAction::SetPopup(Box::new(ChoicePopup::new(
             anchor,
-            "Color actions",
+            "Style actions",
             items,
         ))))
     }
 
-    fn handle_event(&mut self, event: ColorsTabEvent) -> Option<AppAction> {
+    fn handle_event(&mut self, event: StylesTabEvent) -> Option<AppAction> {
         match event {
-            ColorsTabEvent::ChangeForeground => self.change_selected(Channel::Fg),
-            ColorsTabEvent::ChangeBackground => self.change_selected(Channel::Bg),
-            ColorsTabEvent::Unset => self.unset_selected(),
-            ColorsTabEvent::Back => Some(AppAction::ViewTab(TabId::Settings)),
+            StylesTabEvent::ChangeForeground => self.change_selected(Channel::Fg),
+            StylesTabEvent::ChangeBackground => self.change_selected(Channel::Bg),
+            StylesTabEvent::ToggleBold => self.toggle_selected(Attribute::Bold),
+            StylesTabEvent::ToggleDim => self.toggle_selected(Attribute::Dim),
+            StylesTabEvent::ToggleItalic => self.toggle_selected(Attribute::Italic),
+            StylesTabEvent::ToggleUnderline => self.toggle_selected(Attribute::Underline),
+            StylesTabEvent::Unset => self.unset_selected(),
+            StylesTabEvent::Back => Some(AppAction::ViewTab(TabId::Settings)),
             // Not an operation of its own; the key handler deals with it.
-            ColorsTabEvent::Unbound => None,
+            StylesTabEvent::Unbound => None,
         }
     }
 
     /// One row per element: a patch of what it is drawn in, its name,
     /// and the two colours as they are written, under the heading of the
     /// part of the app it belongs to.
-    fn roles_lines(&self, colors: &UserColors) -> Vec<Line<'static>> {
+    fn roles_lines(&self, styles: &UserStyles) -> Vec<Line<'static>> {
         let theme = theme();
         let width = Role::ALL
             .iter()
@@ -304,32 +370,52 @@ impl ColorsTab {
                         highlighted(Line::from(vec![Span::raw(" "), section_heading(*heading)]))
                     }
                     SectionRow::Item(role) => {
-                        let by_user = colors.said_about(*role);
+                        let by_user = styles.said_about(*role);
                         // What a colour is written as is drawn like the
                         // rest of the list; the swatch is where the
                         // element's own colours are shown.
-                        let said = |channel: Channel| {
-                            let color = theme.color_of(*role, channel);
-                            let text =
-                                color.map_or_else(|| "-".to_owned(), |color| color.to_string());
-                            let span = Span::raw(format!("{text:COLOR_WIDTH$}"));
-
-                            // What the user's own config does not give is dimmed
-                            // as the settings tab dims an option it falls back
-                            // on, that being the same thing said of a colour.
-                            if UserColors::gives(by_user, channel) {
+                        // What the user's own config does not give is
+                        // dimmed as the settings tab dims an option it
+                        // falls back on, that being the same thing said
+                        // of a style.
+                        let as_said = |span: Span<'static>, part: &str| {
+                            if UserStyles::gives(by_user, part) {
                                 span
                             } else {
                                 span.patch_style(theme.style(Role::Hint)).italic()
                             }
                         };
+                        let said = |channel: Channel| {
+                            let color = theme.color_of(*role, channel);
+                            let text =
+                                color.map_or_else(|| "-".to_owned(), |color| color.to_string());
 
-                        let mut line = highlighted(Line::from(vec![
-                            Span::raw(INDENT),
-                            Span::raw(format!("  {:width$}  ", role.key())),
-                            said(Channel::Fg),
-                            said(Channel::Bg),
-                        ]));
+                            as_said(Span::raw(format!("{text:COLOR_WIDTH$}")), channel.key())
+                        };
+                        // Only the attributes something says either way,
+                        // an element being drawn with none of them
+                        // unless it is said to be.
+                        let attributes = Attribute::ALL.into_iter().filter_map(|attribute| {
+                            let asked = theme.attribute_of(*role, attribute)?;
+                            let text = if asked {
+                                format!("{} ", attribute.key())
+                            } else {
+                                format!("no {} ", attribute.key())
+                            };
+
+                            Some(as_said(Span::raw(text), attribute.key()))
+                        });
+
+                        let mut line = highlighted(Line::from_iter(
+                            [
+                                Span::raw(INDENT),
+                                Span::raw(format!("  {:width$}  ", role.key())),
+                                said(Channel::Fg),
+                                said(Channel::Bg),
+                            ]
+                            .into_iter()
+                            .chain(attributes),
+                        ));
                         // The swatch is what the row is about, so it
                         // keeps the element's own colours even where the
                         // highlight has taken the rest of the row.
@@ -344,35 +430,52 @@ impl ColorsTab {
 
     /// What the selected element is drawn for, what it is drawn in, and
     /// where that comes from.
-    fn details_text(&self, colors: &UserColors) -> Text<'static> {
+    fn details_text(&self, styles: &UserStyles) -> Text<'static> {
         let Some(role) = self.selected() else {
             return Text::default();
         };
         let theme = theme();
         let mut lines = vec![
-            Line::raw(format!("blazingjj.colors.{}", role.key())).bold(),
+            Line::raw(format!("blazingjj.styles.{}", role.key())).bold(),
             Line::raw(""),
             Line::raw(role.doc()),
             Line::raw(""),
         ];
 
-        let by_user = colors.said_about(role);
         for (what, channel) in [("Drawn in", Channel::Fg), ("Drawn on", Channel::Bg)] {
             let color = theme.color_of(role, channel);
-            let mut spans = vec![
+
+            lines.push(Line::from(vec![
                 Span::raw(format!("{what}:  ")),
                 Span::raw(color.map_or_else(
                     || "whatever is underneath".to_owned(),
                     |color| color.to_string(),
                 ))
                 .bold(),
-            ];
-            if UserColors::gives(by_user, channel) {
-                spans.push(Span::raw("  (in your config)").patch_style(theme.style(Role::Hint)));
-            }
-
-            lines.push(Line::from(spans));
+            ]));
         }
+
+        for attribute in Attribute::ALL {
+            lines.push(Line::from(vec![
+                Span::raw(format!("{:11}", format!("{}:", attribute.key()))),
+                Span::raw(match theme.attribute_of(role, attribute) {
+                    Some(true) => "yes",
+                    Some(false) => "no",
+                    None => "inherited",
+                })
+                .bold(),
+            ]));
+        }
+
+        // What of that is yours is worth saying once rather than beside
+        // every line: an element is drawn as the app, a scheme and your
+        // own config together have it, and only the last is the tab's
+        // to take away.
+        lines.push(Line::raw(""));
+        lines.push(Line::raw(match styles.parts_of(role).as_slice() {
+            [] => "Your config says nothing about this element.".to_owned(),
+            parts => format!("Your config says its {}.", parts.join(", ")),
+        }));
 
         lines.push(Line::raw(""));
         lines.push(
@@ -417,9 +520,9 @@ fn color_value(key: &str, channel: Channel, beside: Option<&str>, input: &str) -
     Ok(value)
 }
 
-impl Tab for ColorsTab {
+impl Tab for StylesTab {
     fn refresh(&mut self) -> Result<()> {
-        self.colors = UserColors::read();
+        self.styles = UserStyles::read();
         self.stale = false;
 
         Ok(())
@@ -435,7 +538,7 @@ impl Tab for ColorsTab {
 
     fn config_changed(&mut self) {
         self.stale = true;
-        self.keybinds = ColorsTabKeybinds::new();
+        self.keybinds = StylesTabKeybinds::new();
     }
 
     fn toggle_layout(&mut self) {
@@ -464,12 +567,12 @@ impl Tab for ColorsTab {
     }
 }
 
-impl Component for ColorsTab {
+impl Component for StylesTab {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let chunks = self.pane_divider.split(area);
 
-        let (rows, details) = match self.colors.as_ref() {
-            Ok(colors) => (self.roles_lines(colors), self.details_text(colors)),
+        let (rows, details) = match self.styles.as_ref() {
+            Ok(styles) => (self.roles_lines(styles), self.details_text(styles)),
             Err(err) => (
                 error_text("Error getting the configuration", err)?.lines,
                 Text::default(),
@@ -479,7 +582,7 @@ impl Component for ColorsTab {
         // The hint goes between the corners, with a space to either side.
         let hint_width = chunks[0].width.saturating_sub(4) as usize;
         let block = panel_block()
-            .title(panel_title(" Settings / Colors "))
+            .title(panel_title(" Settings / Styles "))
             .title_bottom(
                 Line::raw(format!(" {} ", self.keybinds.hint(hint_width)))
                     .centered()
@@ -515,7 +618,7 @@ impl Component for ColorsTab {
             return match self.keybinds.match_event(key) {
                 // Not the tab's to act on, so whoever else wants the key
                 // is welcome to it.
-                ColorsTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
+                StylesTabEvent::Unbound => Ok(ComponentInputResult::NotHandled),
                 event => Ok(self.handle_event(event).into()),
             };
         }
@@ -549,30 +652,30 @@ mod tests {
     use crate::env::set_test_env;
     use crate::ui::utils::drawn;
 
-    /// A tab holding the colours as they are, with `config` for the
+    /// A tab holding the styles as they are, with `config` for the
     /// user's own config file, which the tests have in place of a repo
     /// to read one from.
-    fn tab(config: &str) -> ColorsTab {
+    fn tab(config: &str) -> StylesTab {
         set_test_env();
-        let mut tab = ColorsTab::new();
-        tab.colors = Ok(UserColors::of(
+        let mut tab = StylesTab::new();
+        tab.styles = Ok(UserStyles::of(
             &config.parse().expect("the configuration parses"),
         ));
         tab
     }
 
     /// What the main panel says, as one string per row.
-    fn rows(tab: &ColorsTab) -> Vec<String> {
-        let colors = tab.colors.as_ref().expect("the configuration was read");
+    fn rows(tab: &StylesTab) -> Vec<String> {
+        let styles = tab.styles.as_ref().expect("the configuration was read");
 
-        tab.roles_lines(colors)
+        tab.roles_lines(styles)
             .iter()
             .map(ToString::to_string)
             .collect()
     }
 
     /// Move the selection to `role`, which is what the keys act on.
-    fn select(tab: &mut ColorsTab, role: Role) {
+    fn select(tab: &mut StylesTab, role: Role) {
         for _ in 0..Role::ALL.len() {
             if tab.selected() == Some(role) {
                 return;
@@ -648,7 +751,7 @@ mod tests {
     /// tab's to take out of a layer it does not write.
     #[test]
     fn only_what_the_users_own_config_gives_can_be_taken_back_out() {
-        let mut tab = tab("blazingjj.colors.hint = { fg = \"#010203\" }\n");
+        let mut tab = tab("blazingjj.styles.hint = { fg = \"#010203\" }\n");
         select(&mut tab, Role::Hint);
         assert!(tab.unset_selected().is_some());
 
@@ -662,19 +765,19 @@ mod tests {
     /// actually gives.
     #[test]
     fn a_role_written_as_a_table_is_taken_out_a_colour_at_a_time() {
-        let both = tab("blazingjj.colors.highlight = { fg = \"red\", bg = \"blue\" }\n");
+        let both = tab("blazingjj.styles.highlight = { fg = \"red\", bg = \"blue\" }\n");
         assert_eq!(
-            both.colors.as_ref().unwrap().keys_of(Role::Highlight),
+            both.styles.as_ref().unwrap().keys_of(Role::Highlight),
             [
-                "blazingjj.colors.highlight.fg",
-                "blazingjj.colors.highlight.bg"
+                "blazingjj.styles.highlight.fg",
+                "blazingjj.styles.highlight.bg"
             ]
         );
 
-        let one = tab("blazingjj.colors.highlight = { bg = \"blue\" }\n");
+        let one = tab("blazingjj.styles.highlight = { bg = \"blue\" }\n");
         assert_eq!(
-            one.colors.as_ref().unwrap().keys_of(Role::Highlight),
-            ["blazingjj.colors.highlight.bg"]
+            one.styles.as_ref().unwrap().keys_of(Role::Highlight),
+            ["blazingjj.styles.highlight.bg"]
         );
     }
 
@@ -682,11 +785,73 @@ mod tests {
     /// own, which is taken out as it stands.
     #[test]
     fn a_role_written_as_one_colour_is_taken_out_in_one() {
-        let tab = tab("blazingjj.colors.hint = \"red\"\n");
+        let tab = tab("blazingjj.styles.hint = \"red\"\n");
 
         assert_eq!(
-            tab.colors.as_ref().unwrap().keys_of(Role::Hint),
-            ["blazingjj.colors.hint"]
+            tab.styles.as_ref().unwrap().keys_of(Role::Hint),
+            ["blazingjj.styles.hint"]
+        );
+    }
+
+    /// An attribute goes round being asked for, being turned down and
+    /// being left unsaid, so that the one key both sets it and takes it
+    /// back out.
+    #[test]
+    fn an_attribute_is_turned_round_and_taken_back_out() {
+        let asked = |config| {
+            let mut tab = tab(config);
+            select(&mut tab, Role::Hint);
+
+            tab.handle_event(StylesTabEvent::ToggleBold)
+        };
+
+        // The hint is drawn in no attribute of its own, so the other way
+        // round is bold.
+        let Some(AppAction::Run(Command::SetSetting { key, value })) = asked("") else {
+            panic!("an attribute is turned round");
+        };
+        assert_eq!(key, "blazingjj.styles.hint.bold");
+        assert_eq!(value, "true");
+
+        // Whichever way round the config has it, saying it again is
+        // saying nothing about it.
+        for config in [
+            "blazingjj.styles.hint.bold = true\n",
+            "blazingjj.styles.hint.bold = false\n",
+        ] {
+            let Some(AppAction::Run(Command::UnsetSetting { key })) = asked(config) else {
+                panic!("what the config says about an attribute is taken back out");
+            };
+            assert_eq!(key, "blazingjj.styles.hint.bold");
+        }
+    }
+
+    /// jj refuses to set a key under a value that is not a table, so an
+    /// element written as the one colour to draw it in is written afresh
+    /// as a table of that colour and the attribute asked for.
+    #[test]
+    fn an_element_written_as_one_colour_is_written_afresh_for_an_attribute() {
+        let mut tab = tab("blazingjj.styles.hint = \"red\"\n");
+        select(&mut tab, Role::Hint);
+
+        let Some(AppAction::Run(Command::SetSetting { key, value })) =
+            tab.handle_event(StylesTabEvent::ToggleItalic)
+        else {
+            panic!("the attribute is asked for");
+        };
+        assert_eq!(key, "blazingjj.styles.hint");
+        assert_eq!(value, "{ fg = \"red\", italic = true }");
+    }
+
+    /// The attributes are the user's to take back out along with the
+    /// colours, they being written under the same table.
+    #[test]
+    fn an_attribute_is_taken_out_with_the_colours() {
+        let tab = tab("blazingjj.styles.hint = { fg = \"red\", bold = true }\n");
+
+        assert_eq!(
+            tab.styles.as_ref().unwrap().keys_of(Role::Hint),
+            ["blazingjj.styles.hint.fg", "blazingjj.styles.hint.bold"]
         );
     }
 
@@ -696,18 +861,18 @@ mod tests {
     fn a_role_the_config_says_nothing_about_has_nothing_to_take_out() {
         let tab = tab("");
 
-        assert!(tab.colors.as_ref().unwrap().keys_of(Role::Hint).is_empty());
+        assert!(tab.styles.as_ref().unwrap().keys_of(Role::Hint).is_empty());
     }
 
     /// A role written as the one colour to draw it in is a foreground,
     /// so that is what the tab reads it as having been given.
     #[test]
     fn a_role_written_as_one_colour_has_been_given_a_foreground() {
-        let tab = tab("blazingjj.colors.hint = \"#010203\"\n");
-        let colors = tab.colors.as_ref().expect("the configuration was read");
+        let tab = tab("blazingjj.styles.hint = \"#010203\"\n");
+        let styles = tab.styles.as_ref().expect("the configuration was read");
 
-        assert!(colors.is_users(Role::Hint, Channel::Fg));
-        assert!(!colors.is_users(Role::Hint, Channel::Bg));
+        assert!(styles.is_users(Role::Hint, Channel::Fg.key()));
+        assert!(!styles.is_users(Role::Hint, Channel::Bg.key()));
     }
 
     /// Clearing a colour takes just that one out. A role written as the
@@ -715,21 +880,25 @@ mod tests {
     /// background has nothing to take out rather than the role itself.
     #[test]
     fn clearing_a_colour_takes_out_that_colour_alone() {
-        let alone = tab("blazingjj.colors.hint = \"red\"\n");
-        let colors = alone.colors.as_ref().expect("the configuration was read");
+        let alone = tab("blazingjj.styles.hint = \"red\"\n");
+        let styles = alone.styles.as_ref().expect("the configuration was read");
 
         assert_eq!(
-            colors.taken_out_by(Role::Hint, Channel::Fg).as_deref(),
-            Some("blazingjj.colors.hint")
+            styles
+                .taken_out_by(Role::Hint, Channel::Fg.key())
+                .as_deref(),
+            Some("blazingjj.styles.hint")
         );
-        assert_eq!(colors.taken_out_by(Role::Hint, Channel::Bg), None);
+        assert_eq!(styles.taken_out_by(Role::Hint, Channel::Bg.key()), None);
 
-        let both = tab("blazingjj.colors.hint = { fg = \"red\", bg = \"blue\" }\n");
-        let colors = both.colors.as_ref().expect("the configuration was read");
+        let both = tab("blazingjj.styles.hint = { fg = \"red\", bg = \"blue\" }\n");
+        let styles = both.styles.as_ref().expect("the configuration was read");
 
         assert_eq!(
-            colors.taken_out_by(Role::Hint, Channel::Bg).as_deref(),
-            Some("blazingjj.colors.hint.bg")
+            styles
+                .taken_out_by(Role::Hint, Channel::Bg.key())
+                .as_deref(),
+            Some("blazingjj.styles.hint.bg")
         );
     }
 
@@ -738,7 +907,7 @@ mod tests {
     #[test]
     fn a_colour_is_written_in_the_one_spelling_it_has() {
         let written = |input| {
-            color_value("blazingjj.colors.hint.fg", Channel::Fg, None, input)
+            color_value("blazingjj.styles.hint.fg", Channel::Fg, None, input)
                 .expect("the colour is one that can be written")
         };
 
@@ -756,7 +925,7 @@ mod tests {
     fn an_element_written_as_one_colour_is_written_afresh_as_a_table() {
         let written = |channel, input| {
             color_value(
-                "blazingjj.colors.hint",
+                "blazingjj.styles.hint",
                 channel,
                 Some("bright black"),
                 input,
@@ -778,7 +947,7 @@ mod tests {
     /// what one looks like.
     #[test]
     fn a_colour_that_names_nothing_is_refused() {
-        let refusal = color_value("blazingjj.colors.hint.fg", Channel::Fg, None, "chartreuse")
+        let refusal = color_value("blazingjj.styles.hint.fg", Channel::Fg, None, "chartreuse")
             .expect_err("the colour is not one that can be written")
             .to_string();
 
@@ -789,8 +958,14 @@ mod tests {
     /// its two colours is written under a key of its own.
     #[test]
     fn each_of_the_two_colours_is_written_under_a_key_of_its_own() {
-        assert_eq!(key_of(Role::Hint, Channel::Fg), "blazingjj.colors.hint.fg");
-        assert_eq!(key_of(Role::Hint, Channel::Bg), "blazingjj.colors.hint.bg");
+        assert_eq!(
+            key_of(Role::Hint, Channel::Fg.key()),
+            "blazingjj.styles.hint.fg"
+        );
+        assert_eq!(
+            key_of(Role::Hint, Channel::Bg.key()),
+            "blazingjj.styles.hint.bg"
+        );
     }
 
     /// jj refuses to set a key under a value that is not a table, so a
@@ -798,25 +973,25 @@ mod tests {
     /// as a table rather than given a key under that colour.
     #[test]
     fn a_role_written_as_one_colour_is_written_afresh_rather_than_under() {
-        let alone = tab("blazingjj.colors.hint = \"red\"\n");
-        let colors = alone.colors.as_ref().expect("the configuration was read");
+        let alone = tab("blazingjj.styles.hint = \"red\"\n");
+        let styles = alone.styles.as_ref().expect("the configuration was read");
 
         for channel in Channel::ALL {
             assert_eq!(
-                colors.asked_key(Role::Hint, channel),
-                "blazingjj.colors.hint"
+                styles.asked_key(Role::Hint, channel.key()),
+                "blazingjj.styles.hint"
             );
         }
 
         // A role written as a table, or written nothing about, takes the
         // colour under a key of its own.
-        for config in ["blazingjj.colors.hint = { fg = \"red\" }\n", ""] {
-            let colors = tab(config);
-            let colors = colors.colors.as_ref().expect("the configuration was read");
+        for config in ["blazingjj.styles.hint = { fg = \"red\" }\n", ""] {
+            let tab = tab(config);
+            let styles = tab.styles.as_ref().expect("the configuration was read");
 
             assert_eq!(
-                colors.asked_key(Role::Hint, Channel::Bg),
-                "blazingjj.colors.hint.bg"
+                styles.asked_key(Role::Hint, Channel::Bg.key()),
+                "blazingjj.styles.hint.bg"
             );
         }
     }
@@ -825,12 +1000,12 @@ mod tests {
     /// for and whether or not the configuration already gives it.
     #[test]
     fn either_colour_of_the_selected_element_can_be_asked_for() {
-        let mut tab = tab("blazingjj.colors.hint = \"red\"\n");
+        let mut tab = tab("blazingjj.styles.hint = \"red\"\n");
         select(&mut tab, Role::Hint);
 
         for event in [
-            ColorsTabEvent::ChangeForeground,
-            ColorsTabEvent::ChangeBackground,
+            StylesTabEvent::ChangeForeground,
+            StylesTabEvent::ChangeBackground,
         ] {
             assert!(matches!(
                 tab.handle_event(event),
@@ -846,7 +1021,7 @@ mod tests {
         let mut tab = tab("");
 
         assert!(matches!(
-            tab.handle_event(ColorsTabEvent::Back),
+            tab.handle_event(StylesTabEvent::Back),
             Some(AppAction::ViewTab(TabId::Settings))
         ));
     }

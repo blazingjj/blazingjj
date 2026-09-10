@@ -197,7 +197,7 @@ impl Component for CommandPopup<'_> {
             CommandMode::Interactive => " Interactive command ",
         };
         let block = Block::bordered()
-            .title(Span::styled(title, Role::PopupTitle.style().bold()))
+            .title(Span::styled(title, Role::PopupTitle.style()))
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
             .border_style(Role::PopupBorder.style());

@@ -124,7 +124,7 @@ impl SettingsTab {
         let setting = self.selected()?;
         match setting.kind {
             SettingKind::Keybindings => return Some(AppAction::ViewTab(TabId::Keybindings)),
-            SettingKind::Colors => return Some(AppAction::ViewTab(TabId::Colors)),
+            SettingKind::Styles => return Some(AppAction::ViewTab(TabId::Styles)),
             SettingKind::Toggle(now) => {
                 return Some(AppAction::Run(Command::SetSetting {
                     key: setting.key.to_owned(),
@@ -181,10 +181,10 @@ impl SettingsTab {
     /// whatever the rest of the configuration says.
     fn unset_selected(&self) -> Option<AppAction> {
         let setting = self.selected()?;
-        // Taking the keybindings or the colours out would be taking out
+        // Taking the keybindings or the styles out would be taking out
         // every one of them at once, which the tab that opens is what
         // does one at a time.
-        if matches!(setting.kind, SettingKind::Keybindings | SettingKind::Colors) {
+        if matches!(setting.kind, SettingKind::Keybindings | SettingKind::Styles) {
             return None;
         }
 

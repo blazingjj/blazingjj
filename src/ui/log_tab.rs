@@ -503,7 +503,7 @@ impl Component for LogTab<'_> {
         {
             if let Some(log_revset_textarea) = self.log_revset_textarea.as_mut() {
                 let block = Block::bordered()
-                    .title(Span::styled(" Revset ", Role::PopupTitle.style().bold()))
+                    .title(Span::styled(" Revset ", Role::PopupTitle.style()))
                     .title_alignment(Alignment::Center)
                     .border_type(BorderType::Rounded)
                     .border_style(Role::PopupBorder.style());

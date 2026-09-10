@@ -22,7 +22,7 @@ use serde::de;
 
 use crate::theme::Ansi;
 use crate::theme::Role;
-use crate::theme::RoleColors;
+use crate::theme::RoleStyle;
 use crate::theme::ThemeColor;
 use crate::theme::roles_from_table;
 
@@ -96,10 +96,11 @@ impl Palette {
 
     /// What the app is drawn in and on where nothing more particular is
     /// said.
-    pub fn default_colors(&self) -> RoleColors {
-        RoleColors {
+    pub fn default_colors(&self) -> RoleStyle {
+        RoleStyle {
             fg: Some(self.fg),
             bg: Some(self.bg),
+            ..RoleStyle::default()
         }
     }
 }
@@ -115,7 +116,7 @@ pub struct Scheme {
     /// What the scheme says outright, for the roles the palette answers
     /// poorly for.
     #[serde(default, deserialize_with = "deserialize_roles")]
-    colors: HashMap<Role, RoleColors>,
+    colors: HashMap<Role, RoleStyle>,
 }
 
 impl Scheme {
@@ -141,7 +142,7 @@ impl Scheme {
 
     /// What the scheme says about `role` outright, which for most roles
     /// is nothing: the palette is what answers for them.
-    pub fn role(&self, role: Role) -> RoleColors {
+    pub fn role(&self, role: Role) -> RoleStyle {
         self.colors.get(&role).copied().unwrap_or_default()
     }
 }
@@ -149,7 +150,7 @@ impl Scheme {
 /// The roles a scheme says something about outright.
 fn deserialize_roles<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<HashMap<Role, RoleColors>, D::Error> {
+) -> Result<HashMap<Role, RoleStyle>, D::Error> {
     roles_from_table(toml::Table::deserialize(deserializer)?).map_err(de::Error::custom)
 }
 
