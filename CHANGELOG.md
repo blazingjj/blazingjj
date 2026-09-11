@@ -44,8 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Color names are now read as jj reads them, so `white` is the dim one of the
   sixteen rather than the bright one. The names blazingjj took before are all
   still taken, `white` alone having changed which color it means
-- `blazingjj.highlight-color` is gone: `blazingjj.colors.highlight.bg` is what
-  sets the background of the selected row, and the colors tab is where it is
+- `blazingjj.highlight-color` is gone: `blazingjj.styles.highlight.bg` is what
+  sets the background of the selected row, and the styles tab is where it is
   set from
 
 ### Added
@@ -58,44 +58,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   taken over the `q`/`?`/`R` hints and the runtime counter from the header,
   which now holds the tab bar alone
 - Every element of the interface can be given a foreground and a background
-  under `blazingjj.colors`, as either the color to draw it in or a table of
-  `fg` and `bg`. An element that says nothing about a color takes
-  `blazingjj.colors.default`'s, and where that says nothing either the
-  terminal's own shows through, so a background can be set once for the whole
-  interface without giving up the terminal's when it is left alone. An element
+  under `blazingjj.styles`, as either the color to draw it in or a table of
+  `fg` and `bg`, and can be drawn `bold`, `dim`, `italic` or `underline`d in
+  the same table. An attribute is asked for with `true` and turned down with
+  `false`, so an element the app draws bold itself can be told not to be. An
+  element that says nothing about a color takes `blazingjj.styles.default`'s,
+  and where that says nothing either the terminal's own shows through, so a
+  background can be set once for the whole interface without giving up the
+  terminal's when it is left alone. An element
   that is a kind of another falls back to that one first: `button-active`
-  takes the `highlight`'s colors, `separator` takes the `hint`'s, and
+  takes the `highlight`'s style, `separator` takes the `hint`'s, and
   `diff-added-word` and `diff-removed-word` take the colors of the line they
   sit in, unless given their own
 - A color can be written as one of the sixteen names, an `#rrggbb` code,
   `ansi-color-0` through `ansi-color-255`, or `default` for the terminal's own
-- `blazingjj.colors.scheme` draws the app in one of the color schemes it comes
+- `blazingjj.styles.scheme` draws the app in one of the color schemes it comes
   with: `catppuccin-mocha`, `catppuccin-macchiato`, `catppuccin-frappe`,
   `catppuccin-latte`, `solarized-dark`, `solarized-light`, `tokyo-night`,
   `tokyo-night-storm`, `tokyo-night-moon` or `tokyo-night-day`. A scheme
   says what the sixteen colors of the terminal palette look like, and almost
   everything is drawn in one of the sixteen, so picking one recolors all of
-  it. What is set under `blazingjj.colors` still wins over the scheme
+  it. What is set under `blazingjj.styles` still wins over the scheme
   - jj is told to write in the scheme's colors too, so the log, the diffs and
     the operation log match the frame around them rather than being the one
     part of the app a scheme does not reach. That overrides whatever is set
     under jj's own `colors` and can be turned down with
-    `blazingjj.colors.apply-to-jj = false`. It reaches only the runs blazingjj
+    `blazingjj.styles.apply-to-jj = false`. It reaches only the runs blazingjj
     renders itself: a program handed the terminal, like `jj describe` in your
     editor or a diff tool, stays as you configured it
   - `change-id`, `bookmark` and the `diff-*` elements are handed to jj the
     same way, with or without a scheme: they name jj's own output rather than
     anything blazingjj draws, so that is the only way they reach the screen.
-    A channel you say nothing about stays as jj draws it, so the working
-    copy's change id keeps the brighter tone jj tells it apart by, and a diff
-    keeps jj's green and red on a background the scheme tints. Without a
-    scheme and without any of those set, jj is left entirely alone
-- The `blazingjj.colors` row of the settings tab opens the colors, which are
+    The attributes are handed over with the colors, jj reading them under the
+    same names. What you say nothing about stays as jj draws it, so the
+    working copy's change id keeps the brighter tone jj tells it apart by,
+    and a diff keeps jj's green and red on a background the scheme tints.
+    Without a scheme and without any of those set, jj is left entirely alone
+- The `blazingjj.styles` row of the settings tab opens the styles, which are
   changed there one element at a time, the way the keybindings are. Each is
-  listed drawn in its own colors; `Enter` asks what an element is drawn in,
-  `b` what it is drawn on, and `x` takes both back out of your config, while
-  clearing either field takes just that one out. The keys are configured
-  under `[blazingjj.keybinds.colors-tab]`
+  listed drawn in its own style, with a flag per attribute beside it and the
+  keys named in the panel about the selected one; `Enter` asks what an element
+  is drawn in, `b` what it is drawn on, `Shift+b`, `Shift+d`, `Shift+i` and
+  `Shift+u` turn its attributes round against what it inherits, and `x` takes
+  all of it back out of your config, while clearing either color field takes
+  just that one out. The keys are configured under
+  `[blazingjj.keybinds.styles-tab]`
 - The settings and keybindings tabs draw what an option or a binding is set to
   in the `value` color
 - The labels in the settings tab's details panel are dimmed

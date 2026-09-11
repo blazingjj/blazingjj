@@ -105,7 +105,7 @@ impl Component for RebasePopup {
         let area = centered_rect_fixed(area, 32, 12);
         // The border of the dialog
         let block = Block::bordered()
-            .title(Span::styled(" Rebase ", Role::PopupTitle.style().bold()))
+            .title(Span::styled(" Rebase ", Role::PopupTitle.style()))
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
             .border_style(Role::PopupBorder.style());

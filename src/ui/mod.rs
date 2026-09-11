@@ -1,7 +1,6 @@
 /*! All user interface components, such as tabs, panels and dialogs.
 */
 pub mod bookmarks_tab;
-pub mod colors_tab;
 pub mod dialog;
 pub mod evolog_tab;
 pub mod files_tab;
@@ -12,6 +11,7 @@ pub mod panel;
 pub mod settings_tab;
 pub mod status_bar;
 pub mod styles;
+pub mod styles_tab;
 pub mod utils;
 use anyhow::Result;
 use ratatui::Frame;

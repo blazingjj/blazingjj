@@ -147,7 +147,7 @@ impl ConfirmPopup {
     /// A button, marked when Enter is what presses it.
     fn button(&self, label: String, selected: bool) -> Paragraph<'static> {
         let style = if selected {
-            Role::ButtonActive.style().underlined()
+            Role::ButtonActive.style()
         } else {
             Role::Button.style()
         };
@@ -230,7 +230,7 @@ impl Component for ConfirmPopup {
             Block::bordered()
                 .title(Span::styled(
                     format!(" {} ", self.title),
-                    Role::PopupTitle.style().bold(),
+                    Role::PopupTitle.style(),
                 ))
                 .title_alignment(Alignment::Center)
                 .border_type(BorderType::Rounded)

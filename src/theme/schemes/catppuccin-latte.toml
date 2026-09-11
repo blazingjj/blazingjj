@@ -45,7 +45,9 @@ diff-hunk-header = "#fe640b"
 # the green and the red they are already written in, at the opacities
 # the style guide gives. A terminal cannot lay the word's tint over the
 # line's, so the word's is the two already blended.
+# Catppuccin draws the changed words bold besides, as its port for
+# delta does with `minus-emph-style` and `plus-emph-style`.
 diff-added = { bg = "#cce1cd" }
-diff-added-word = { bg = "#b7d7b4" }
+diff-added-word = { bg = "#b7d7b4", bold = true }
 diff-removed = { bg = "#e9c4cf" }
-diff-removed-word = { bg = "#e6a9b9" }
+diff-removed-word = { bg = "#e6a9b9", bold = true }

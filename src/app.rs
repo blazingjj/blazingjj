@@ -52,7 +52,6 @@ use crate::ui::Interactive;
 use crate::ui::Scroll;
 use crate::ui::Tab;
 use crate::ui::bookmarks_tab::BookmarksTab;
-use crate::ui::colors_tab::ColorsTab;
 use crate::ui::dialog::CommandMode;
 use crate::ui::dialog::CommandPopup;
 use crate::ui::dialog::HelpPopup;
@@ -67,6 +66,7 @@ use crate::ui::status_bar::Status;
 use crate::ui::styles::paint;
 use crate::ui::styles::panel_block;
 use crate::ui::styles::panel_title;
+use crate::ui::styles_tab::StylesTab;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum TabId {
@@ -79,9 +79,9 @@ pub enum TabId {
     /// The keybindings, which the settings tab opens and which has no
     /// place of its own in the tab bar.
     Keybindings,
-    /// The colours, which the settings tab opens and which has no place
+    /// The styles, which the settings tab opens and which has no place
     /// of its own in the tab bar.
-    Colors,
+    Styles,
 }
 
 impl fmt::Display for TabId {
@@ -94,7 +94,7 @@ impl fmt::Display for TabId {
             TabId::OpLog => write!(f, "Op log"),
             TabId::Settings => write!(f, "Settings"),
             TabId::Keybindings => write!(f, "Keybindings"),
-            TabId::Colors => write!(f, "Colors"),
+            TabId::Styles => write!(f, "Styles"),
         }
     }
 }
@@ -109,7 +109,7 @@ impl TabId {
         TabId::OpLog,
         TabId::Settings,
         TabId::Keybindings,
-        TabId::Colors,
+        TabId::Styles,
     ];
 
     /// The tabs the tab bar lists, in the order it lists them
@@ -126,7 +126,7 @@ impl TabId {
     /// place of its own is the place of the tab that opens it.
     pub fn in_tab_bar(self) -> Self {
         match self {
-            TabId::Keybindings | TabId::Colors => TabId::Settings,
+            TabId::Keybindings | TabId::Styles => TabId::Settings,
             tab => tab,
         }
     }
@@ -136,7 +136,7 @@ impl TabId {
     /// come first by their number and last in the bar.
     pub fn number(self) -> usize {
         match self {
-            TabId::Settings | TabId::Keybindings | TabId::Colors => 0,
+            TabId::Settings | TabId::Keybindings | TabId::Styles => 0,
             TabId::Log => 1,
             TabId::Files => 2,
             TabId::Bookmarks => 3,
@@ -235,7 +235,7 @@ pub struct App<'a> {
     pub op_log: OpLogTab<'a>,
     pub settings: SettingsTab,
     pub keybindings: KeybindingsTab,
-    pub colors: ColorsTab,
+    pub styles: StylesTab,
     pub popup: Option<Box<dyn Component>>,
     pub stats: Stats,
     /// Where the tabs overview was last drawn, for mouse input.
@@ -284,7 +284,7 @@ impl<'a> App<'a> {
             op_log: OpLogTab::new(background_tasks.clone()),
             settings: SettingsTab::new(),
             keybindings: KeybindingsTab::new(),
-            colors: ColorsTab::new(),
+            styles: StylesTab::new(),
             popup: None,
             stats: Stats {
                 start_time: Instant::now(),
@@ -514,7 +514,7 @@ impl<'a> App<'a> {
             TabId::OpLog => &mut self.op_log,
             TabId::Settings => &mut self.settings,
             TabId::Keybindings => &mut self.keybindings,
-            TabId::Colors => &mut self.colors,
+            TabId::Styles => &mut self.styles,
         }
     }
 

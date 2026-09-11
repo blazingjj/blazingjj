@@ -228,12 +228,16 @@ unset = "x"
 back = "esc"
 ```
 
-### Colors tab
+### Styles tab
 
 ```toml
-[blazingjj.keybinds.colors-tab]
+[blazingjj.keybinds.styles-tab]
 change-foreground = "enter"
 change-background = "b"
+toggle-bold = "shift+b"
+toggle-dim = "shift+d"
+toggle-italic = "shift+i"
+toggle-underline = "shift+u"
 unset = "x"
 back = "esc"
 ```

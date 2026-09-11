@@ -88,7 +88,7 @@ impl DescribePopup<'_> {
 impl Component for DescribePopup<'_> {
     fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
         let block = Block::bordered()
-            .title(Span::styled(" Describe ", Role::PopupTitle.style().bold()))
+            .title(Span::styled(" Describe ", Role::PopupTitle.style()))
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded)
             .border_style(Role::PopupBorder.style());

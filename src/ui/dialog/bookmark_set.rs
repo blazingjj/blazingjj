@@ -237,10 +237,7 @@ impl Component for BookmarkSetPopup<'_> {
             f.render_widget(help, popup_chunks[2]);
         } else {
             let block = Block::bordered()
-                .title(Span::styled(
-                    " Select bookmark ",
-                    Role::PopupTitle.style().bold(),
-                ))
+                .title(Span::styled(" Select bookmark ", Role::PopupTitle.style()))
                 .title_alignment(Alignment::Center)
                 .border_type(BorderType::Rounded)
                 .border_style(Role::PopupBorder.style());

@@ -33,7 +33,7 @@ use crate::commander::MIN_SETTABLE_WIDTH;
 use crate::commander::RemoveEndLine;
 use crate::commander::get_output_args;
 use crate::keybinds::KeybindsConfig;
-use crate::theme::Colors;
+use crate::theme::Styles;
 use crate::theme::Theme;
 
 /// Singleton holding application environment.
@@ -103,7 +103,7 @@ fn colors_said(config: &toml::Table) -> (Option<&toml::Value>, Option<&toml::Val
     (
         config
             .get("blazingjj")
-            .and_then(|blazingjj| blazingjj.get("colors")),
+            .and_then(|blazingjj| blazingjj.get("styles")),
         config.get("colors"),
     )
 }
@@ -171,7 +171,7 @@ pub struct JjConfig {
 #[serde(rename_all = "kebab-case", default)]
 pub struct JjConfigBlazingjj {
     /// What each element is drawn in, by role.
-    colors: Colors,
+    styles: Styles,
     describe_mode: DescribeMode,
     diff_format: Option<ConfiguredDiffFormat>,
     diff_tool: Option<String>,
@@ -199,7 +199,7 @@ pub struct JjConfigBlazingjj {
 impl Default for JjConfigBlazingjj {
     fn default() -> Self {
         Self {
-            colors: Colors::default(),
+            styles: Styles::default(),
             confirm_push: true,
             layout_percent: 50,
             layout_preserve_ratio: true,
@@ -332,8 +332,8 @@ impl JjConfig {
     }
 
     /// What the configuration says to draw each role in.
-    pub fn colors(&self) -> &Colors {
-        &self.blazingjj.colors
+    pub fn styles(&self) -> &Styles {
+        &self.blazingjj.styles
     }
 
     pub fn bookmark_template(&self) -> String {
@@ -426,7 +426,7 @@ fn read_jj_config(root: &str, jj_bin: &str) -> Result<(toml::Table, JjConfig)> {
         .and_then(|blazingjj| blazingjj.get("highlight-color"))
         .is_some()
     {
-        warn!("blazingjj.highlight-color is gone; set blazingjj.colors.highlight.bg instead");
+        warn!("blazingjj.highlight-color is gone; set blazingjj.styles.highlight.bg instead");
     }
     let jj_config = config
         .clone()
@@ -1072,7 +1072,7 @@ mod tests {
             "The setting cannot take that value: an interval is a number of seconds, 0 or more"
         );
         assert_eq!(
-            refusal("blazingjj.colors.hint", "\"chartreuse\""),
+            refusal("blazingjj.styles.hint", "\"chartreuse\""),
             "The setting cannot take that value: \"chartreuse\" is none of a color name, a #rrggbb code, ansi-color-0 to ansi-color-255, or \"default\""
         );
     }
