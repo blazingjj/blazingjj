@@ -143,6 +143,11 @@ impl<'a> LogTab<'a> {
         self.log_panel.marked.len()
     }
 
+    /// How many of the marked changes the log is not showing.
+    pub fn hidden_marks(&self) -> usize {
+        self.log_panel.hidden_marks()
+    }
+
     /// Stop marking the changes that were marked, whatever they were
     /// marked for having been done to them.
     pub fn clear_marks(&mut self) {

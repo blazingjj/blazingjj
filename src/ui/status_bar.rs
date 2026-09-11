@@ -43,6 +43,9 @@ pub struct Status<'a> {
     pub revset: Option<&'a str>,
     /// How many changes the log has marked.
     pub marked: usize,
+    /// How many of those it is not showing, and so cannot be unmarked
+    /// where they are.
+    pub hidden_marks: usize,
     /// Whether the repo has moved since what is on screen was read.
     pub stale: bool,
     /// How long the app has been at what it is doing, which is what the
@@ -83,6 +86,11 @@ fn where_we_are(status: &Status) -> Line<'static> {
     if status.marked > 0 {
         spans.extend(divider());
         spans.push(Span::raw(format!("{} marked", status.marked)));
+        // A mark the log is not showing is one nothing on screen says
+        // anything about, so the count is all there is to go by.
+        if status.hidden_marks > 0 {
+            spans.push(Span::raw(format!(" ({} out of view)", status.hidden_marks)));
+        }
     }
 
     Line::from(spans)
@@ -141,6 +149,7 @@ mod tests {
             root: "/tmp/repo",
             revset: None,
             marked: 0,
+            hidden_marks: 0,
             stale: false,
             elapsed: Duration::ZERO,
         }
@@ -169,6 +178,21 @@ mod tests {
             ..status()
         };
         assert_eq!(text(&showing), " default /tmp/repo │ trunk()..@ │ 2 marked");
+    }
+
+    /// A mark on a change the log is not showing is one the bar has to
+    /// account for, there being nothing on screen that does.
+    #[test]
+    fn the_bar_says_how_many_marks_are_out_of_view() {
+        let hiding = Status {
+            marked: 2,
+            hidden_marks: 1,
+            ..status()
+        };
+        assert_eq!(
+            text(&hiding),
+            " default /tmp/repo │ 2 marked (1 out of view)"
+        );
     }
 
     #[test]

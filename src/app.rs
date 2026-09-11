@@ -499,6 +499,7 @@ impl<'a> App<'a> {
             root: &get_env().root,
             revset: self.log.revset(),
             marked: self.log.marks(),
+            hidden_marks: self.log.hidden_marks(),
             stale: self.repo_watch.waiting_for_refresh(),
             elapsed: self.stats.start_time.elapsed(),
         }

@@ -307,6 +307,19 @@ impl<'a, T: LogItem> LogPanel<'a, T> {
         let was_marked = self.is_item_marked(&self.selected);
         self.set_item_mark(&self.selected.clone(), !was_marked);
     }
+
+    /// How many marks sit on items the panel is not showing, and so
+    /// cannot be taken back where they are.
+    pub fn hidden_marks(&self) -> usize {
+        let Ok(log_output) = self.log_output.as_ref() else {
+            return self.marked.len();
+        };
+
+        self.marked
+            .iter()
+            .filter(|mark| !log_output.items.iter().any(|item| item.mark() == **mark))
+            .count()
+    }
 }
 
 impl<T: LogItem> Component for LogPanel<'_, T> {

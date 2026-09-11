@@ -54,8 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   log is showing it
 - Status bar along the foot of the window, saying which workspace the app is
   working in and where it is, the revset the log is showing and how many
-  changes it has marked. It has taken over the `q`/`?`/`R` hints and the
-  runtime counter from the header, which now holds the tab bar alone
+  changes it has marked, and how many of those the log is not showing. It has
+  taken over the `q`/`?`/`R` hints and the runtime counter from the header,
+  which now holds the tab bar alone
 - Every element of the interface can be given a foreground and a background
   under `blazingjj.colors`, as either the color to draw it in or a table of
   `fg` and `bg`. An element that says nothing about a color takes
