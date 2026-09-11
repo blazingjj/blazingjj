@@ -15,6 +15,7 @@ use crate::app::command::Command;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskResult;
 use crate::background_tasks::TaskSlot;
+use crate::commander::bookmarks::BookmarkLine;
 use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::log::LOG_LINES_PER_ITEM;
@@ -302,6 +303,34 @@ impl<'a> LogTab<'a> {
                 return Ok(Some(AppAction::Run(Command::Duplicate(Revset::from(
                     &self.head.change_id,
                 )))));
+            }
+
+            LogTabEvent::OpenPullRequest => {
+                let bookmarks = new_commander().get_bookmarks(true)?;
+                // Sorted newest-first by `get_bookmarks`, so the first
+                // match is the latest bookmark on the change. `git` is
+                // listed as a remote for every bookmark of a colocated
+                // repo, standing for the backing git repo rather than a
+                // real one, and is skipped over for that reason.
+                let bookmark = bookmarks.into_iter().find_map(|line| match line {
+                    BookmarkLine::Parsed { bookmark, head, .. }
+                        if bookmark.remote.is_some() && head.commit_id == self.head.commit_id =>
+                    {
+                        Some(bookmark)
+                    }
+                    _ => None,
+                });
+
+                return Ok(Some(match bookmark {
+                    Some(bookmark) => AppAction::Run(Command::OpenPullRequest(bookmark)),
+                    None => AppAction::SetPopup(Box::new(
+                        MessagePopup::new(
+                            "Open pull request",
+                            "This change has no bookmark on a remote. Push one first.",
+                        )
+                        .wrapped(),
+                    )),
+                }));
             }
 
             LogTabEvent::CreateNew { describe } => {

@@ -7,6 +7,7 @@ as an [AppAction].
 */
 
 use std::fmt::Display;
+use std::io;
 use std::path::Path;
 
 use anyhow::Result;
@@ -22,6 +23,7 @@ use crate::background_tasks::TaskSlot;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::files::DiffType;
 use crate::commander::files::File;
+use crate::commander::git_url::pull_request_url;
 use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
 use crate::commander::ids::OperationId;
@@ -162,6 +164,9 @@ pub enum Command {
     ForgetBookmark(String),
     TrackBookmark(Bookmark),
     UntrackBookmark(Bookmark),
+    /// Open a pull request for the bookmark's remote counterpart in the
+    /// browser.
+    OpenPullRequest(Bookmark),
     /// Set an option in the user's config, `value` being the TOML
     /// expression to set it to.
     SetSetting {
@@ -408,6 +413,7 @@ impl Command {
                     Err(err) => Ok(Some(refused("Untrack", err))),
                 }
             }
+            Command::OpenPullRequest(bookmark) => open_pull_request(&bookmark),
             Command::SetSetting { key, value } => {
                 match new_commander().set_user_config(&key, &value) {
                     Ok(()) => Ok(Some(AppAction::ConfigChanged)),
@@ -485,6 +491,59 @@ fn open_in_editor(editor: &Editor, target: &str) -> Option<AppAction> {
             Err(err) => Some(refused("Open", err)),
         },
     }
+}
+
+/// Open a pull request for `bookmark`'s remote counterpart in the
+/// browser.
+fn open_pull_request(bookmark: &Bookmark) -> Result<Option<AppAction>> {
+    let Some(remote) = bookmark.remote.as_deref() else {
+        return Ok(Some(message(
+            "Open pull request",
+            "This bookmark is not on a remote.",
+        )));
+    };
+
+    let remote_url = match new_commander().git_remote_url(remote) {
+        Ok(Some(url)) => url,
+        Ok(None) => {
+            return Ok(Some(message(
+                "Open pull request",
+                format!("There is no remote named `{remote}`."),
+            )));
+        }
+        Err(err) => return Ok(Some(refused("Open pull request", err))),
+    };
+
+    let Some(url) = pull_request_url(&remote_url, &bookmark.name) else {
+        return Ok(Some(message(
+            "Open pull request",
+            format!("Don't know how to open a pull request on `{remote_url}`."),
+        )));
+    };
+
+    match open_url(&url) {
+        Ok(()) => Ok(None),
+        Err(err) => Ok(Some(refused("Open pull request", err))),
+    }
+}
+
+/// Open `url` in the user's browser, left running on its own.
+fn open_url(url: &str) -> io::Result<()> {
+    let dir = get_env().root.clone();
+    let program = if cfg!(target_os = "macos") {
+        Program::new("open", dir).args([url])
+    } else if cfg!(target_os = "windows") {
+        // `cmd /C start` would have cmd.exe re-parse the command line,
+        // letting a URL built from a bookmark holding shell
+        // metacharacters (allowed in a git ref name, not in a shell)
+        // run more than a browser. `rundll32` takes the URL as a plain
+        // argument instead.
+        Program::new("rundll32", dir).args(["url.dll,FileProtocolHandler", url])
+    } else {
+        Program::new("xdg-open", dir).args([url])
+    };
+
+    program.run_detached()
 }
 
 /// Asking where to open `file`, which is shown at `head`, named
