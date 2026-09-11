@@ -15,7 +15,6 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::prelude::*;
-use ratatui::symbols;
 use ratatui::widgets::*;
 use tracing::info;
 use tracing::instrument;
@@ -64,7 +63,6 @@ use crate::ui::settings_tab::SettingsTab;
 use crate::ui::status_bar;
 use crate::ui::status_bar::Status;
 use crate::ui::styles::paint;
-use crate::ui::styles::panel_block;
 use crate::ui::styles::panel_title;
 use crate::ui::styles_tab::StylesTab;
 
@@ -157,35 +155,50 @@ fn read_workspace() -> Option<String> {
         .map(|workspace| workspace.name)
 }
 
+/// What the app calls itself in the corner it sits in.
+const APP_NAME: &str = " blazingjj ";
+
+/// How the tab bar names a tab: the number it is picked by and what it
+/// shows.
+fn tab_title(tab: TabId) -> String {
+    format!("{} {tab}", tab.number())
+}
+
 /// Where each tab's title sits in the tab bar and how wide it is: one
-/// cell of padding on either side of a title, then a one cell divider.
-/// The padding counts as part of the title, so that clicking next to a
-/// name still hits it.
+/// cell of padding on either side of a title. The padding counts as part
+/// of the title, so that clicking next to a name still hits it, and two
+/// titles are a cell of it apart.
 fn tab_bar_layout(titles: &[String]) -> impl Iterator<Item = (u16, u16)> {
     titles.iter().scan(0, |x, title| {
         let start = *x;
         let width = Line::raw(title).width() as u16 + 2;
-        *x += width + 1;
+        *x += width;
         Some((start, width))
     })
 }
 
-/// The whole tab bar, however much of it shows, with the selected tab
-/// highlighted.
+/// The whole tab bar, however much of it shows: nothing but names, the
+/// one showing told apart by the style it is drawn in. The number a tab
+/// is reached by is dimmed, it being there to be found when it is wanted
+/// rather than read along with the names.
 fn tab_bar_line(titles: &[String], selected: usize) -> Line<'static> {
-    let highlight = Role::Highlight.style();
-
     let mut spans = Vec::new();
     for (i, title) in titles.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::raw(symbols::line::VERTICAL));
-        }
-        let title = format!(" {title} ");
-        spans.push(if i == selected {
-            Span::styled(title, highlight)
+        let name = if i == selected {
+            Role::TabActive.style()
         } else {
-            Span::raw(title)
-        });
+            Role::Tab.style()
+        };
+        // The number leads the title, which is nothing else's to hold.
+        let (number, title) = title.split_once(' ').unwrap_or(("", title));
+
+        spans.extend([
+            Span::raw(" "),
+            Span::styled(number.to_owned(), Role::Hint.style()),
+            Span::raw(" "),
+            Span::styled(title.to_owned(), name),
+            Span::raw(" "),
+        ]);
     }
 
     Line::from(spans)
@@ -649,34 +662,41 @@ impl<'a> App<'a> {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),
+                Constraint::Length(1),
                 Constraint::Min(1),
                 Constraint::Length(1),
             ])
             .split(area);
 
         {
-            let titles: Vec<String> = TabId::VALUES
-                .iter()
-                .map(|tab| format!("[{}] {}", tab.number(), tab))
-                .collect();
+            let titles: Vec<String> = TabId::VALUES.iter().copied().map(tab_title).collect();
 
             let selected = TabId::VALUES
                 .iter()
                 .position(|tab| *tab == self.current_tab.in_tab_bar())
                 .unwrap_or(0);
 
-            let block = panel_block().title(panel_title(" blazingjj "));
-            let inner = block.inner(chunks[0]);
+            // The name stays where it is however far the tabs are
+            // scrolled, so they are given the rest of the row. It sits
+            // at the right, leaving the corner the eye starts in to the
+            // names it would otherwise push along.
+            let header = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Fill(1),
+                    Constraint::Length(APP_NAME.len() as u16),
+                ])
+                .split(chunks[0]);
 
-            let scroll = tab_bar_scroll(&titles, selected, inner.width);
-            self.record_tab_hits(chunks[0], inner, &titles, scroll);
+            let scroll = tab_bar_scroll(&titles, selected, header[0].width);
+            self.record_tab_hits(chunks[0], header[0], &titles, scroll);
 
-            let tabs = Paragraph::new(tab_bar_line(&titles, selected))
-                .block(block)
-                .scroll((0, scroll));
+            f.render_widget(
+                Paragraph::new(tab_bar_line(&titles, selected)).scroll((0, scroll)),
+                header[0],
+            );
 
-            f.render_widget(tabs, chunks[0]);
+            f.render_widget(Paragraph::new(panel_title(APP_NAME).bold()), header[1]);
         }
 
         self.get_current_tab().draw(f, chunks[1])?;
@@ -1002,8 +1022,7 @@ impl<'a> App<'a> {
 mod tests {
     use super::*;
 
-    /// Titles taking 5, 5 and 7 cells with their padding, so 19 with the
-    /// dividers between them.
+    /// Titles taking 5, 5 and 7 cells with their padding, so 17 across.
     fn titles() -> Vec<String> {
         ["one", "two", "three"]
             .into_iter()
@@ -1013,17 +1032,37 @@ mod tests {
 
     #[test]
     fn the_tab_bar_stays_at_its_front_while_every_tab_fits() {
-        assert_eq!(tab_bar_scroll(&titles(), 2, 19), 0);
+        assert_eq!(tab_bar_scroll(&titles(), 2, 17), 0);
     }
 
     #[test]
     fn a_tab_bar_wider_than_its_window_centers_the_selected_tab() {
-        assert_eq!(tab_bar_scroll(&titles(), 1, 10), 3);
+        assert_eq!(tab_bar_scroll(&titles(), 1, 10), 2);
     }
 
     #[test]
     fn the_tab_bar_scrolls_no_further_than_its_ends() {
         assert_eq!(tab_bar_scroll(&titles(), 0, 10), 0);
-        assert_eq!(tab_bar_scroll(&titles(), 2, 10), 9);
+        assert_eq!(tab_bar_scroll(&titles(), 2, 10), 7);
+    }
+
+    /// Nothing is drawn around the tab showing: the bar is names alone,
+    /// and the one showing is the one drawn in the `tab-active` style.
+    #[test]
+    fn the_tab_bar_tells_the_tab_showing_apart_by_its_style() {
+        let titles = [TabId::Log, TabId::Files].map(tab_title).to_vec();
+        let line = tab_bar_line(&titles, 1);
+
+        assert_eq!(line.to_string(), " 1 Log  2 Files ");
+
+        let drawn = |name: &str| {
+            line.spans
+                .iter()
+                .find(|span| span.content == name)
+                .map(|span| span.style)
+                .expect("the name is in the bar")
+        };
+        assert_eq!(drawn("Files"), Role::TabActive.style());
+        assert_eq!(drawn("Log"), Role::Tab.style());
     }
 }

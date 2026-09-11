@@ -43,6 +43,8 @@ pub enum Role {
     Hint,
     Separator,
     Border,
+    Tab,
+    TabActive,
     Workspace,
     PanelTitle,
     Heading,
@@ -73,13 +75,15 @@ pub enum Role {
 
 impl Role {
     /// Every role there is, in the order the styles tab lists them.
-    pub const ALL: [Self; 31] = [
+    pub const ALL: [Self; 33] = [
         Self::Default,
         Self::Highlight,
         Self::Hint,
         Self::Value,
         Self::Separator,
         Self::Border,
+        Self::Tab,
+        Self::TabActive,
         Self::Workspace,
         Self::PanelTitle,
         Self::Heading,
@@ -121,6 +125,8 @@ impl Role {
             Self::Hint => "hint",
             Self::Separator => "separator",
             Self::Border => "border",
+            Self::Tab => "tab",
+            Self::TabActive => "tab-active",
             Self::Workspace => "workspace",
             Self::PanelTitle => "panel-title",
             Self::Heading => "heading",
@@ -162,6 +168,10 @@ impl Role {
             }
             Self::Separator => "The rules a popup divides itself with.",
             Self::Border => "The border around a panel of the frame.",
+            Self::Tab => "The name of a tab in the tab bar, other than the one showing.",
+            Self::TabActive => {
+                "The name of the tab showing, which is what tells it apart in the tab bar."
+            }
             Self::Workspace => "The workspace the app is running in, as the status bar names it.",
             Self::PanelTitle => "The title a panel of the frame is drawn under.",
             Self::Heading => "The heading a list is divided under.",
@@ -211,6 +221,8 @@ impl Role {
             | Self::Hint
             | Self::Separator
             | Self::Border
+            | Self::Tab
+            | Self::TabActive
             | Self::Workspace
             | Self::PanelTitle
             | Self::Heading
@@ -275,6 +287,18 @@ impl Role {
             },
             Self::Highlight => RoleStyle {
                 bg: Some(ThemeColor::Rgb(50, 50, 150)),
+                ..RoleStyle::default()
+            },
+            // The tab bar tells the tab showing apart by weight and an
+            // underline rather than by a colour, so that a row of names
+            // reads as one and the mark sits on the name it is about.
+            Self::Tab => RoleStyle {
+                dim: Some(true),
+                ..RoleStyle::default()
+            },
+            Self::TabActive => RoleStyle {
+                bold: Some(true),
+                underline: Some(true),
                 ..RoleStyle::default()
             },
             Self::Separator => ansi(Ansi::BrightBlack),

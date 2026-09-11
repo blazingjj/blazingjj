@@ -935,6 +935,24 @@ mod tests {
         }
     }
 
+    /// An attribute an element already comes with is turned down at the
+    /// first press rather than asked for again: a tab that is not
+    /// showing is dim to begin with, and asking for that would leave the
+    /// list looking as it did.
+    #[test]
+    fn an_attribute_an_element_comes_with_is_turned_down_at_once() {
+        let mut tab = tab("");
+        select(&mut tab, Role::Tab);
+
+        let Some(AppAction::Run(Command::SetSetting { key, value })) =
+            tab.handle_event(StylesTabEvent::ToggleDim)
+        else {
+            panic!("the attribute is turned round");
+        };
+        assert_eq!(key, "blazingjj.styles.tab.dim");
+        assert_eq!(value, "false");
+    }
+
     /// jj refuses to set a key under a value that is not a table, so an
     /// element written as the one colour to draw it in is written afresh
     /// as a table of that colour and the attribute asked for.
