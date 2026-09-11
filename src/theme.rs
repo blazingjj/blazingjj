@@ -1102,6 +1102,23 @@ mod tests {
         );
     }
 
+    /// A scheme says how a role is drawn as well as what in, which is
+    /// how Catppuccin's diffs get the bold on their changed words.
+    #[test]
+    fn a_scheme_says_the_attributes_of_a_role_as_well_as_its_colours() {
+        let theme = theme_of("blazingjj.styles.scheme = \"catppuccin-mocha\"\n");
+
+        for role in [Role::DiffAddedWord, Role::DiffRemovedWord] {
+            assert!(
+                theme.style(role).add_modifier.contains(Modifier::BOLD),
+                "{} is drawn bold",
+                role.key()
+            );
+            // And jj is told so, the words being its to draw.
+            assert_eq!(theme.attribute_said_of(role, Attribute::Bold), Some(true));
+        }
+    }
+
     /// A scheme says what the app is drawn in, which the highlight is
     /// not: it goes over a row of jj's own output, and a foreground of
     /// ours would flatten the change ids and bookmarks on that row to
