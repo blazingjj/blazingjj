@@ -114,7 +114,7 @@ impl StylesTabKeybinds {
     }
 
     /// The shortcut to name `event` by, of those bound to it.
-    fn shortcut(&self, event: StylesTabEvent) -> Option<Shortcut> {
+    pub fn shortcut(&self, event: StylesTabEvent) -> Option<Shortcut> {
         self.keys.get_shortcuts(event).into_iter().next()
     }
 

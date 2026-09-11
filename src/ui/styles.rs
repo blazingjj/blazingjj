@@ -30,8 +30,12 @@ pub fn panel_title(title: impl Into<Cow<'static, str>>) -> Span<'static> {
 /// foreground has to be drawn in something to be seen at all, and a
 /// patch of the background alone would say nothing about it.
 pub fn swatch(style: Style) -> Span<'static> {
-    Span::styled(" x ", style)
+    Span::styled(SWATCH, style)
 }
+
+/// What a swatch is written as, for a caller lining a column up with it.
+const SWATCH: &str = " x ";
+pub const SWATCH_WIDTH: usize = SWATCH.len();
 
 /// The heading a list is divided under, which is set off by its style
 /// rather than indented like the rows beneath it.

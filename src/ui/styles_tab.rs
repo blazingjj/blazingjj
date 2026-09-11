@@ -41,6 +41,7 @@ use crate::ui::panel::PanelMouseInput;
 use crate::ui::panel::Row as SectionRow;
 use crate::ui::panel::Sections;
 use crate::ui::panel::copy_marked;
+use crate::ui::styles::SWATCH_WIDTH;
 use crate::ui::styles::panel_block;
 use crate::ui::styles::panel_title;
 use crate::ui::styles::patched;
@@ -52,10 +53,55 @@ use crate::ui::utils::error_text;
 /// What every row of the list is indented by, headings apart.
 const INDENT: &str = "   ";
 
-/// What a column of colours is given: the widest a colour is written,
-/// `bright magenta` and `ansi-color-255` both being fourteen, and the
-/// blanks that keep the two columns apart.
-const COLOR_WIDTH: usize = 16;
+/// What the list says about an attribute in the one cell it gives it:
+/// its initial in capitals where it is asked for, in small letters
+/// where it is turned down, and a dot where nothing says either way.
+fn flag_of(attribute: Attribute, asked: Option<bool>) -> String {
+    let initial = attribute.key()[..1].to_owned();
+
+    match asked {
+        Some(true) => initial.to_uppercase(),
+        Some(false) => initial,
+        None => "·".to_owned(),
+    }
+}
+
+/// What the list says its flags mean, under it. The keys that turn them
+/// round are the details panel's to name, beside what they change.
+const LEGEND: [&str; 2] = [
+    "B D I U  bold dim italic underline",
+    "B yes, b no, · inherited",
+];
+
+/// How wide the column of names is: as wide as the widest of them.
+fn name_width() -> usize {
+    Role::ALL
+        .iter()
+        .map(|role| role.key().len())
+        .max()
+        .unwrap_or(0)
+}
+
+/// Where a row's flags start: past the indent, the swatch and the name,
+/// with a cell of blank on either side of the name.
+fn flags_at(name_width: usize) -> usize {
+    INDENT.len() + SWATCH_WIDTH + 2 + name_width + 2
+}
+
+/// How wide a row's flags are: one cell each, a blank apart.
+const FLAGS_WIDTH: usize = Attribute::ALL.len() * 2 - 1;
+
+/// What the list is read under, above it: what a row names on the left,
+/// and what the cells on the right are about, ending where they do.
+fn list_heading() -> Line<'static> {
+    const ATTRIBUTES: &str = "Attributes";
+
+    Line::raw(format!(
+        "{:width$}{ATTRIBUTES}",
+        format!("{INDENT}element"),
+        width = (flags_at(name_width()) + FLAGS_WIDTH).saturating_sub(ATTRIBUTES.len())
+    ))
+}
 
 /// The config key `part` of `role`'s style is written under, `part`
 /// being what a channel or an attribute is called there.
@@ -343,11 +389,7 @@ impl StylesTab {
     /// part of the app it belongs to.
     fn roles_lines(&self, styles: &UserStyles) -> Vec<Line<'static>> {
         let theme = theme();
-        let width = Role::ALL
-            .iter()
-            .map(|role| role.key().len())
-            .max()
-            .unwrap_or(0);
+        let width = name_width();
 
         self.roles
             .rows()
@@ -371,9 +413,6 @@ impl StylesTab {
                     }
                     SectionRow::Item(role) => {
                         let by_user = styles.said_about(*role);
-                        // What a colour is written as is drawn like the
-                        // rest of the list; the swatch is where the
-                        // element's own colours are shown.
                         // What the user's own config does not give is
                         // dimmed as the settings tab dims an option it
                         // falls back on, that being the same thing said
@@ -385,33 +424,20 @@ impl StylesTab {
                                 span.patch_style(theme.style(Role::Hint)).italic()
                             }
                         };
-                        let said = |channel: Channel| {
-                            let color = theme.color_of(*role, channel);
-                            let text =
-                                color.map_or_else(|| "-".to_owned(), |color| color.to_string());
+                        // The colours are the swatch's to show and the
+                        // details panel's to name, so the row spends
+                        // what it has on the attributes, which nothing
+                        // else shows.
+                        let attributes = Attribute::ALL.into_iter().map(|attribute| {
+                            let flag = flag_of(attribute, theme.attribute_of(*role, attribute));
 
-                            as_said(Span::raw(format!("{text:COLOR_WIDTH$}")), channel.key())
-                        };
-                        // Only the attributes something says either way,
-                        // an element being drawn with none of them
-                        // unless it is said to be.
-                        let attributes = Attribute::ALL.into_iter().filter_map(|attribute| {
-                            let asked = theme.attribute_of(*role, attribute)?;
-                            let text = if asked {
-                                format!("{} ", attribute.key())
-                            } else {
-                                format!("no {} ", attribute.key())
-                            };
-
-                            Some(as_said(Span::raw(text), attribute.key()))
+                            as_said(Span::raw(format!("{flag} ")), attribute.key())
                         });
 
                         let mut line = highlighted(Line::from_iter(
                             [
                                 Span::raw(INDENT),
                                 Span::raw(format!("  {:width$}  ", role.key())),
-                                said(Channel::Fg),
-                                said(Channel::Bg),
                             ]
                             .into_iter()
                             .chain(attributes),
@@ -442,11 +468,26 @@ impl StylesTab {
             Line::raw(""),
         ];
 
-        for (what, channel) in [("Drawn in", Channel::Fg), ("Drawn on", Channel::Bg)] {
+        // Each line is labelled with the key that changes it: the hint
+        // under the list has room for two of them, and this is where
+        // you are looking while changing one element anyway.
+        let label = |what: &str, event: StylesTabEvent| {
+            let key = self
+                .keybinds
+                .shortcut(event)
+                .map_or_else(|| "unbound".to_owned(), |shortcut| shortcut.to_string());
+
+            Span::raw(format!("{:22}", format!("{what} ({key}):")))
+        };
+
+        for (what, channel, event) in [
+            ("Drawn in", Channel::Fg, StylesTabEvent::ChangeForeground),
+            ("Drawn on", Channel::Bg, StylesTabEvent::ChangeBackground),
+        ] {
             let color = theme.color_of(role, channel);
 
             lines.push(Line::from(vec![
-                Span::raw(format!("{what}:  ")),
+                label(what, event),
                 Span::raw(color.map_or_else(
                     || "whatever is underneath".to_owned(),
                     |color| color.to_string(),
@@ -455,9 +496,14 @@ impl StylesTab {
             ]));
         }
 
-        for attribute in Attribute::ALL {
+        for (attribute, event) in [
+            (Attribute::Bold, StylesTabEvent::ToggleBold),
+            (Attribute::Dim, StylesTabEvent::ToggleDim),
+            (Attribute::Italic, StylesTabEvent::ToggleItalic),
+            (Attribute::Underline, StylesTabEvent::ToggleUnderline),
+        ] {
             lines.push(Line::from(vec![
-                Span::raw(format!("{:11}", format!("{}:", attribute.key()))),
+                label(attribute.key(), event),
                 Span::raw(match theme.attribute_of(role, attribute) {
                     Some(true) => "yes",
                     Some(false) => "no",
@@ -471,10 +517,18 @@ impl StylesTab {
         // every line: an element is drawn as the app, a scheme and your
         // own config together have it, and only the last is the tab's
         // to take away.
+        let unset = self.keybinds.shortcut(StylesTabEvent::Unset).map_or_else(
+            || "nothing here".to_owned(),
+            |shortcut| shortcut.to_string(),
+        );
+
         lines.push(Line::raw(""));
         lines.push(Line::raw(match styles.parts_of(role).as_slice() {
             [] => "Your config says nothing about this element.".to_owned(),
-            parts => format!("Your config says its {}.", parts.join(", ")),
+            parts => format!(
+                "Your config says its {}, which {unset} takes back out.",
+                parts.join(", ")
+            ),
         }));
 
         lines.push(Line::raw(""));
@@ -581,13 +635,18 @@ impl Component for StylesTab {
 
         // The hint goes between the corners, with a space to either side.
         let hint_width = chunks[0].width.saturating_sub(4) as usize;
+        // The heading and the legend stand in rows the list gives up, so
+        // that they sit inside the panel rather than under it. Neither
+        // scrolls with the list, being what it is read by.
         let block = panel_block()
             .title(panel_title(" Settings / Styles "))
             .title_bottom(
                 Line::raw(format!(" {} ", self.keybinds.hint(hint_width)))
                     .centered()
                     .patch_style(Role::Hint.style()),
-            );
+            )
+            .padding(Padding::new(0, 0, 1, LEGEND.len() as u16));
+        let listed = block.inner(chunks[0]);
         *self.roles_list_state.selected_mut() = Some(self.roles.selected_row());
         self.roles_pane.render(
             f,
@@ -595,6 +654,23 @@ impl Component for StylesTab {
             block,
             List::new(rows).scroll_padding(3),
             &mut self.roles_list_state,
+        );
+
+        f.render_widget(
+            Paragraph::new(list_heading()).style(Role::Hint.style()),
+            Rect {
+                y: listed.y.saturating_sub(1),
+                height: 1,
+                ..listed
+            },
+        );
+        f.render_widget(
+            Paragraph::new(Vec::from_iter(LEGEND.map(Line::raw))).style(Role::Hint.style()),
+            Rect {
+                y: listed.y + listed.height,
+                height: LEGEND.len() as u16,
+                ..listed
+            },
         );
 
         f.render_widget(
@@ -719,16 +795,49 @@ mod tests {
         }
     }
 
-    /// A row says what the element is drawn in, so that the list is read
-    /// rather than worked out.
+    /// A row says how the element is drawn, which nothing else shows:
+    /// the colours are the swatch's to show and the details panel's to
+    /// name, so the row spends the width it has on the attributes.
     #[test]
-    fn a_row_says_what_the_element_is_drawn_in() {
+    fn a_row_says_which_attributes_the_element_is_drawn_with() {
         let rows = rows(&tab(""));
 
         assert!(
             rows.iter()
-                .any(|row| row.contains("error") && row.contains("red")),
+                .any(|row| row.contains("hint") && row.contains("· · · ·")),
             "{rows:?}"
+        );
+
+        // The initial says which attribute the cell is about, and
+        // whether it is asked for or turned down.
+        assert_eq!(flag_of(Attribute::Bold, Some(true)), "B");
+        assert_eq!(flag_of(Attribute::Dim, Some(false)), "d");
+        assert_eq!(flag_of(Attribute::Underline, None), "·");
+    }
+
+    /// The keys are named beside what they change, the hint under the
+    /// list having room for two of the eight, and the list says what its
+    /// flags mean under it.
+    #[test]
+    fn the_panel_names_the_key_that_changes_each_part_of_a_style() {
+        let screen = drawn(&mut tab(""), 100, 30);
+        let said = |what: &str| {
+            assert!(screen.iter().any(|row| row.contains(what)), "{screen:?}");
+        };
+
+        said("Drawn in (Enter):");
+        said("bold (Shift+b):");
+        said("B yes, b no, · inherited");
+        // What of a style is the user's own is said once, rather than
+        // beside every line it could be said of.
+        said("Your config says nothing");
+        // And the flags are read under their own initials, which stand
+        // over the cells rather than scrolling away with the list.
+        assert!(
+            screen
+                .iter()
+                .any(|row| row.contains("element") && row.contains("Attributes")),
+            "{screen:?}"
         );
     }
 

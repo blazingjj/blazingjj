@@ -96,11 +96,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Without a scheme and without any of those set, jj is left entirely alone
 - The `blazingjj.styles` row of the settings tab opens the styles, which are
   changed there one element at a time, the way the keybindings are. Each is
-  listed drawn in its own style; `Enter` asks what an element is drawn in,
-  `b` what it is drawn on, `Shift+b`, `Shift+d`, `Shift+i` and `Shift+u` turn
-  its attributes round against what it inherits, and `x` takes all of it back
-  out of your config, while clearing either color field takes just that one
-  out. The keys are configured under `[blazingjj.keybinds.styles-tab]`
+  listed drawn in its own style, with a flag per attribute beside it and the
+  keys named in the panel about the selected one; `Enter` asks what an element
+  is drawn in, `b` what it is drawn on, `Shift+b`, `Shift+d`, `Shift+i` and
+  `Shift+u` turn its attributes round against what it inherits, and `x` takes
+  all of it back out of your config, while clearing either color field takes
+  just that one out. The keys are configured under
+  `[blazingjj.keybinds.styles-tab]`
 - The settings and keybindings tabs draw what an option or a binding is set to
   in the `value` color
 - The labels in the settings tab's details panel are dimmed
