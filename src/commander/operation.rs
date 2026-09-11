@@ -42,6 +42,17 @@ const OP_LOG_TEMPLATE: &str = r#"
     )
 "#;
 
+/// Override of jj's `format_time_range`, writing the local date and time
+/// an operation started at rather than how long ago it did. The panel
+/// showing it may have been filled a while ago, where "4 seconds ago" is
+/// simply wrong, and "1 day ago" says too little to tell two operations
+/// apart anyway.
+const ABSOLUTE_TIME_RANGE: &str = concat!(
+    r#"template-aliases."format_time_range(time_range)"='''"#,
+    r#"time_range.start().local().format("%Y-%m-%d %H:%M:%S")"#,
+    r#" ++ label("time", ", lasted ") ++ time_range.duration()'''"#,
+);
+
 /// An entry of the operation log, as [operation_template] describes it.
 /// The field names are the ones the template writes.
 #[derive(Clone, Default, PartialEq, Eq, Hash, Debug, Deserialize)]
@@ -115,11 +126,18 @@ impl Commander {
     }
 
     /// Create the JjCommand showing what an operation did to the repo,
-    /// down to the patches of the changes it touched. Leaves the working
-    /// copy alone.
+    /// down to the patches of the changes it touched, and when it ran as
+    /// an absolute time. Leaves the working copy alone.
     #[instrument(level = "trace", skip(self))]
     pub fn build_jj_op_show(&self, id: &OperationId, diff_format: &DiffFormat) -> JjCommand {
-        let mut args = vec!["op", "show", id.as_str(), "--patch"];
+        let mut args = vec![
+            "op",
+            "show",
+            id.as_str(),
+            "--patch",
+            "--config",
+            ABSOLUTE_TIME_RANGE,
+        ];
         args.append(&mut diff_format.get_args());
 
         self.jj(args).ignore_working_copy()
@@ -150,6 +168,7 @@ mod tests {
     use std::fs;
 
     use anyhow::Result;
+    use regex::Regex;
 
     use super::*;
     use crate::commander::cancel::CancelToken;
@@ -289,6 +308,26 @@ mod tests {
 
         assert!(show.contains(current.short()));
         assert!(show.contains("describe commit"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn op_show_says_when_the_operation_ran_as_a_date_and_time() -> Result<()> {
+        let test_repo = worked_in()?;
+        let current = test_repo.commander.get_operation_id()?;
+
+        let show = test_repo
+            .commander
+            .build_jj_op_show(&current, &DiffFormat::Git)
+            .run_cancellable(&CancelToken::new())?;
+
+        let header = show.lines().next().unwrap_or_default();
+        assert!(
+            Regex::new(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")?.is_match(header),
+            "no date and time in {header:?}"
+        );
+        assert!(!header.contains(" ago"), "still relative: {header:?}");
 
         Ok(())
     }

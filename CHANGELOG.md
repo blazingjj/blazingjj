@@ -233,6 +233,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The details of an operation now say when it ran as a date and time rather
+  than relative to now, which is wrong once the panel has been up for a while
 - The log tab now reads the newest 200 changes of the revset it shows and
   reads twice as far back on `m` (`load-more`), the way the operation log tab
   does
