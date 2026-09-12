@@ -823,24 +823,25 @@ impl<'a> App<'a> {
     }
 
     /// Offer what the mouse did to whatever is on screen, from the top
-    /// down.
+    /// down. What nothing takes has changed nothing, so the mouse merely
+    /// travelling across the app costs no frame.
     fn input_mouse(&mut self, mouse: Mouse) -> Result<Handled> {
-        let mut to_tab = self.popup.is_none();
+        // Taking the popup off the screen is a change of its own, so what
+        // it was covering may still make nothing of the event.
+        let mut dismissed = false;
         if let Some(popup) = self.popup.as_mut() {
             match popup.input_mouse(mouse)? {
                 ComponentInputResult::HandledAction(app_action) => {
-                    self.handle_action(app_action)?
+                    self.handle_action(app_action)?;
+                    return Ok(Handled::Redraw);
                 }
-                ComponentInputResult::Handled | ComponentInputResult::NotHandled => {}
+                ComponentInputResult::Handled => return Ok(Handled::Redraw),
+                ComponentInputResult::NotHandled => return Ok(Handled::Nothing),
                 ComponentInputResult::Dismissed => {
                     self.popup = None;
-                    to_tab = true;
+                    dismissed = true;
                 }
             }
-        }
-
-        if !to_tab {
-            return Ok(Handled::Redraw);
         }
 
         if self.input_tabs(mouse) {
@@ -851,9 +852,9 @@ impl<'a> App<'a> {
             ComponentInputResult::HandledAction(app_action) => self.handle_action(app_action)?,
             // A tab is never on top of anything, so it has nothing to
             // dismiss itself in favour of.
-            ComponentInputResult::Handled
-            | ComponentInputResult::Dismissed
-            | ComponentInputResult::NotHandled => {}
+            ComponentInputResult::Handled | ComponentInputResult::Dismissed => {}
+            ComponentInputResult::NotHandled if !dismissed => return Ok(Handled::Nothing),
+            ComponentInputResult::NotHandled => {}
         }
 
         Ok(Handled::Redraw)
