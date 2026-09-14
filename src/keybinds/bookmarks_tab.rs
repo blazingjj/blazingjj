@@ -31,6 +31,7 @@ pub enum BookmarksTabEvent {
     /// Point the bookmark at the change the selected line stands for,
     /// which for one of several targets is what settles it on that one.
     SetBookmark,
+    OpenPullRequest,
     NewChange {
         describe: bool,
     },
@@ -55,6 +56,7 @@ impl Default for BookmarksTabKeybinds {
             BookmarksTabEvent::TrackBookmark => "t",
             BookmarksTabEvent::UntrackBookmark => "shift+t",
             BookmarksTabEvent::SetBookmark => "b",
+            BookmarksTabEvent::OpenPullRequest => "o",
             BookmarksTabEvent::NewChange { describe: false } => "n",
             BookmarksTabEvent::NewChange { describe: true } => "shift+n",
             BookmarksTabEvent::EditChange { ignore_immutable: false } => "e",
@@ -91,6 +93,7 @@ impl BookmarksTabKeybinds {
             BookmarksTabEvent::TrackBookmark => config.track_bookmark,
             BookmarksTabEvent::UntrackBookmark => config.untrack_bookmark,
             BookmarksTabEvent::SetBookmark => config.set_bookmark,
+            BookmarksTabEvent::OpenPullRequest => config.open_pull_request,
             BookmarksTabEvent::ViewInLog => config.view_in_log,
             BookmarksTabEvent::NewChange { describe: false } => config.create_new,
             BookmarksTabEvent::NewChange { describe: true } => config.create_new_describe,
@@ -123,6 +126,7 @@ impl BookmarksTabKeybinds {
             BookmarksTabEvent::TrackBookmark => "track-bookmark", Some(Section::BookmarksAndRemotes), "track bookmark",
             BookmarksTabEvent::UntrackBookmark => "untrack-bookmark", Some(Section::BookmarksAndRemotes), "untrack bookmark",
             BookmarksTabEvent::SetBookmark => "set-bookmark", Some(Section::BookmarksAndRemotes), "set bookmark to the selection",
+            BookmarksTabEvent::OpenPullRequest => "open-pull-request", Some(Section::BookmarksAndRemotes), "open a new pull request with the selected bookmark",
         )
     }
 }
@@ -149,6 +153,7 @@ mod tests {
             track_bookmark: None,
             untrack_bookmark: None,
             set_bookmark: None,
+            open_pull_request: None,
             view_in_log: None,
             create_new: None,
             create_new_describe: None,

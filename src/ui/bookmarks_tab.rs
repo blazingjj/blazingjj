@@ -334,6 +334,13 @@ impl BookmarksTab {
                     return Ok(Some(command::ask_set_bookmark(bookmark, head)));
                 }
             }
+            BookmarksTabEvent::OpenPullRequest => {
+                if let Some(bookmark) = self.remote_bookmark() {
+                    return Ok(Some(AppAction::Run(Command::OpenPullRequest(
+                        bookmark.clone(),
+                    ))));
+                }
+            }
             BookmarksTabEvent::NewChange { describe } => {
                 if let Some((bookmark, head)) = self.selected_target() {
                     return Ok(Some(command::ask_new_change(

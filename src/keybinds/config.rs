@@ -130,6 +130,7 @@ pub struct LogTabKeybindsConfig {
     pub describe: Option<Keybind>,
     pub edit_revset: Option<Keybind>,
     pub set_bookmark: Option<Keybind>,
+    pub open_pull_request: Option<Keybind>,
     pub open_files: Option<Keybind>,
     pub open_evolog: Option<Keybind>,
     pub copy_change_id: Option<Keybind>,
@@ -167,6 +168,7 @@ pub struct BookmarksTabKeybindsConfig {
     pub track_bookmark: Option<Keybind>,
     pub untrack_bookmark: Option<Keybind>,
     pub set_bookmark: Option<Keybind>,
+    pub open_pull_request: Option<Keybind>,
 
     pub view_in_log: Option<Keybind>,
     pub create_new: Option<Keybind>,

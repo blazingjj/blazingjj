@@ -28,6 +28,7 @@ pub mod bookmarks;
 pub mod cancel;
 pub mod config;
 pub mod files;
+pub mod git_url;
 pub mod ids;
 pub mod jj;
 pub mod log;

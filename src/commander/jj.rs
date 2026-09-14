@@ -333,6 +333,19 @@ impl Commander {
 
         self.jj(args).color().run()
     }
+
+    /// The URL `remote` points at, from `jj git remote list`, or `None`
+    /// if there is no remote by that name.
+    #[instrument(level = "trace", skip(self))]
+    pub fn git_remote_url(&self, remote: &str) -> Result<Option<String>, CommandError> {
+        let output = self.jj(["git", "remote", "list"]).run()?;
+
+        Ok(output
+            .lines()
+            .filter_map(|line| line.split_once(' '))
+            .find(|(name, _)| *name == remote)
+            .map(|(_, url)| url.to_owned()))
+    }
 }
 
 #[cfg(test)]
