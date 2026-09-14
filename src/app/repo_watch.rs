@@ -23,6 +23,18 @@ pub struct Check {
     pub ours: bool,
 }
 
+/// Whether the repo has moved since the app last read where it was, and
+/// if so whether the app is the one that moved it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Moved {
+    /// It is where the app last read it.
+    No,
+    /// An operation the app ran moved it.
+    Ours,
+    /// Something outside the app moved it.
+    Elsewhere,
+}
+
 /// What the app can say about the moment it is asking about.
 #[derive(Clone, Copy, Debug)]
 pub struct Moment {
@@ -56,6 +68,10 @@ pub struct RepoWatch {
     /// Whether the app itself put the view out of date.
     stale_is_ours: bool,
 
+    /// Whether the app has moved the repo and no reading has accounted
+    /// for that move yet.
+    moved_by_us: bool,
+
     /// Whether the terminal window has focus. True to start with, as the
     /// terminal says nothing about focus until it changes.
     has_focus: bool,
@@ -82,6 +98,7 @@ impl RepoWatch {
             // Nothing has been read yet, and reading it is what the user
             // opened the app for.
             stale_is_ours: true,
+            moved_by_us: false,
             has_focus: true,
             left_stale: false,
         }
@@ -161,25 +178,47 @@ impl RepoWatch {
 
     /// Take what a check found, or None if it could not read the repo,
     /// and report whether the repo has moved since the last answer.
-    pub fn checked(&mut self, at: Instant, op_id: Option<OperationId>) -> bool {
-        // Timed from when the check is done, so that a slow one does not
-        // leave the app checking back to back.
-        self.last_check = at;
-
+    pub fn checked(&mut self, at: Instant, op_id: Option<OperationId>) -> Moved {
         let Some(op_id) = op_id else {
+            // Timed from when the check is done, so that a slow one does
+            // not leave the app checking back to back.
+            self.last_check = at;
             self.want(self.running);
-            return false;
+            return Moved::No;
         };
 
-        // The first answer has nothing to have moved from.
-        let moved = self.op_id.as_ref().is_some_and(|known| known != &op_id);
-        self.op_id = Some(op_id);
+        self.record(at, op_id, self.running.ours)
+    }
 
-        if moved && !self.running.ours {
-            self.stale_is_ours = false;
+    /// Take what a read the app made for itself found, rather than one
+    /// of the checks this decides on, and report whether the repo has
+    /// moved since the last answer.
+    pub fn read(&mut self, at: Instant, op_id: OperationId) -> Moved {
+        self.record(at, op_id, false)
+    }
+
+    /// Take the operation the repo was read at, `ours` saying whether a
+    /// move it turns up is one the app made.
+    fn record(&mut self, at: Instant, op_id: OperationId, ours: bool) -> Moved {
+        self.last_check = at;
+
+        // The first answer has nothing to have moved from.
+        let moved = self
+            .op_id
+            .replace(op_id.clone())
+            .is_some_and(|known| known != op_id);
+
+        if !moved {
+            return Moved::No;
+        }
+        // A move the app made is only its own until a reading finds it,
+        // so that the operation after that one is not taken for it too.
+        if ours | mem::take(&mut self.moved_by_us) {
+            return Moved::Ours;
         }
 
-        moved
+        self.stale_is_ours = false;
+        Moved::Elsewhere
     }
 
     /// Roll `check` into what the next check is to do, and take a move
@@ -188,6 +227,7 @@ impl RepoWatch {
         self.next.snapshot |= check.snapshot;
         self.next.ours |= check.ours;
         if check.ours {
+            self.moved_by_us = true;
             self.catching_up();
         }
     }
@@ -325,7 +365,7 @@ mod tests {
 
         // A failure says nothing about the repo, and the snapshot the
         // check was to take is still owed.
-        assert!(!watch.checked(now, None));
+        assert_eq!(watch.checked(now, None), Moved::No);
         assert_eq!(watch.check_to_start(moment(now)), None);
         assert_eq!(
             watch.check_to_start(moment(now + INTERVAL)),
@@ -338,9 +378,9 @@ mod tests {
         let now = Instant::now();
         let mut watch = watch(now);
 
-        assert!(!watch.checked(now, op_id("a")));
-        assert!(!watch.checked(now, op_id("a")));
-        assert!(watch.checked(now, op_id("b")));
+        assert_eq!(watch.checked(now, op_id("a")), Moved::No);
+        assert_eq!(watch.checked(now, op_id("a")), Moved::No);
+        assert_eq!(watch.checked(now, op_id("b")), Moved::Elsewhere);
     }
 
     #[test]
@@ -398,13 +438,53 @@ mod tests {
     }
 
     #[test]
+    fn a_read_of_its_own_reports_a_move_made_elsewhere() {
+        let now = Instant::now();
+        let mut watch = watch(now);
+        watch.check_to_start(moment(now));
+        watch.checked(now, op_id("a"));
+
+        assert_eq!(watch.read(now, OperationId("a".to_owned())), Moved::No);
+        assert_eq!(
+            watch.read(now, OperationId("b".to_owned())),
+            Moved::Elsewhere
+        );
+    }
+
+    #[test]
+    fn a_read_of_its_own_takes_a_move_of_the_apps_own_making_as_such() {
+        let now = Instant::now();
+        let mut watch = watch(now);
+        watch.check_to_start(moment(now));
+        watch.checked(now, op_id("a"));
+
+        // The check that is to confirm the operation the app has just
+        // run has not answered yet, so the move it left is not one to
+        // put to the user as work done elsewhere.
+        watch.ask_check(Check {
+            snapshot: false,
+            ours: true,
+        });
+        assert_eq!(watch.read(now, OperationId("b".to_owned())), Moved::Ours);
+
+        // Having accounted for that one, the next move is nothing the
+        // app has done.
+        watch.check_to_start(moment(now));
+        watch.checked(now, op_id("b"));
+        assert_eq!(
+            watch.read(now, OperationId("c".to_owned())),
+            Moved::Elsewhere
+        );
+    }
+
+    #[test]
     fn leaves_a_move_it_found_itself_stale_while_the_window_has_focus() {
         let now = Instant::now();
         let mut watch = watch(now);
         watch.check_to_start(moment(now));
         watch.checked(now, op_id("a"));
         watch.check_to_start(moment(now + INTERVAL));
-        assert!(watch.checked(now, op_id("b")));
+        assert_eq!(watch.checked(now, op_id("b")), Moved::Elsewhere);
 
         assert!(watch.leave_stale(true));
         assert!(watch.waiting_for_refresh());
@@ -430,7 +510,7 @@ mod tests {
         watch.set_focus(true);
         watch.ask_check(snapshotting());
         watch.check_to_start(moment(now));
-        assert!(watch.checked(now, op_id("b")));
+        assert_eq!(watch.checked(now, op_id("b")), Moved::Elsewhere);
 
         assert!(watch.leave_stale(true));
         assert!(watch.waiting_for_refresh());
@@ -444,7 +524,7 @@ mod tests {
         watch.checked(now, op_id("a"));
         watch.set_focus(false);
         watch.check_to_start(moment(now + INTERVAL));
-        assert!(watch.checked(now, op_id("b")));
+        assert_eq!(watch.checked(now, op_id("b")), Moved::Elsewhere);
 
         assert!(!watch.leave_stale(true));
         assert!(!watch.waiting_for_refresh());
@@ -466,7 +546,7 @@ mod tests {
         watch.check_to_start(moment(now));
         assert!(!watch.leave_stale(false));
 
-        assert!(watch.checked(now, op_id("b")));
+        assert_eq!(watch.checked(now, op_id("b")), Moved::Ours);
         assert!(!watch.leave_stale(true));
         assert!(!watch.waiting_for_refresh());
     }
@@ -482,7 +562,7 @@ mod tests {
         // nothing about the move a later poll turns up.
         watch.catching_up();
         watch.check_to_start(moment(now + INTERVAL));
-        assert!(watch.checked(now, op_id("b")));
+        assert_eq!(watch.checked(now, op_id("b")), Moved::Elsewhere);
 
         assert!(watch.leave_stale(true));
     }
@@ -519,7 +599,7 @@ mod tests {
         // itself, so it is the one that comes back with the move.
         watch.check_to_start(moment(now + INTERVAL));
         watch.catching_up();
-        assert!(watch.checked(now, op_id("b")));
+        assert_eq!(watch.checked(now, op_id("b")), Moved::Ours);
 
         assert!(!watch.leave_stale(true));
         assert!(!watch.waiting_for_refresh());

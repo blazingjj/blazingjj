@@ -179,6 +179,15 @@ pub enum Command {
 }
 
 impl Command {
+    /// Whether the operation goes to the repo, so that a view the repo
+    /// has moved on from is a view it would be carried out against.
+    pub fn touches_the_repo(&self) -> bool {
+        !matches!(
+            self,
+            Command::Copy(_) | Command::SetSetting { .. } | Command::UnsetSetting { .. }
+        )
+    }
+
     /// Run the operation, returning what the app is to show for it.
     pub fn run(self, background_tasks: &BackgroundTasks) -> Result<Option<AppAction>> {
         match self {
@@ -911,6 +920,16 @@ pub fn ask_set_bookmark(bookmark: &Bookmark, head: &Head) -> AppAction {
             commit_id: head.commit_id.clone(),
             dialog: None,
         },
+    )
+}
+
+/// Turning down an operation asked for on a view the repo has moved on
+/// from, which it would be carried out against.
+pub fn refuse_outdated_view() -> AppAction {
+    message(
+        "Out of date",
+        "The repo has moved since this view was read. Refresh before running \
+         this operation.",
     )
 }
 
