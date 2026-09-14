@@ -50,6 +50,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `delta` is a diff format of its own, offered as soon as delta is installed
+  and run in the colors a diff is drawn in rather than the ones you configured
+  it with under git, rather than something to spell out as a diff pager. Where
+  delta has a syntax theme named after your color scheme it draws the diff by
+  that, with your own overrides on top; where it has none it highlights
+  nothing and draws the diff in the colors the app has for it.
+  `blazingjj.delta.side-by-side` and
+  `blazingjj.delta.line-numbers` ask it for the two it offers that the panel
+  has no say over, and `blazingjj.styles.apply-to-delta = false` leaves it to
+  your git config entirely
 - An operation asked for on a view the repo has moved on from is turned down
   rather than carried out against a state that was never on screen, which is
   how acting on an outdated log used to leave changes divergent

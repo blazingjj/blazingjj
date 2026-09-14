@@ -187,6 +187,13 @@ pub const SETTINGS: &[Setting] = &[
         kind: SettingKind::Toggle(|| get_env().theme.asked_to_apply_to_jj()),
     },
     Setting {
+        key: "blazingjj.styles.apply-to-delta",
+        section: "Appearance",
+        doc: "Whether delta is run with the colors a diff is drawn in, so that what it renders into the panel matches the rest. Where delta has a syntax theme named after your scheme, it draws the diff by that theme, and only what you set for a diff element yourself is handed over on top of it. Where it has none, it highlights nothing, and the added and removed lines and the file and hunk headers are drawn in the colors those elements come to. Turned on, delta is run without reading your git config at all; turned off, it is left entirely to it. Either way it reaches only the delta diff format, not a delta you named as the diff pager yourself.",
+        fallback: "true",
+        kind: SettingKind::Toggle(|| get_env().theme.asked_to_apply_to_delta()),
+    },
+    Setting {
         key: "blazingjj.styles",
         section: "Appearance",
         doc: "What each element of the app is drawn in and on, and whether it is drawn bold, dim, italic or underlined. Opens the list of them.",
@@ -217,9 +224,23 @@ pub const SETTINGS: &[Setting] = &[
     Setting {
         key: "blazingjj.diff-format",
         section: "Diffs",
-        doc: "How a diff is rendered. Without one, a configured diff pager or diff tool is used.",
+        doc: "How a diff is rendered. Without one, a configured diff pager or diff tool is used. The delta format needs delta installed, and is run and colored by the app rather than configured as a pager.",
         fallback: "ui.diff.format, else color-words",
-        kind: SettingKind::Choice(&["color-words", "git", "pager", "summary", "stat"]),
+        kind: SettingKind::Choice(&["color-words", "git", "pager", "delta", "summary", "stat"]),
+    },
+    Setting {
+        key: "blazingjj.delta.side-by-side",
+        section: "Diffs",
+        doc: "Whether delta renders a diff in two columns rather than one.",
+        fallback: "false",
+        kind: SettingKind::Toggle(|| get_env().jj_config.delta_side_by_side()),
+    },
+    Setting {
+        key: "blazingjj.delta.line-numbers",
+        section: "Diffs",
+        doc: "Whether delta numbers the lines of a diff it renders.",
+        fallback: "false",
+        kind: SettingKind::Toggle(|| get_env().jj_config.delta_line_numbers()),
     },
     Setting {
         key: "blazingjj.diff-pager",

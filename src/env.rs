@@ -176,6 +176,7 @@ pub struct JjConfigBlazingjj {
     diff_format: Option<ConfiguredDiffFormat>,
     diff_tool: Option<String>,
     diff_pager: Option<DiffPager>,
+    delta: JjConfigDelta,
     editor: Option<Editor>,
     editor_mode: EditorMode,
     editor_url: Option<String>,
@@ -209,6 +210,7 @@ impl Default for JjConfigBlazingjj {
             diff_format: None,
             diff_tool: None,
             diff_pager: None,
+            delta: JjConfigDelta::default(),
             editor: None,
             editor_mode: EditorMode::default(),
             editor_url: None,
@@ -245,6 +247,15 @@ fn deserialize_poll_interval<'de, D: Deserializer<'de>>(
         .ok_or_else(|| de::Error::custom("an interval is a number of seconds, 0 or more"))?;
 
     Ok(Some(interval).filter(|interval| !interval.is_zero()))
+}
+
+/// What delta is asked to render a diff with beyond the colours, which
+/// is what it offers that a panel of ours has no say over.
+#[derive(Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "kebab-case", default)]
+pub struct JjConfigDelta {
+    side_by_side: bool,
+    line_numbers: bool,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -285,11 +296,58 @@ impl JjConfig {
             ConfiguredDiffFormat::Summary => DiffFormat::Summary,
             ConfiguredDiffFormat::Stat => DiffFormat::Stat,
             ConfiguredDiffFormat::Pager => DiffFormat::Pager(self.diff_pager()?),
+            ConfiguredDiffFormat::Delta => DiffFormat::Delta(Box::new(self.delta()?)),
         })
     }
 
     pub fn diff_pager(&self) -> Option<DiffPager> {
         self.blazingjj.diff_pager.clone()
+    }
+
+    /// delta as the command to render a diff with, for as long as there
+    /// is one installed to run. What it is told is ours to work out
+    /// rather than the user's to spell out: the panel it renders into,
+    /// the colours the app draws in, and what the settings ask of it.
+    pub fn delta(&self) -> Option<DiffPager> {
+        if !delta_installed() {
+            return None;
+        }
+
+        let delta = &self.blazingjj.delta;
+        let mut args = vec![
+            // The panel is what pages and what decides the width, so
+            // neither is delta's to work out for itself.
+            "--paging=never".to_owned(),
+            format!("--width={WIDTH_PLACEHOLDER}"),
+            // A line jj drew a colour into is one delta reads as having
+            // been marked out by git, and it hands such a line on as it
+            // found it rather than drawing it as we asked. The diff is
+            // ours to have drawn afresh, colours and all.
+            "--inspect-raw-lines=false".to_owned(),
+        ];
+        if delta.side_by_side {
+            args.push("--side-by-side".to_owned());
+        }
+        if delta.line_numbers {
+            args.push("--line-numbers".to_owned());
+        }
+        args.extend(self.theme().delta_args(&delta_syntax_themes()));
+
+        Some(DiffPager {
+            program: DELTA.to_owned(),
+            args,
+        })
+    }
+
+    /// Whether delta renders a diff side by side rather than in one
+    /// column.
+    pub fn delta_side_by_side(&self) -> bool {
+        self.blazingjj.delta.side_by_side
+    }
+
+    /// Whether delta numbers the lines of a diff it renders.
+    pub fn delta_line_numbers(&self) -> bool {
+        self.blazingjj.delta.line_numbers
     }
 
     pub fn diff_tool(&self) -> Option<Option<String>> {
@@ -638,8 +696,71 @@ enum ConfiguredDiffFormat {
     ColorWords,
     Git,
     Pager,
+    Delta,
     Summary,
     Stat,
+}
+
+/// The program the [delta](DiffFormat::Delta) format renders with.
+const DELTA: &str = "delta";
+
+/// Whether delta is there to be run, looked up the once. The PATH does
+/// not change under a running app, and a format that is offered while
+/// nothing is configured for it is one asked about often enough that
+/// going to the filesystem every time would be felt.
+///
+/// A test says for itself whether delta is installed, so that what the
+/// app offers is not what the machine running the tests happens to have.
+fn delta_installed() -> bool {
+    #[cfg(test)]
+    return tests::DELTA_INSTALLED.get();
+
+    #[cfg(not(test))]
+    {
+        static INSTALLED: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+            std::env::var_os("PATH").is_some_and(|path| {
+                std::env::split_paths(&path).any(|directory| directory.join(DELTA).is_file())
+            })
+        });
+
+        *INSTALLED
+    }
+}
+
+/// The syntax themes delta highlights with, asked of it the once. They
+/// are whatever is installed beside it rather than anything it can be
+/// told about while it runs, and one of them is how a scheme we draw in
+/// reaches its highlighting.
+///
+/// A test says for itself which of them there are, so that what delta
+/// is run with is not what the machine running the tests happens to
+/// have installed.
+fn delta_syntax_themes() -> Vec<String> {
+    #[cfg(test)]
+    return tests::DELTA_SYNTAX_THEMES.with(|themes| themes.borrow().clone());
+
+    #[cfg(not(test))]
+    {
+        static THEMES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
+            let Ok(listed) = Command::new(DELTA)
+                .args(["--no-gitconfig", "--list-syntax-themes"])
+                .output()
+            else {
+                return Vec::new();
+            };
+
+            // Each is listed as whether it is a dark or a light one and
+            // then its name, which is the half we go by: whether the
+            // scheme is dark is ours to say.
+            String::from_utf8_lossy(&listed.stdout)
+                .lines()
+                .filter_map(|line| line.split_once('\t'))
+                .map(|(_, name)| name.trim().to_owned())
+                .collect()
+        });
+
+        THEMES.clone()
+    }
 }
 
 /// What a pager argument says to have the render width substituted into it
@@ -716,6 +837,11 @@ pub enum DiffFormat {
     Git,
     /// The Git format, rendered by an external pager
     Pager(DiffPager),
+    /// The Git format, rendered by delta, run as the app sees fit
+    /// rather than as the user spelled out. Held behind a box so that
+    /// the format stays the size of the one the user configures, every
+    /// key the output cache holds carrying one.
+    Delta(Box<DiffPager>),
     DiffTool(Option<String>),
     // Configuration only, [DiffFormat::get_next] does not cycle through these
     Summary,
@@ -726,12 +852,14 @@ impl DiffFormat {
     /// The format the user gets by toggling this one, which skips whatever
     /// the configuration has no program for.
     pub fn get_next(&self, config: &JjConfig) -> DiffFormat {
+        let delta = || config.delta().map(Box::new).map(DiffFormat::Delta);
         let pager = || config.diff_pager().map(DiffFormat::Pager);
         let diff_tool = || config.diff_tool().map(DiffFormat::DiffTool);
 
         match self {
             DiffFormat::ColorWords => Some(DiffFormat::Git),
-            DiffFormat::Git => pager().or_else(diff_tool),
+            DiffFormat::Git => delta().or_else(pager).or_else(diff_tool),
+            DiffFormat::Delta(_) => pager().or_else(diff_tool),
             DiffFormat::Pager(_) => diff_tool(),
             _ => None,
         }
@@ -742,6 +870,7 @@ impl DiffFormat {
     pub fn pager(&self) -> Option<&DiffPager> {
         match self {
             DiffFormat::Pager(pager) => Some(pager),
+            DiffFormat::Delta(pager) => Some(pager),
             _ => None,
         }
     }
@@ -757,7 +886,10 @@ impl DiffFormat {
     /// comes out as no width at all rather than as a value of its own.
     pub fn render_width(&self, panel_width: usize) -> usize {
         match self {
-            DiffFormat::DiffTool(_) | DiffFormat::Pager(_) | DiffFormat::Stat
+            DiffFormat::DiffTool(_)
+            | DiffFormat::Pager(_)
+            | DiffFormat::Delta(_)
+            | DiffFormat::Stat
                 if panel_width >= MIN_SETTABLE_WIDTH =>
             {
                 panel_width
@@ -775,6 +907,7 @@ impl fmt::Display for DiffFormat {
             DiffFormat::ColorWords => write!(f, "color-words"),
             DiffFormat::Git => write!(f, "git"),
             DiffFormat::Pager(pager) => write!(f, "{}", pager.program()),
+            DiffFormat::Delta(pager) => write!(f, "{}", pager.program()),
             DiffFormat::DiffTool(Some(tool)) => write!(f, "{tool}"),
             DiffFormat::DiffTool(None) => write!(f, "diff tool"),
             DiffFormat::Summary => write!(f, "summary"),
@@ -812,9 +945,21 @@ impl From<JJLayout> for ratatui::layout::Direction {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+    use std::cell::RefCell;
+
     use super::*;
 
     const PANEL_WIDTH: usize = 80;
+
+    thread_local! {
+        /// Whether delta is taken for installed, which a test says for
+        /// itself: each runs on a thread of its own, so what one says
+        /// is nothing to the rest.
+        pub static DELTA_INSTALLED: Cell<bool> = const { Cell::new(false) };
+        /// The syntax themes delta is taken to have, said the same way.
+        pub static DELTA_SYNTAX_THEMES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    }
 
     /// An environment that has told jj `told`, or nothing.
     fn telling_jj(told: Option<&str>) -> Env {
@@ -1017,7 +1162,7 @@ mod tests {
 
     #[test]
     fn toggling_the_format_leaves_out_what_is_not_configured() {
-        let delta = DiffFormat::Pager(pager(r#""delta""#));
+        let paged = DiffFormat::Pager(pager(r#""delta""#));
         let difft = DiffFormat::DiffTool(Some("difft".to_owned()));
 
         let plain = config("");
@@ -1025,17 +1170,114 @@ mod tests {
         assert_eq!(DiffFormat::Git.get_next(&plain), DiffFormat::ColorWords);
 
         let with_pager = config(r#"blazingjj.diff-pager = "delta""#);
-        assert_eq!(DiffFormat::Git.get_next(&with_pager), delta);
-        assert_eq!(delta.get_next(&with_pager), DiffFormat::ColorWords);
+        assert_eq!(DiffFormat::Git.get_next(&with_pager), paged);
+        assert_eq!(paged.get_next(&with_pager), DiffFormat::ColorWords);
 
         let with_both =
             config("blazingjj.diff-pager = \"delta\"\nblazingjj.diff-tool = \"difft\"\n");
-        assert_eq!(DiffFormat::Git.get_next(&with_both), delta);
-        assert_eq!(delta.get_next(&with_both), difft);
+        assert_eq!(DiffFormat::Git.get_next(&with_both), paged);
+        assert_eq!(paged.get_next(&with_both), difft);
         assert_eq!(difft.get_next(&with_both), DiffFormat::ColorWords);
 
         let with_tool = config(r#"blazingjj.diff-tool = "difft""#);
         assert_eq!(DiffFormat::Git.get_next(&with_tool), difft);
+    }
+
+    /// delta is offered for being installed rather than for being
+    /// configured, there being nothing about running it that the app
+    /// needs to be told.
+    #[test]
+    fn delta_is_offered_while_there_is_one_installed_to_run() {
+        let plain = config("");
+        assert_eq!(DiffFormat::Git.get_next(&plain), DiffFormat::ColorWords);
+        assert_eq!(
+            config("blazingjj.diff-format = \"delta\"\n").diff_format(),
+            DiffFormat::ColorWords
+        );
+
+        DELTA_INSTALLED.set(true);
+
+        let DiffFormat::Delta(delta) = DiffFormat::Git.get_next(&plain) else {
+            panic!("the git format toggles to delta");
+        };
+        assert_eq!(delta.program(), "delta");
+        assert_eq!(
+            delta.args(PANEL_WIDTH)[..3],
+            ["--paging=never", "--width=80", "--inspect-raw-lines=false"]
+        );
+    }
+
+    /// A delta named as the pager is the user's to run as they spelled
+    /// it out, which is not the delta the app runs itself, so both are
+    /// toggled through.
+    #[test]
+    fn delta_and_a_pager_of_the_users_own_are_each_offered() {
+        DELTA_INSTALLED.set(true);
+
+        let config = config("blazingjj.diff-pager = \"delta\"\nblazingjj.diff-tool = \"difft\"\n");
+        let delta = DiffFormat::Git.get_next(&config);
+        assert!(matches!(delta, DiffFormat::Delta(_)), "{delta:?}");
+        assert_eq!(
+            delta.get_next(&config),
+            DiffFormat::Pager(pager(r#""delta""#))
+        );
+    }
+
+    /// What delta renders with is worked out rather than configured: the
+    /// panel it renders into, what the settings ask of it, and the
+    /// colours a diff is drawn in.
+    #[test]
+    fn delta_is_run_as_the_settings_and_the_colours_have_it() {
+        DELTA_INSTALLED.set(true);
+
+        let config = config(
+            "blazingjj.diff-format = \"delta\"\nblazingjj.delta.side-by-side = true\nblazingjj.delta.line-numbers = true\nblazingjj.styles.diff-added = { bg = \"#112233\" }\n",
+        );
+        let DiffFormat::Delta(delta) = config.diff_format() else {
+            panic!("the delta format is what is configured");
+        };
+
+        let args = delta.args(PANEL_WIDTH);
+        assert_eq!(
+            args[..6],
+            [
+                "--paging=never",
+                "--width=80",
+                "--inspect-raw-lines=false",
+                "--side-by-side",
+                "--line-numbers",
+                "--no-gitconfig",
+            ]
+        );
+        assert!(
+            args.contains(&"--plus-style=2 #112233".to_owned()),
+            "{args:?}"
+        );
+    }
+
+    /// delta highlights in a theme of its own, so a scheme it has one
+    /// for is passed on by name: which it has is asked of delta itself.
+    #[test]
+    fn a_scheme_delta_has_a_theme_for_is_what_it_highlights_with() {
+        DELTA_INSTALLED.set(true);
+        DELTA_SYNTAX_THEMES.with(|themes| {
+            *themes.borrow_mut() = vec!["base16".to_owned(), "Solarized (dark)".to_owned()];
+        });
+
+        let config = config(
+            "blazingjj.diff-format = \"delta\"\nblazingjj.styles.scheme = \"solarized-dark\"\n",
+        );
+        let DiffFormat::Delta(delta) = config.diff_format() else {
+            panic!("the delta format is what is configured");
+        };
+
+        assert!(
+            delta
+                .args(PANEL_WIDTH)
+                .contains(&"--syntax-theme=Solarized (dark)".to_owned()),
+            "{:?}",
+            delta.args(PANEL_WIDTH)
+        );
     }
 
     #[test]

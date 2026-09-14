@@ -13,6 +13,7 @@ terminal's own shows through.
 */
 
 mod color;
+mod delta;
 mod jj;
 mod scheme;
 
@@ -525,6 +526,9 @@ pub struct Styles {
     /// Whether jj is to be told to write in the scheme's colours too,
     /// for as long as anything is said about it either way.
     apply_to_jj: Option<bool>,
+    /// Whether delta is to be run to render a diff in the scheme's
+    /// colours too, for as long as anything is said about it either way.
+    apply_to_delta: Option<bool>,
     roles: HashMap<Role, RoleStyle>,
 }
 
@@ -535,9 +539,9 @@ impl Styles {
     }
 }
 
-/// The scheme and whether it reaches jj are named alongside the roles
-/// rather than under a table of their own, so they are taken out before
-/// what is left is read as roles.
+/// The scheme and whether it reaches jj and delta are named alongside
+/// the roles rather than under a table of their own, so they are taken
+/// out before what is left is read as roles.
 impl<'de> Deserialize<'de> for Styles {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let mut table = toml::Table::deserialize(deserializer)?;
@@ -562,9 +566,16 @@ impl<'de> Deserialize<'de> for Styles {
             .transpose()
             .map_err(de::Error::custom)?;
 
+        let apply_to_delta = table
+            .remove("apply-to-delta")
+            .map(bool::deserialize)
+            .transpose()
+            .map_err(de::Error::custom)?;
+
         Ok(Self {
             scheme,
             apply_to_jj,
+            apply_to_delta,
             roles: roles_from_table(table).map_err(de::Error::custom)?,
         })
     }
@@ -717,6 +728,22 @@ impl Theme {
         self.said_outright(role, |style| attribute.of(style))
     }
 
+    /// What the user sets `role`'s `channel` to themselves, which is
+    /// what they say about it beyond the scheme, as the palette makes of
+    /// it. For handing over to a program that has been given the scheme
+    /// already and only wants what the user said over it.
+    pub fn set_of(&self, role: Role, channel: Channel) -> Option<ThemeColor> {
+        let color = channel.of(self.styles.role(role))?;
+
+        Some(self.through_palette(color))
+    }
+
+    /// Whether the user asks for `role` to be drawn with `attribute`
+    /// themselves, which goes where [Theme::set_of] does.
+    pub fn attribute_set_of(&self, role: Role, attribute: Attribute) -> Option<bool> {
+        attribute.of(self.styles.role(role))
+    }
+
     /// `color` as the scheme's palette draws it, where it names one of
     /// the sixteen and a scheme is picked.
     fn through_palette(&self, color: ThemeColor) -> ThemeColor {
@@ -764,6 +791,22 @@ impl Theme {
     /// them now.
     pub fn jj_config(&self, colors: &toml::Table) -> Option<String> {
         jj::config_text(self, colors)
+    }
+
+    /// What delta is to be run with to render a diff in the colours the
+    /// app draws in, `syntax_themes` being the ones delta has to
+    /// highlight with. Nothing while it is told to leave delta alone.
+    pub fn delta_args(&self, syntax_themes: &[String]) -> Vec<String> {
+        match self.asked_to_apply_to_delta() {
+            true => delta::args(self, syntax_themes),
+            false => Vec::new(),
+        }
+    }
+
+    /// Whether telling delta is turned on, whether or not there is
+    /// anything to tell it as things stand.
+    pub fn asked_to_apply_to_delta(&self) -> bool {
+        self.styles.apply_to_delta.unwrap_or(true)
     }
 }
 
