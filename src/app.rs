@@ -22,8 +22,10 @@ use tracing::trace;
 use tracing::warn;
 
 use crate::app::command::ask_update_stale_workspace;
+use crate::app::command::refuse_outdated_view;
 use crate::app::repo_watch::Check;
 use crate::app::repo_watch::Moment;
+use crate::app::repo_watch::Moved;
 use crate::app::repo_watch::RepoWatch;
 use crate::background_tasks::BackgroundTasks;
 use crate::background_tasks::TaskOutput;
@@ -421,6 +423,34 @@ impl<'a> App<'a> {
         Ok(true)
     }
 
+    /// Whether the repo has moved outside the app since the view was
+    /// read, so that an operation asked for now would be carried out
+    /// against a state the user has not seen. Reads the repo unless a
+    /// check has found it already.
+    fn repo_moved_under_view(&mut self) -> bool {
+        if self.repo_watch.waiting_for_refresh() {
+            return true;
+        }
+
+        let mut commander = new_commander();
+        // The read must leave the repo where it finds it, or every
+        // operation would find the repo moved by the one before it.
+        commander.ignore_working_copy();
+        let Ok(op_id) = commander.get_operation_id() else {
+            // Nothing was read, so there is nothing to say the view is
+            // behind, and whatever is in the way the operation runs into
+            // as well.
+            return false;
+        };
+
+        if self.repo_watch.read(Instant::now(), op_id) != Moved::Elsewhere {
+            return false;
+        }
+
+        self.mark_all_stale();
+        true
+    }
+
     /// Put the question whether to update a stale working copy, which jj
     /// refuses to read the repo until. It is only asked once, as a no is
     /// an answer to leave alone until the repo can be read again.
@@ -468,7 +498,7 @@ impl<'a> App<'a> {
             }
         };
 
-        if self.repo_watch.checked(Instant::now(), op_id) {
+        if self.repo_watch.checked(Instant::now(), op_id) != Moved::No {
             trace!("The repo has moved, so every tab is stale");
             self.mark_all_stale();
         }
@@ -587,7 +617,9 @@ impl<'a> App<'a> {
                 self.log.clear_marks();
             }
             AppAction::Run(command) => {
-                if let Some(app_action) = command.run(&self.background_tasks)? {
+                if command.touches_the_repo() && self.repo_moved_under_view() {
+                    self.handle_action(refuse_outdated_view())?;
+                } else if let Some(app_action) = command.run(&self.background_tasks)? {
                     self.handle_action(app_action)?;
                 }
             }

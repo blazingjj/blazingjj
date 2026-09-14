@@ -50,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- An operation asked for on a view the repo has moved on from is turned down
+  rather than carried out against a state that was never on screen, which is
+  how acting on an outdated log used to leave changes divergent
 - `Ctrl+space` in the log tab unmarks every marked change, whether or not the
   log is showing it
 - Status bar along the foot of the window, saying which workspace the app is
