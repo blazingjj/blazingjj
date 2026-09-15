@@ -512,6 +512,7 @@ fn run_child(
         })
         .stdout(stdout)
         .stderr(Stdio::piped());
+    trace!("Running {program:?}");
     let mut child = command.spawn().map_err(CommandError::Spawn)?;
 
     let stdin_writer = input.map(|input| spawn_stdin_writer(&mut child, input));
