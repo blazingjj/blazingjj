@@ -92,7 +92,7 @@ impl DiffFormat {
         match self {
             DiffFormat::ColorWords => vec!["--color-words"],
             // The pager renders the Git format, so that is what it is fed
-            DiffFormat::Git | DiffFormat::Pager(_) => vec!["--git"],
+            DiffFormat::Git | DiffFormat::Pager(_) | DiffFormat::Delta(_) => vec!["--git"],
             DiffFormat::Summary => vec!["--summary"],
             DiffFormat::Stat => vec!["--stat"],
             DiffFormat::DiffTool(Some(tool)) => vec!["--tool", tool],

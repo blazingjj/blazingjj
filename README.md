@@ -57,7 +57,10 @@ Built in Rust with Ratatui. Interacts with `jj` CLI.
   - Yank an operation's id to the system clipboard with `Y`
 - Details panel: toggle between color words and git diff with `w`, wrapping
   with `W`
-  - Render the git diff with a pager like delta by configuring
+  - Render the git diff with [delta](https://github.com/dandavison/delta) by
+    toggling on to it, for as long as delta is installed; it is run in the
+    colors the app draws a diff in
+  - Render the git diff with any other pager by configuring
     `blazingjj.diff-pager`
 - Mouse: scroll the panels, click to select, double click a change in the log
   to mark it, drag the divider to resize, right click for the context menu,
@@ -121,14 +124,22 @@ You can optionally configure the following options through your jj config:
   - `default` is what the rest fall back to: an element that says nothing about a color takes `default`'s, and where that says nothing either the terminal's own shows through. So setting `blazingjj.colors.default.bg` gives the whole interface a background, while leaving it unset keeps your terminal's
   - A color is one of the sixteen names (`red`, `bright black`, ...), an `#rrggbb` code, `ansi-color-0` through `ansi-color-255`, or `default` for the terminal's own. Names are read as jj reads them, so `white` is the dim one and `bright white` the bright one
   - The `blazingjj.colors` row of the settings tab opens the list of elements, showing each drawn in its own colors, and changes them one at a time
-- `blazingjj.diff-format`: Change the default diff format. Can be `color-words`, `git`, `pager`, `summary` or `stat`. Defaults to `color_words`
+- `blazingjj.diff-format`: Change the default diff format. Can be `color-words`, `git`, `pager`, `delta`, `summary` or `stat`. Defaults to `color_words`
   - If `blazingjj.diff-format` is not set but `ui.diff.format` is, the latter will be used
+  - `delta` needs [delta](https://github.com/dandavison/delta) installed, and falls back to `color-words` without it
 - `blazingjj.diff-tool`: Specify which diff tool to use by default
   - If `blazingjj.diff-tool` is not set but `ui.diff.tool` is, the latter will be used
 - `blazingjj.diff-pager`: Specify a pager rendering the Git format diff, like [delta](https://github.com/dandavison/delta): `jj config set --user blazingjj.diff-pager '["delta", "--width=$width", "--line-numbers"]'`
   - The pager reads the diff on standard input and writes its rendering to standard output; it must not page, since blazingjj shows the output itself
   - `$width` in an argument stands for the columns the details panel has, which a pager that cannot find out for itself needs to be told
   - Setting it makes `pager` the default format, unless `blazingjj.diff-format` says otherwise, and adds it to what `w` toggles through
+  - A delta named here is run as you spelled it out, which is not the `delta` format the app runs itself; both are toggled through where both are there
+- `blazingjj.delta.side-by-side`: Whether delta renders a diff in two columns rather than one. Defaults to `false`
+- `blazingjj.delta.line-numbers`: Whether delta numbers the lines of a diff it renders. Defaults to `false`
+- `blazingjj.styles.apply-to-delta`: Whether delta is run with the colors a diff is drawn in, so that what it renders into the panel matches the rest. Defaults to `true`
+  - A syntax theme is the whole of what delta draws a diff in, the tints under the changed lines as much as the highlighting of the text, and it cannot be handed over color by color. So where delta has a theme named after your scheme — `Catppuccin Mocha` for `catppuccin-mocha`, `Solarized (dark)` for `solarized-dark`, and whatever else you have installed for `bat` — it draws the diff by that theme, and only what you set for a `diff-*` element yourself is handed over on top of it
+  - Where it has none, it highlights nothing at all, a diff drawn in colors of delta's own choosing sitting in the panel worse than one drawn the way jj's does. What draws it then is `diff-added`, `diff-added-word`, `diff-removed`, `diff-removed-word`, `diff-file-header` and `diff-hunk-header`, in the colors they come to whether you set them or not
+  - Turned on, delta is run without reading your git config at all, that being how you have it on the command line; turned off, delta is left entirely to it. Either way this reaches only the `delta` format, not a delta you named as the diff pager yourself
 - `blazingjj.editor`: The editor `o` in the files tab opens the working copy's version of the selected file in, like `jj config set --user blazingjj.editor '["code", "--wait", "$file"]'`
   - `$file` in an argument stands for the file to open; an editor whose arguments say nothing about it is given it as the last one
   - Without it, `$VISUAL` and then `$EDITOR` are used
