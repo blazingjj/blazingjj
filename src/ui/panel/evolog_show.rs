@@ -80,6 +80,7 @@ mod tests {
                 commit_id: CommitId(commit_id.to_owned()),
                 divergent: false,
                 immutable: false,
+                local_bookmarks: Vec::new(),
             },
             format,
         )

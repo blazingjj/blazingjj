@@ -75,7 +75,7 @@ impl Placeholder {
             Self::Revision => "the revision the tab is on",
             Self::Marked => "the changes the log has marked, as one revset",
             Self::File => "the selected file",
-            Self::Bookmark => "the selected bookmark",
+            Self::Bookmark => "the selected bookmark, or the only one on the selected change",
             Self::Operation => "the selected operation",
         }
     }
@@ -97,15 +97,24 @@ pub struct Selection {
     revision: Option<String>,
     marked: Vec<CommitId>,
     file: Option<String>,
+    /// The bookmark the tab is about, where it is about one.
     bookmark: Option<String>,
+    /// The only local bookmark on the revision the tab is on, where it
+    /// has one. The tab is not about it, so it is no selection of its
+    /// own, only what `$bookmark` falls back to.
+    revision_bookmark: Option<String>,
     operation: Option<String>,
 }
 
 impl Selection {
     /// The selection with the revision `head` is on, named as
-    /// [shown_revision] names it.
+    /// [shown_revision] names it, and the bookmark on it where a single
+    /// one tells which bookmark a command means.
     pub fn revision(mut self, head: &Head, pinned: bool) -> Self {
         self.revision = Some(shown_revision(head, pinned).to_owned());
+        if let [bookmark] = head.local_bookmarks.as_slice() {
+            self.revision_bookmark = Some(bookmark.clone());
+        }
         self
     }
 
@@ -120,6 +129,8 @@ impl Selection {
         self
     }
 
+    /// The selection of a tab that is about the bookmark `name`, rather
+    /// than one that only knows of it.
     pub fn bookmark(mut self, name: &str) -> Self {
         self.bookmark = Some(name.to_owned());
         self
@@ -150,7 +161,10 @@ impl Selection {
                 Revset::union(&self.marked).map(|revset| revset.as_str().to_owned())
             }
             Placeholder::File => self.file.clone(),
-            Placeholder::Bookmark => self.bookmark.clone(),
+            Placeholder::Bookmark => self
+                .bookmark
+                .clone()
+                .or_else(|| self.revision_bookmark.clone()),
             Placeholder::Operation => self.operation.clone(),
         }
     }
@@ -264,6 +278,7 @@ mod tests {
             commit_id: CommitId(commit_id.to_owned()),
             divergent,
             immutable: false,
+            local_bookmarks: Vec::new(),
         }
     }
 
@@ -274,6 +289,14 @@ mod tests {
         Selection::default()
             .revision(&head("change", "commit", false), false)
             .marked(&marked)
+    }
+
+    /// The selection of a log on a change with `bookmarks` on it
+    fn bookmarked(bookmarks: &[&str]) -> Selection {
+        let mut head = head("change", "commit", false);
+        head.local_bookmarks = bookmarks.iter().map(|name| (*name).to_owned()).collect();
+
+        Selection::default().revision(&head, false)
     }
 
     /// What `command` reads as against `selection`, as one line
@@ -325,6 +348,37 @@ mod tests {
         assert_eq!(
             substituted(&operations, &["$selected"]),
             Ok("op".to_owned())
+        );
+    }
+
+    /// A tab about a change is not about a bookmark, but a command run
+    /// from it can still name the one on the change, where there is no
+    /// question which one that is.
+    #[test]
+    fn the_only_bookmark_on_the_revision_is_the_one_a_command_names() {
+        assert_eq!(
+            substituted(&bookmarked(&["main"]), &["$bookmark", "$selected"]),
+            Ok("main change".to_owned())
+        );
+        assert_eq!(
+            substituted(&bookmarked(&[]), &["$bookmark"]),
+            Err(Missing(Placeholder::Bookmark))
+        );
+        assert_eq!(
+            substituted(&bookmarked(&["main", "other"]), &["$bookmark"]),
+            Err(Missing(Placeholder::Bookmark))
+        );
+    }
+
+    /// The bookmark a tab is about is the one it means, whatever else
+    /// sits on the change it points at.
+    #[test]
+    fn the_selected_bookmark_is_named_over_the_one_on_the_revision() {
+        let selection = bookmarked(&["main"]).bookmark("main@origin");
+
+        assert_eq!(
+            substituted(&selection, &["$bookmark"]),
+            Ok("main@origin".to_owned())
         );
     }
 

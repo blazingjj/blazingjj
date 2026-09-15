@@ -1051,6 +1051,7 @@ mod tests {
             commit_id: CommitId(format!("commit-{change_id}")),
             divergent: false,
             immutable,
+            local_bookmarks: Vec::new(),
         }
     }
 

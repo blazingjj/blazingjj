@@ -321,6 +321,7 @@ mod tests {
             commit_id: CommitId(format!("commit{index}")),
             divergent: false,
             immutable: false,
+            local_bookmarks: Vec::new(),
         };
         TaskSlot::CommitShow(
             TabId::Log,

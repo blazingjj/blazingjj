@@ -34,6 +34,8 @@ pub struct Head {
     pub commit_id: CommitId,
     pub divergent: bool,
     pub immutable: bool,
+    /// The local bookmarks on the commit, as revset symbols.
+    pub local_bookmarks: Vec<String>,
 }
 
 /// A commit next to another one in the graph, as [relative_fields]
@@ -126,6 +128,10 @@ pub(super) fn head_template(commit: &str) -> String {
 
 /// The fields [head_template] writes, without the braces around them, so
 /// that a template describing more than a [Head] can add its own.
+///
+/// A bookmark is a revset symbol, which jj only quotes when it renders it
+/// as a template -- `stringify()` alone would hand back the bare name.
+/// Concatenating is what puts it through that rendering.
 fn head_fields(commit: &str) -> String {
     format!(
         r#"
@@ -133,6 +139,8 @@ fn head_fields(commit: &str) -> String {
     ++ ',"commit_id":' ++ stringify({commit}.commit_id()).escape_json()
     ++ ',"divergent":' ++ {commit}.divergent()
     ++ ',"immutable":' ++ {commit}.immutable()
+    ++ ',"local_bookmarks":[' ++ {commit}.local_bookmarks()
+        .map(|bookmark| stringify(concat(bookmark)).escape_json()).join(',') ++ ']'
 "#
     )
 }
@@ -491,12 +499,19 @@ mod tests {
     use crate::commander::cancel::CancelToken;
     use crate::commander::tests::TestRepo;
 
-    fn head(change_id: &str, commit_id: &str, divergent: bool, immutable: bool) -> Head {
+    fn head(
+        change_id: &str,
+        commit_id: &str,
+        divergent: bool,
+        immutable: bool,
+        bookmarks: &[&str],
+    ) -> Head {
         Head {
             change_id: ChangeId(change_id.to_owned()),
             commit_id: CommitId(commit_id.to_owned()),
             divergent,
             immutable,
+            local_bookmarks: bookmarks.iter().map(|name| (*name).to_owned()).collect(),
         }
     }
 
@@ -504,9 +519,9 @@ mod tests {
     fn parse_record_reads_a_record_of_its_own() -> Result<()> {
         assert_eq!(
             parse_record::<Head>(
-                r#"{"change_id":"kxq","commit_id":"1f2e","divergent":false,"immutable":true}"#
+                r#"{"change_id":"kxq","commit_id":"1f2e","divergent":false,"immutable":true,"local_bookmarks":["main"]}"#
             )?,
-            head("kxq", "1f2e", false, true)
+            head("kxq", "1f2e", false, true, &["main"])
         );
 
         Ok(())
@@ -516,9 +531,9 @@ mod tests {
     fn parse_record_reads_a_record_behind_the_graph() -> Result<()> {
         assert_eq!(
             parse_record::<Head>(
-                r#"│ ├─╮  {"change_id":"kxq","commit_id":"1f2e","divergent":true,"immutable":false}"#
+                r#"│ ├─╮  {"change_id":"kxq","commit_id":"1f2e","divergent":true,"immutable":false,"local_bookmarks":[]}"#
             )?,
-            head("kxq", "1f2e", true, false)
+            head("kxq", "1f2e", true, false, &[])
         );
 
         Ok(())
@@ -566,6 +581,31 @@ mod tests {
         test_repo.commander.jj(["describe", "-m", "second"]).run()?;
 
         assert_eq!(test_repo.commander.get_log(&None, 2)?.items.len(), 2);
+
+        Ok(())
+    }
+
+    /// A head carries the bookmarks standing on it, and a name jj only
+    /// takes quoted is quoted, so that it can go to a command as it is.
+    #[test]
+    fn a_head_holds_the_local_bookmarks_on_the_change() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let commander = &test_repo.commander;
+
+        assert_eq!(
+            commander.get_current_head()?.local_bookmarks,
+            [] as [&str; 0]
+        );
+
+        commander.create_bookmark("here")?;
+        commander
+            .jj(["bookmark", "create", r#""needs quoting""#])
+            .run_void()?;
+
+        assert_eq!(
+            commander.get_current_head()?.local_bookmarks,
+            ["here", r#""needs quoting""#]
+        );
 
         Ok(())
     }
@@ -692,6 +732,7 @@ mod tests {
                 change_id: ChangeId("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz".to_owned()),
                 divergent: false,
                 immutable: true,
+                local_bookmarks: Vec::new(),
             }
         );
 
