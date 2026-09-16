@@ -353,7 +353,7 @@ impl Tab for FilesTab {
         Ok(())
     }
 
-    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+    fn open_context_menu(&mut self) -> Result<Option<AppAction>> {
         Ok(self.context_menu(
             self.get_current_file_index()
                 .and_then(|index| self.files_pane.item_anchor(index, 1)),

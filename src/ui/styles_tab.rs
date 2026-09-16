@@ -606,7 +606,7 @@ impl Tab for StylesTab {
         Ok(())
     }
 
-    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+    fn open_context_menu(&mut self) -> Result<Option<AppAction>> {
         Ok(self.context_menu(self.roles_pane.item_anchor(self.roles.selected_row(), 1)))
     }
 

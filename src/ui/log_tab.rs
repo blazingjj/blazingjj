@@ -449,7 +449,7 @@ impl Tab for LogTab<'_> {
         Ok(())
     }
 
-    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+    fn open_context_menu(&mut self) -> Result<Option<AppAction>> {
         self.context_menu(self.log_panel.selected_position())
     }
 

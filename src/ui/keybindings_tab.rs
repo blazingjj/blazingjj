@@ -374,7 +374,7 @@ impl Tab for KeybindingsTab {
         Ok(())
     }
 
-    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+    fn open_context_menu(&mut self) -> Result<Option<AppAction>> {
         Ok(self.context_menu(self.bindings_pane.item_anchor(self.selected_row(), 1)))
     }
 

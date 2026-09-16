@@ -188,7 +188,7 @@ pub trait Tab: Component {
 
     /// The menu of what can be done to what the tab has selected, put
     /// where the selection is.
-    fn open_context_menu(&self) -> Result<Option<AppAction>>;
+    fn open_context_menu(&mut self) -> Result<Option<AppAction>>;
 
     /// What the tab has selected, which a command run from it names by
     /// its placeholders. A tab about the app itself has nothing to run

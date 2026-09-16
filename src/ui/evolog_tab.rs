@@ -197,7 +197,7 @@ impl Tab for EvologTab<'_> {
         Ok(())
     }
 
-    fn open_context_menu(&self) -> Result<Option<AppAction>> {
+    fn open_context_menu(&mut self) -> Result<Option<AppAction>> {
         Ok(self.context_menu(self.entry_panel.selected_position()))
     }
 
