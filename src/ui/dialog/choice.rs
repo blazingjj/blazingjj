@@ -331,6 +331,7 @@ pub(super) mod tests {
             commit_id: CommitId(index.to_string()),
             divergent: false,
             immutable: false,
+            local_bookmarks: Vec::new(),
         })
     }
 

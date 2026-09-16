@@ -304,7 +304,7 @@ mod tests {
     /// `fields` names and the change [head] describes.
     fn bookmark_line(fields: &str) -> String {
         format!(
-            r#"{{{fields},"head":{{"change_id":"kkmpqwpv","commit_id":"c13337796487","divergent":false,"immutable":true}}}}"#
+            r#"{{{fields},"head":{{"change_id":"kkmpqwpv","commit_id":"c13337796487","divergent":false,"immutable":true,"local_bookmarks":["main"]}}}}"#
         )
     }
 
@@ -314,6 +314,7 @@ mod tests {
             commit_id: CommitId("c13337796487".to_owned()),
             divergent: false,
             immutable: true,
+            local_bookmarks: vec!["main".to_owned()],
         }
     }
 

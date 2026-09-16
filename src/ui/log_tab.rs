@@ -633,6 +633,7 @@ mod tests {
             commit_id: CommitId(String::new()),
             divergent: false,
             immutable: false,
+            local_bookmarks: Vec::new(),
         };
 
         LogTab::new(BackgroundTasks::new(sender), head)

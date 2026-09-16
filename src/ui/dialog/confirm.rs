@@ -315,6 +315,7 @@ mod tests {
                 commit_id: CommitId("confirmed".into()),
                 divergent: false,
                 immutable: false,
+                local_bookmarks: Vec::new(),
             }),
         )
     }

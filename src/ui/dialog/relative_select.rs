@@ -90,6 +90,7 @@ mod tests {
                     commit_id: CommitId(format!("commit{i}")),
                     divergent: false,
                     immutable: false,
+                    local_bookmarks: Vec::new(),
                 },
                 description: format!("relative {i}"),
             })

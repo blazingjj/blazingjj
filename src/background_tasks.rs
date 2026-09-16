@@ -219,7 +219,7 @@ impl BackgroundTasks {
                     output,
                     id,
                 };
-                let _ = sender.send(AppEvent::TaskDone(result));
+                let _ = sender.send(AppEvent::TaskDone(Box::new(result)));
             });
 
         match thread {
@@ -238,7 +238,9 @@ impl BackgroundTasks {
                     output: Err(TaskError::Spawn(err)),
                     id,
                 };
-                let _ = self.app_event_sender.send(AppEvent::TaskDone(result));
+                let _ = self
+                    .app_event_sender
+                    .send(AppEvent::TaskDone(Box::new(result)));
             }
         }
     }
@@ -319,6 +321,7 @@ mod tests {
             commit_id: CommitId(format!("commit{index}")),
             divergent: false,
             immutable: false,
+            local_bookmarks: Vec::new(),
         };
         TaskSlot::CommitShow(
             TabId::Log,
@@ -358,7 +361,7 @@ mod tests {
         let AppEvent::TaskDone(result) = event else {
             panic!("expected a task result");
         };
-        result
+        *result
     }
 
     fn collect_slots(receiver: &Receiver<AppEvent>, count: usize) -> Vec<TaskSlot> {
