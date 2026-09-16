@@ -27,8 +27,10 @@ use crate::background_tasks::TaskResult;
 pub enum AppEvent {
     /// Keyboard or mouse input from user
     UserInput(crossterm::event::Event),
-    /// A background task finished and delivers its output
-    TaskDone(TaskResult),
+    /// A background task finished and delivers its output. Boxed, as a
+    /// result is an order of magnitude larger than the user input every
+    /// keystroke sends.
+    TaskDone(Box<TaskResult>),
 }
 
 /// The input reader thread, and the flag that keeps it reading.

@@ -899,7 +899,7 @@ impl<'a> App<'a> {
             AppEvent::UserInput(event) => event,
             AppEvent::TaskDone(result) => {
                 trace!("Processing task result");
-                return self.handle_task_result(result);
+                return self.handle_task_result(*result);
             }
         };
         trace!("Processing user input");
