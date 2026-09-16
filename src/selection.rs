@@ -4,7 +4,10 @@ A command the user writes, whether typed into the command popup or
 configured as one of their own, says what to run it against by putting a
 placeholder where the argument goes. What each one stands for is
 whatever the tab it is run from has selected, so `$selected` means the
-change in the log and the file in the files tab.
+change in the log and the file in the files tab. Where the log is
+holding its marked changes out, they are what it has selected, so a
+command written against `$selected` acts on them the way the built-in
+operations do.
 
 A placeholder the current tab has nothing for is an error rather than an
 empty argument: a command that was to be run against something is not
@@ -35,10 +38,10 @@ pub fn shown_revision(head: &Head, pinned: bool) -> &str {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Placeholder {
     /// What the tab is about: the revision, or the file, bookmark or
-    /// operation where the tab has one of those.
+    /// operation where the tab has one of those, and the marked changes
+    /// where the log is holding them out.
     Selected,
     Revision,
-    Marked,
     File,
     Bookmark,
     Operation,
@@ -46,9 +49,8 @@ pub enum Placeholder {
 
 impl Placeholder {
     /// Every placeholder there is, in the order they are documented in.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 5] = [
         Self::Selected,
-        Self::Marked,
         Self::Revision,
         Self::File,
         Self::Bookmark,
@@ -61,7 +63,6 @@ impl Placeholder {
         match self {
             Self::Selected => &["$selected", "$s"],
             Self::Revision => &["$revision"],
-            Self::Marked => &["$marked", "$m"],
             Self::File => &["$file"],
             Self::Bookmark => &["$bookmark"],
             Self::Operation => &["$operation"],
@@ -73,7 +74,6 @@ impl Placeholder {
         match self {
             Self::Selected => "what the tab has selected",
             Self::Revision => "the revision the tab is on",
-            Self::Marked => "the changes the log has marked, as one revset",
             Self::File => "the selected file",
             Self::Bookmark => "the selected bookmark, or the only one on the selected change",
             Self::Operation => "the selected operation",
@@ -85,6 +85,20 @@ impl fmt::Display for Placeholder {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.names()[0])
     }
+}
+
+/// The marked changes as the one revset that names them all, that being
+/// how jj takes more than one, and parenthesised where there are several
+/// of them: a revset written around the placeholder is to take the whole
+/// set rather than binding to the last of them.
+fn marked_revset(marked: &[CommitId]) -> Option<String> {
+    let changes = Revset::union(marked)?;
+
+    Some(if marked.len() > 1 {
+        format!("({})", changes.as_str())
+    } else {
+        changes.as_str().to_owned()
+    })
 }
 
 /// What a tab has selected, of each of the kinds a placeholder names.
@@ -146,20 +160,14 @@ impl Selection {
     fn value(&self, placeholder: Placeholder) -> Option<String> {
         match placeholder {
             // What the tab is about is the most particular thing it has:
-            // the file in the files tab, whose revision is only what it
-            // is read at.
-            Placeholder::Selected => self
-                .operation
-                .clone()
+            // the changes held out to be acted on, then the file in the
+            // files tab, whose revision is only what it is read at.
+            Placeholder::Selected => marked_revset(&self.marked)
+                .or_else(|| self.operation.clone())
                 .or_else(|| self.bookmark.clone())
                 .or_else(|| self.file.clone())
                 .or_else(|| self.revision.clone()),
             Placeholder::Revision => self.revision.clone(),
-            // Several changes go to a command as the one revset that
-            // names them all, that being how jj takes more than one.
-            Placeholder::Marked => {
-                Revset::union(&self.marked).map(|revset| revset.as_str().to_owned())
-            }
             Placeholder::File => self.file.clone(),
             Placeholder::Bookmark => self
                 .bookmark
@@ -186,7 +194,7 @@ impl Selection {
 
         Ok(Substituted {
             args,
-            uses_marks: used.contains(&Placeholder::Marked),
+            uses_marks: !self.marked.is_empty() && used.contains(&Placeholder::Selected),
         })
     }
 
@@ -402,24 +410,24 @@ mod tests {
     /// jj takes more than one revision as the revset that names them
     /// all, so that is what the marks come to.
     #[test]
-    fn the_marked_changes_are_one_revset() {
+    fn the_marked_changes_are_what_the_log_has_selected() {
         assert_eq!(
-            substituted(&log(&["a", "b"]), &["abandon", "$marked"]),
-            Ok("abandon a | b".to_owned())
+            substituted(&log(&["a", "b"]), &["abandon", "$selected"]),
+            Ok("abandon (a | b)".to_owned())
         );
         assert_eq!(
-            substituted(&log(&["a"]), &["abandon", "$m"]),
+            substituted(&log(&["a"]), &["abandon", "$s"]),
             Ok("abandon a".to_owned())
         );
     }
 
-    /// A command that was to be run against what is marked is not one
-    /// to run against everything or nothing instead.
+    /// The marks are only what an operation acts on; the revision is the
+    /// one the log is standing on whatever it is holding out.
     #[test]
-    fn nothing_marked_leaves_the_marked_placeholder_with_nothing_to_stand_for() {
+    fn the_revision_is_the_one_the_log_is_on_whatever_is_marked() {
         assert_eq!(
-            substituted(&log(&[]), &["abandon", "$marked"]),
-            Err(Missing(Placeholder::Marked))
+            substituted(&log(&["a", "b"]), &["abandon", "$revision"]),
+            Ok("abandon change".to_owned())
         );
     }
 
@@ -449,8 +457,8 @@ mod tests {
     #[test]
     fn a_placeholder_is_replaced_inside_the_argument_holding_it() {
         assert_eq!(
-            substituted(&log(&["a", "b"]), &["--rev=$s", "-r$m"]),
-            Ok("--rev=change -ra | b".to_owned())
+            substituted(&log(&["a", "b"]), &["--rev=$s", "-r$revision"]),
+            Ok("--rev=(a | b) -rchange".to_owned())
         );
     }
 
@@ -473,17 +481,18 @@ mod tests {
     /// worth knowing which command that was.
     #[test]
     fn a_command_says_whether_it_names_what_is_marked() {
-        let uses_marks = |command: &[&str]| {
+        let uses_marks = |marked: &[&str], command: &[&str]| {
             let args: Vec<String> = command.iter().map(|arg| (*arg).to_owned()).collect();
 
-            log(&["a"]).substitute(&args).map(|s| s.uses_marks)
+            log(marked).substitute(&args).map(|s| s.uses_marks)
         };
 
-        assert_eq!(uses_marks(&["abandon", "$m"]), Ok(true));
-        assert_eq!(uses_marks(&["abandon", "$s"]), Ok(false));
-        // A command with a `$marked` of its own to pass on is not one
+        assert_eq!(uses_marks(&["a"], &["abandon", "$s"]), Ok(true));
+        assert_eq!(uses_marks(&["a"], &["abandon", "$revision"]), Ok(false));
+        assert_eq!(uses_marks(&[], &["abandon", "$s"]), Ok(false));
+        // A command with a `$selected` of its own to pass on is not one
         // run against the marks.
-        assert_eq!(uses_marks(&["abandon", "$$marked"]), Ok(false));
+        assert_eq!(uses_marks(&["a"], &["abandon", "$$selected"]), Ok(false));
     }
 
     #[test]
@@ -509,8 +518,8 @@ mod tests {
     #[test]
     fn a_revset_can_be_written_around_a_placeholder() {
         assert_eq!(
-            substituted(&log(&["a", "b"]), &["$s-", "$s::", "($m)|$s"]),
-            Ok("change- change:: (a | b)|change".to_owned())
+            substituted(&log(&["a", "b"]), &["$s-", "$s::", "($revision)|$s"]),
+            Ok("(a | b)- (a | b):: (change)|(a | b)".to_owned())
         );
     }
 
