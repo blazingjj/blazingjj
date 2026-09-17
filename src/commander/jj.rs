@@ -97,7 +97,7 @@ impl Commander {
         self.jj(args).run_void().context("Failed executing jj new")
     }
 
-    /// Duplicate a change. Maps to `jj duplicate <revset>`.
+    /// Duplicate changes. Maps to `jj duplicate <revset>`.
     pub fn run_duplicate(&self, revset: impl Into<Revset>) -> Result<()> {
         self.jj(["duplicate", revset.into().as_str()])
             .run_void()
@@ -187,14 +187,44 @@ impl Commander {
             .run_void()?)
     }
 
-    /// Squash changes. Maps to `jj squash -u --into <revset>`
-    pub fn run_squash(&self, revset: impl Into<Revset>, ignore_immutable: bool) -> Result<()> {
-        self.run_squash_inner(revset.into().as_str(), ignore_immutable)
+    /// Parallelize changes. Maps to `jj parallelize <revset>`.
+    pub fn run_parallelize(&self, revset: impl Into<Revset>) -> Result<()> {
+        self.run_parallelize_inner(revset.into().as_str())
+    }
+
+    #[instrument(level = "trace", name = "run_parallelize", skip(self))]
+    fn run_parallelize_inner(&self, revset: &str) -> Result<()> {
+        self.jj(["parallelize", revset])
+            .run_void()
+            .context("Failed executing jj parallelize")
+    }
+
+    /// Squash changes. Maps to `jj squash -u [--from <revset>] --into <revset>`.
+    /// `from` defaults to the working copy when `None`.
+    pub fn run_squash(
+        &self,
+        from: Option<Revset>,
+        into: impl Into<Revset>,
+        ignore_immutable: bool,
+    ) -> Result<()> {
+        self.run_squash_inner(
+            from.as_ref().map(Revset::as_str),
+            into.into().as_str(),
+            ignore_immutable,
+        )
     }
 
     #[instrument(level = "trace", name = "run_squash", skip(self))]
-    fn run_squash_inner(&self, revset: &str, ignore_immutable: bool) -> Result<()> {
-        let mut args = vec!["squash", "-u", "--into", revset];
+    fn run_squash_inner(
+        &self,
+        from: Option<&str>,
+        into: &str,
+        ignore_immutable: bool,
+    ) -> Result<()> {
+        let mut args = vec!["squash", "-u", "--into", into];
+        if let Some(from) = from {
+            args.extend_from_slice(&["--from", from]);
+        }
         if ignore_immutable {
             args.push("--ignore-immutable");
         }
@@ -337,6 +367,8 @@ impl Commander {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
     use crate::commander::ids::ChangeId;
     use crate::commander::log::Head;
@@ -468,6 +500,66 @@ mod tests {
 
         let head = test_repo.commander.get_current_head()?.commit_id;
         assert_eq!(test_repo.commander.get_commit_description(&head)?, "-AAA");
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_parallelize_makes_the_changes_siblings() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let repo = &test_repo.commander;
+
+        let root = repo.get_current_head()?;
+        repo.run_new(&root.commit_id)?;
+        let first = repo.get_current_head()?;
+        repo.run_new(&first.commit_id)?;
+        let second = repo.get_current_head()?;
+
+        let both = Revset::union([&first.commit_id, &second.commit_id]).expect("two changes");
+        repo.run_parallelize(both)?;
+
+        // Both changes now stand on what the first one stood on.
+        let second = repo.get_current_head()?;
+        assert_eq!(
+            repo.get_commit_parent(&second.commit_id)?.change_id,
+            root.change_id
+        );
+        assert!(
+            repo.get_commit_children(&root.commit_id)?
+                .iter()
+                .any(|child| child.head.change_id == first.change_id)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn run_squash_takes_the_named_source_rather_than_the_working_copy() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let repo = &test_repo.commander;
+
+        fs::write(test_repo.directory.path().join("README"), b"AAA")?;
+        let source = repo.get_current_head()?;
+        repo.run_new(&source.commit_id)?;
+        let destination = repo.get_current_head()?;
+        repo.run_describe(&destination.commit_id, "destination")?;
+        let destination = repo.get_current_head()?;
+
+        repo.run_squash(
+            Some(Revset::from(&source.commit_id)),
+            &destination.commit_id,
+            false,
+        )?;
+
+        // The named source is emptied out rather than the working copy
+        // the flag is left out for, and the destination keeps the
+        // message it had.
+        let destination = repo.get_current_head()?;
+        assert_eq!(
+            repo.get_commit_description(&destination.commit_id)?,
+            "destination"
+        );
+        assert_eq!(repo.get_files(&destination)?.len(), 1);
 
         Ok(())
     }

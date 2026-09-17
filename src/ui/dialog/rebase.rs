@@ -38,10 +38,12 @@ use ratatui::widgets::BorderType;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidget;
 
+use crate::app::command::ActsOn;
 use crate::app::command::Command;
 use crate::commander::jj::RebaseSource;
 use crate::commander::jj::RebaseTarget;
 use crate::commander::log::Head;
+use crate::commander::revset::Revset;
 use crate::keybinds::PopupEvent;
 use crate::keybinds::PopupKeybinds;
 use crate::keybinds::rebase_popup::CutOption;
@@ -56,12 +58,42 @@ use crate::ui::utils::centered_rect_fixed;
 
 type Keybinds = crate::keybinds::rebase_popup::Keybinds;
 
+/// What a rebase is about to move.
+pub enum RebaseSources {
+    /// The changes the log has marked, which only their union names,
+    /// so that how many there are is carried alongside it.
+    Marked { changes: Revset, count: usize },
+    /// The change the working copy is on.
+    WorkingCopy(Head),
+}
+
+impl RebaseSources {
+    fn acts_on(&self) -> ActsOn {
+        match self {
+            Self::Marked { changes, .. } => ActsOn::marked(changes.clone()),
+            Self::WorkingCopy(head) => ActsOn::change(&head.commit_id),
+        }
+    }
+
+    fn label(&self) -> String {
+        match self {
+            Self::Marked { count: 1, .. } => "Source: 1 marked change".to_owned(),
+            Self::Marked { count, .. } => format!("Source: {count} marked changes"),
+            Self::WorkingCopy(head) => {
+                let change_id: String = head.change_id.as_str().chars().take(8).collect();
+                let commit_id: String = head.commit_id.as_str().chars().take(8).collect();
+                format!("Source: @ {change_id} {commit_id}")
+            }
+        }
+    }
+}
+
 /// A transient popup for configuring a rebase command
 pub struct RebasePopup {
     pub keybinds: Keybinds,
     popup_keybinds: PopupKeybinds,
 
-    pub source_rev: Head,
+    pub source_revs: RebaseSources,
     pub target_rev: Head,
 
     pub source_mode: CutOption,
@@ -69,11 +101,11 @@ pub struct RebasePopup {
 }
 
 impl RebasePopup {
-    pub fn new(source_rev: Head, target_rev: Head) -> Self {
+    pub fn new(source_revs: RebaseSources, target_rev: Head) -> Self {
         Self {
             keybinds: Keybinds::new(),
             popup_keybinds: PopupKeybinds::dialog(),
-            source_rev,
+            source_revs,
             target_rev,
             source_mode: CutOption::SingleRevision,
             target_mode: PasteOption::NewBranch,
@@ -83,7 +115,7 @@ impl RebasePopup {
     /// The rebase the popup is currently configured to ask for.
     fn command(&self) -> Command {
         Command::Rebase {
-            source: self.source_rev.clone(),
+            source: self.source_revs.acts_on(),
             source_mode: match self.source_mode {
                 CutOption::IncludeDescendants => RebaseSource::Descendants,
                 CutOption::IncludeBranch => RebaseSource::Branch,
@@ -131,8 +163,6 @@ impl Component for RebasePopup {
             .split(area);
 
         // Radio buttons for source
-        let src_change_id: String = self.source_rev.change_id.as_str().chars().take(8).collect();
-        let src_commit_id: String = self.source_rev.commit_id.as_str().chars().take(8).collect();
         let src_options = vec![
             "-s this and descendants",
             "-b whole branch",
@@ -144,9 +174,7 @@ impl Component for RebasePopup {
             CutOption::SingleRevision => 2,
         };
         frame.render_widget(
-            Paragraph::new(Span::raw(format!(
-                "Source @ {src_change_id} {src_commit_id}"
-            ))),
+            Paragraph::new(Span::raw(self.source_revs.label())),
             chunks[0],
         );
         frame.render_stateful_widget(RadioButton::new(src_options), chunks[1], &mut src_select);

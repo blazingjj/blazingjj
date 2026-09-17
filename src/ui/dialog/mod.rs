@@ -47,5 +47,6 @@ pub use message::MessagePopup;
 pub use new_insert::new_insert;
 pub use push_menu::push_menu;
 pub use rebase::RebasePopup;
+pub use rebase::RebaseSources;
 pub use relative_select::relative_select;
 pub use setting_value::SettingValuePopup;

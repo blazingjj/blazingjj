@@ -8,6 +8,7 @@ use ratatui::layout::Position;
 use ratatui::text::Line;
 
 use crate::app::command;
+use crate::app::command::ActsOn;
 use crate::app::command::Command;
 use crate::commander::bookmarks::Bookmark;
 use crate::commander::files::File;
@@ -15,7 +16,6 @@ use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::operation::Operation;
-use crate::commander::revset::Revset;
 use crate::env::JjConfig;
 use crate::ui::AppAction;
 use crate::ui::dialog::BookmarkNamePopup;
@@ -33,6 +33,9 @@ pub fn log_context_menu(
 ) -> Result<ChoicePopup> {
     let at = new_commander().get_current_head()?;
     let selected_is_at = selected.change_id == at.change_id;
+    // A change marked as the one being acted on is left out of what acts
+    // on it, so marking it alone leaves an operation nothing to do.
+    let marked_elsewhere = marked.iter().any(|mark| *mark != selected.commit_id);
 
     let mut items = vec![
         (
@@ -61,20 +64,50 @@ pub fn log_context_menu(
             command::ask_abandon(selected, marked.to_vec()),
         ),
         (
-            Line::raw("Duplicate"),
-            AppAction::Run(Command::Duplicate(Revset::from(&selected.change_id))),
+            Line::raw(if marked.is_empty() {
+                "Duplicate"
+            } else {
+                "Duplicate the marked changes"
+            }),
+            AppAction::Run(Command::Duplicate(ActsOn::marked_or(
+                marked,
+                &selected.commit_id,
+            ))),
         ),
-        (
-            Line::raw(if selected_is_at {
+    ];
+    // With marks in play it is those that are folded in, so marking the
+    // destination alone leaves nothing to offer.
+    if marked.is_empty() || marked_elsewhere {
+        items.push((
+            Line::raw(if marked_elsewhere {
+                "Squash the marked changes into this"
+            } else if selected_is_at {
                 "Squash @ into its parent"
             } else {
                 "Squash @ into this"
             }),
-            command::ask_squash(selected, false)?,
-        ),
-    ];
-    if !selected_is_at {
-        items.push((Line::raw("Rebase @ to this"), command::rebase(selected)?));
+            command::ask_squash(selected, marked, false)?,
+        ));
+    }
+    // A single change has nothing to be taken apart from.
+    if marked.len() > 1 {
+        items.push((
+            Line::raw("Parallelize the marked changes"),
+            command::parallelize(marked),
+        ));
+    }
+    // The working copy change has nowhere to go, and with marks in play
+    // it is those that move, so marking the destination alone leaves
+    // nothing to offer.
+    if (marked.is_empty() && !selected_is_at) || marked_elsewhere {
+        items.push((
+            Line::raw(if marked_elsewhere {
+                "Rebase the marked changes to this"
+            } else {
+                "Rebase @ to this"
+            }),
+            command::rebase(marked, selected)?,
+        ));
     }
     items.extend([
         (
@@ -125,7 +158,7 @@ pub fn evolog_context_menu(anchor: Option<Position>, version: &Head, change: &He
         ),
         (
             Line::raw("Duplicate"),
-            AppAction::Run(Command::Duplicate(Revset::from(&version.commit_id))),
+            AppAction::Run(Command::Duplicate(ActsOn::change(&version.commit_id))),
         ),
         (
             Line::raw("Copy commit id"),

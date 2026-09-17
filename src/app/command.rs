@@ -50,19 +50,55 @@ use crate::ui::dialog::DescribePopup;
 use crate::ui::dialog::LoaderPopup;
 use crate::ui::dialog::MessagePopup;
 use crate::ui::dialog::RebasePopup;
+use crate::ui::dialog::RebaseSources;
 use crate::ui::dialog::describe_action;
 use crate::ui::dialog::new_insert;
 use crate::ui::styles::AnsiText;
 
-/// What a new change is created from, which decides whether the log is
-/// done marking it.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum NewSource {
-    /// The changes the log has marked, which the new change now stands
-    /// on.
-    Marks,
-    /// A single change, named by the selection or by a bookmark.
-    Change,
+/// What an operation acts on: the changes the log has marked, or what
+/// it falls back to when none are. Which of the two it is decides
+/// whether the log is done marking them once the operation has gone
+/// through.
+#[derive(Clone)]
+pub struct ActsOn {
+    changes: Revset,
+    marked: bool,
+}
+
+impl ActsOn {
+    /// The changes the log has marked.
+    pub fn marked(changes: impl Into<Revset>) -> Self {
+        Self {
+            changes: changes.into(),
+            marked: true,
+        }
+    }
+
+    /// A change the log has not marked.
+    pub fn change(changes: impl Into<Revset>) -> Self {
+        Self {
+            changes: changes.into(),
+            marked: false,
+        }
+    }
+
+    /// The union of the marked changes, or `fallback` when none are
+    /// marked.
+    pub fn marked_or(marked: &[CommitId], fallback: impl Into<Revset>) -> Self {
+        Revset::union(marked).map_or_else(|| Self::change(fallback), Self::marked)
+    }
+
+    /// The changes to act on, and what the log is to do once the
+    /// operation has gone through.
+    fn into_parts(self) -> (Revset, Option<AppAction>) {
+        (self.changes, marks_taken(self.marked))
+    }
+}
+
+/// What the log is to do once an operation that was handed the marked
+/// changes has gone through: it is done marking them.
+fn marks_taken(marked: bool) -> Option<AppAction> {
+    marked.then_some(AppAction::ClearLogMarks)
 }
 
 /// Which version of a file an editor is opened on. The editor edits the
@@ -92,16 +128,20 @@ pub struct BookmarkSetDialog {
 pub enum Command {
     /// Put text on the system clipboard.
     Copy(String),
-    Duplicate(Revset),
+    Duplicate(ActsOn),
+    Parallelize(ActsOn),
     Absorb(Head),
-    /// Create a change from `revset`, put where `insert` says.
+    /// Create a change from what `acts_on` names, put where `insert`
+    /// says.
     New {
-        revset: Revset,
-        source: NewSource,
+        acts_on: ActsOn,
         insert: NewInsertMode,
         describe: bool,
     },
+    /// Squash `from`, or the working copy when it is [None], into
+    /// `target`.
     Squash {
+        from: Option<Revset>,
         target: Head,
         ignore_immutable: bool,
     },
@@ -120,7 +160,7 @@ pub enum Command {
         description: String,
     },
     Rebase {
-        source: Head,
+        source: ActsOn,
         source_mode: RebaseSource,
         target: Head,
         target_mode: RebaseTarget,
@@ -195,31 +235,39 @@ impl Command {
                 let _ = execute!(std::io::stdout(), CopyToClipboard::to_clipboard_from(text));
                 Ok(None)
             }
-            Command::Duplicate(revset) => match new_commander().run_duplicate(revset) {
-                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
-                Err(err) => Ok(Some(refused("Duplicate", err))),
-            },
+            Command::Duplicate(acts_on) => {
+                let (changes, taken) = acts_on.into_parts();
+                match new_commander().run_duplicate(changes) {
+                    Ok(()) => Ok(Some(rewritten(taken))),
+                    Err(err) => Ok(Some(refused("Duplicate", err))),
+                }
+            }
+            Command::Parallelize(acts_on) => {
+                let (changes, taken) = acts_on.into_parts();
+                match new_commander().run_parallelize(changes) {
+                    Ok(()) => Ok(Some(rewritten(taken))),
+                    Err(err) => Ok(Some(refused("Parallelize", err))),
+                }
+            }
             Command::Absorb(head) => match new_commander().run_absorb(&head.commit_id) {
                 Ok(()) => Ok(Some(show_change(new_commander().get_head_latest(&head)?))),
                 Err(err) => Ok(Some(refused("Absorb", err))),
             },
             Command::New {
-                revset,
-                source,
+                acts_on,
                 insert,
                 describe,
             } => {
-                // Inserting can hit immutable changes, so the marks are
-                // left for another attempt.
-                if let Err(err) = new_commander().run_new_with_insert(revset, insert) {
+                // Inserting can hit immutable changes, so the changes stay
+                // marked for another attempt, which has to ask for them again.
+                let (changes, taken) = acts_on.into_parts();
+                if let Err(err) = new_commander().run_new_with_insert(changes, insert) {
                     return Ok(Some(refused("New", err)));
                 }
 
                 let head = new_commander().get_current_head()?;
                 let mut actions = vec![show_change(head.clone())];
-                if source == NewSource::Marks {
-                    actions.push(AppAction::ClearLogMarks);
-                }
+                actions.extend(taken);
                 if describe {
                     actions.push(describe_action(&head, || Ok(vec![]))?);
                 }
@@ -227,12 +275,22 @@ impl Command {
                 Ok(Some(AppAction::Multiple(actions)))
             }
             Command::Squash {
+                from,
                 target,
                 ignore_immutable,
-            } => match new_commander().run_squash(&target.commit_id, ignore_immutable) {
-                Ok(()) => Ok(Some(show_change(new_commander().get_current_head()?))),
-                Err(err) => Ok(Some(refused("Squash", err))),
-            },
+            } => {
+                // Sources of its own are the marked changes, which the
+                // log is done marking once they are folded in.
+                let marked = from.is_some();
+                match new_commander().run_squash(from, &target.commit_id, ignore_immutable) {
+                    // Folding the working copy in moves it, so the view
+                    // follows it there; folding the marked changes in
+                    // leaves it where it was.
+                    Ok(()) if marked => Ok(Some(rewritten(marks_taken(marked)))),
+                    Ok(()) => Ok(Some(show_change(new_commander().get_current_head()?))),
+                    Err(err) => Ok(Some(refused("Squash", err))),
+                }
+            }
             Command::Edit {
                 revset,
                 ignore_immutable,
@@ -294,15 +352,18 @@ impl Command {
                 source_mode,
                 target,
                 target_mode,
-            } => match new_commander().run_rebase(
-                source_mode,
-                &source.commit_id,
-                target_mode,
-                &target.commit_id,
-            ) {
-                Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
-                Err(err) => Ok(Some(refused("Rebase", err))),
-            },
+            } => {
+                let (changes, taken) = source.into_parts();
+                match new_commander().run_rebase(
+                    source_mode,
+                    changes,
+                    target_mode,
+                    &target.commit_id,
+                ) {
+                    Ok(()) => Ok(Some(rewritten(taken))),
+                    Err(err) => Ok(Some(refused("Rebase", err))),
+                }
+            }
             Command::Push(target) => Ok(Some(with_loader(
                 background_tasks,
                 "Pushing",
@@ -575,21 +636,15 @@ pub fn ask_new_change_from_selection(
     } else {
         format!("the {} marked changes", marked.len())
     };
-    let revset = Revset::union(marked).unwrap_or_else(|| Revset::from(&selected.commit_id));
-    let source = if marked.is_empty() {
-        NewSource::Change
-    } else {
-        NewSource::Marks
-    };
+    let acts_on = ActsOn::marked_or(marked, &selected.commit_id);
 
-    ask_new_change(revset, source, &target, describe)
+    ask_new_change(acts_on, &target, describe)
 }
 
 /// Asking for a new change from the one a bookmark points at.
 pub fn ask_new_change_from_bookmark(bookmark: &Bookmark, head: &Head, describe: bool) -> AppAction {
     ask_new_change(
-        Revset::from(&head.commit_id),
-        NewSource::Change,
+        ActsOn::change(&head.commit_id),
         &bookmark.to_string(),
         describe,
     )
@@ -625,10 +680,44 @@ pub fn describe(head: &Head) -> Result<AppAction> {
     })
 }
 
-/// Asking to rebase the working copy commit onto `destination`.
-pub fn rebase(destination: &Head) -> Result<AppAction> {
+/// Parallelizing the marked changes, or the refusal when there are
+/// fewer than two of them to take apart from one another.
+pub fn parallelize(marked: &[CommitId]) -> AppAction {
+    if marked.len() < 2 {
+        return message(
+            "Parallelize",
+            "Parallelizing acts on more than one marked change, once the marks are asked for",
+        );
+    }
+    let changes = Revset::union(marked).expect("changes to unite");
+
+    AppAction::Run(Command::Parallelize(ActsOn::marked(changes)))
+}
+
+/// Asking to rebase `sources`, or the working copy commit when none are
+/// marked, onto `destination`.
+pub fn rebase(marked: &[CommitId], destination: &Head) -> Result<AppAction> {
+    // Marking the change being moved onto says to move the others onto
+    // it, there being nowhere else it could go.
+    let sources: Vec<_> = marked
+        .iter()
+        .filter(|source| **source != destination.commit_id)
+        .cloned()
+        .collect();
+    if sources.is_empty() && !marked.is_empty() {
+        return Ok(message("Rebase", "Cannot rebase a change onto itself"));
+    }
+
+    let sources = match Revset::union(&sources) {
+        Some(changes) => RebaseSources::Marked {
+            changes,
+            count: sources.len(),
+        },
+        None => RebaseSources::WorkingCopy(new_commander().get_current_head()?),
+    };
+
     Ok(AppAction::SetPopup(Box::new(RebasePopup::new(
-        new_commander().get_current_head()?,
+        sources,
         destination.clone(),
     ))))
 }
@@ -728,36 +817,57 @@ pub fn set_bookmark(config: JjConfig, head: &Head) -> AppAction {
 
 /// Asking for a new change from `revset`, which `target` names as the
 /// user sees it: where the change goes is a question of its own.
-pub fn ask_new_change(
-    revset: Revset,
-    source: NewSource,
-    target: &str,
-    describe: bool,
-) -> AppAction {
+pub fn ask_new_change(acts_on: ActsOn, target: &str, describe: bool) -> AppAction {
     AppAction::SetPopup(Box::new(new_insert(target, |insert| {
         AppAction::Run(Command::New {
-            revset: revset.clone(),
-            source,
+            acts_on: acts_on.clone(),
             insert,
             describe,
         })
     })))
 }
 
-/// Asking to squash into `selected`: the target it picks, the refusal
-/// when that target cannot take it, or the question that runs it.
-pub fn ask_squash(selected: &Head, ignore_immutable: bool) -> Result<AppAction> {
-    // Squashing the change the working copy is on has nowhere to go but
-    // its parent.
-    let at = new_commander().get_current_head()?;
-    let onto_parent = selected.change_id == at.change_id;
-    let target = if onto_parent {
-        match new_commander().get_commit_parent(&at.commit_id) {
-            Ok(parent) => parent,
-            Err(_) => return Ok(message("Squash", "Cannot squash onto current change")),
-        }
+/// Asking to squash the marked changes, or the working copy when none
+/// are marked, into `selected`: the target it picks, the refusal when
+/// that target cannot take it, or the question that runs it.
+pub fn ask_squash(
+    selected: &Head,
+    marked: &[CommitId],
+    ignore_immutable: bool,
+) -> Result<AppAction> {
+    // Marking the change being squashed into says to fold the others
+    // into it, there being nowhere else they could go.
+    let sources: Vec<_> = marked
+        .iter()
+        .filter(|source| **source != selected.commit_id)
+        .cloned()
+        .collect();
+    if sources.is_empty() && !marked.is_empty() {
+        return Ok(message("Squash", "Cannot squash a change into itself"));
+    }
+
+    // Marked sources name themselves, so the selection is the target
+    // whatever it is. Squashing the change the working copy is on, on
+    // the other hand, has nowhere to go but its parent.
+    let from = Revset::union(&sources);
+    let (target, question) = if from.is_some() {
+        (
+            selected.clone(),
+            "Are you sure you want to squash the marked changes into this change?",
+        )
     } else {
-        selected.clone()
+        let at = new_commander().get_current_head()?;
+        if selected.change_id == at.change_id {
+            match new_commander().get_commit_parent(&at.commit_id) {
+                Ok(parent) => (parent, "Are you sure you want to squash @ into its parent?"),
+                Err(_) => return Ok(message("Squash", "Cannot squash onto current change")),
+            }
+        } else {
+            (
+                selected.clone(),
+                "Are you sure you want to squash @ into this change?",
+            )
+        }
     };
 
     if target.immutable && !ignore_immutable {
@@ -765,11 +875,7 @@ pub fn ask_squash(selected: &Head, ignore_immutable: bool) -> Result<AppAction> 
     }
 
     let mut lines = vec![
-        Line::from(if onto_parent {
-            "Are you sure you want to squash @ into its parent?"
-        } else {
-            "Are you sure you want to squash @ into this change?"
-        }),
+        Line::from(question),
         Line::from(format!("Squash into {}", target.change_id.as_str())),
     ];
     if ignore_immutable {
@@ -780,6 +886,7 @@ pub fn ask_squash(selected: &Head, ignore_immutable: bool) -> Result<AppAction> 
         "Squash",
         Text::from(lines),
         Command::Squash {
+            from,
             target,
             ignore_immutable,
         },
@@ -957,6 +1064,16 @@ fn confirm(title: &'static str, question: Text<'static>, command: Command) -> Ap
     )))
 }
 
+/// What to show once an operation has rewritten changes without moving
+/// the working copy: every tab is out of date, and the log may be done
+/// marking what it handed over.
+fn rewritten(taken: Option<AppAction>) -> AppAction {
+    let mut actions = vec![AppAction::MarkTabsStale];
+    actions.extend(taken);
+
+    AppAction::Multiple(actions)
+}
+
 /// Put `change` up wherever a change shows, the repo having moved under
 /// whatever else is on screen.
 fn show_change(change: Head) -> AppAction {
@@ -1084,8 +1201,80 @@ mod tests {
         rows.iter().any(|row| row.contains(text))
     }
 
+    #[test]
+    fn only_the_marked_changes_are_done_with_once_acted_on() {
+        let marked = [CommitId("abc".to_owned()), CommitId("def".to_owned())];
+        let fallback = CommitId("ghi".to_owned());
+
+        let (changes, taken) = ActsOn::marked_or(&marked, &fallback).into_parts();
+        assert_eq!(changes, Revset::expression("abc | def"));
+        assert!(matches!(taken, Some(AppAction::ClearLogMarks)));
+
+        let (changes, taken) = ActsOn::marked_or(&[], &fallback).into_parts();
+        assert_eq!(changes, Revset::expression("ghi"));
+        assert!(taken.is_none());
+    }
+
     /// What jj answers when asked what a push would do
     const PREVIEW: &str = "Changes to push to origin:\n  Add bookmark here to 0123abcd\nDry-run requested, not pushing.\n";
+
+    #[test]
+    fn a_change_marked_as_its_own_rebase_destination_is_turned_down() {
+        set_test_env();
+
+        let onto = head("abc", false);
+        let action = rebase(std::slice::from_ref(&onto.commit_id), &onto).expect("the question");
+
+        assert!(says(action, "Cannot rebase a change onto itself"));
+    }
+
+    #[test]
+    fn a_rebase_leaves_its_destination_out_of_the_changes_it_moves() {
+        set_test_env();
+
+        let onto = head("abc", false);
+        let marked = [CommitId("def".to_owned()), onto.commit_id.clone()];
+        let rows = rows(rebase(&marked, &onto).expect("the popup"));
+
+        assert!(says_where(&rows, "Source: 1 marked change"), "{rows:?}");
+    }
+
+    #[test]
+    fn a_change_marked_as_its_own_squash_destination_is_turned_down() {
+        set_test_env();
+
+        let into = head("abc", false);
+        let action =
+            ask_squash(&into, std::slice::from_ref(&into.commit_id), false).expect("the question");
+
+        assert!(says(action, "Cannot squash a change into itself"));
+    }
+
+    #[test]
+    fn the_marked_changes_are_the_sources_the_squash_asks_about() {
+        set_test_env();
+
+        let into = head("abc", false);
+        let action = ask_squash(&into, &[CommitId("def".to_owned())], false).expect("the question");
+
+        let rows = rows(action);
+        assert!(says_where(&rows, "squash the marked changes"), "{rows:?}");
+        assert!(says_where(&rows, "Squash into abc"), "{rows:?}");
+    }
+
+    #[test]
+    fn parallelizing_takes_more_than_one_change() {
+        set_test_env();
+
+        let one = [CommitId("abc".to_owned())];
+        assert!(says(parallelize(&one), "more than one marked change"));
+
+        let two = [CommitId("abc".to_owned()), CommitId("def".to_owned())];
+        assert!(matches!(
+            parallelize(&two),
+            AppAction::Run(Command::Parallelize(_))
+        ));
+    }
 
     #[test]
     fn the_push_question_holds_what_jj_said_the_push_would_do() {

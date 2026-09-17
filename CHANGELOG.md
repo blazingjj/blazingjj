@@ -50,6 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Rebasing moves all of the marked changes at once, rather than the working
+  copy alone
+- Duplicating copies all of the marked changes at once, rather than the
+  selected one alone
+- Squashing folds the marked changes into the selected one, rather than only
+  ever folding the working copy in
+- `|` in the log tab takes the marked changes apart from one another, so that
+  they stand side by side (`jj parallelize`)
 - `delta` is a diff format of its own, offered as soon as delta is installed
   and run in the colors a diff is drawn in rather than the ones you configured
   it with under git, rather than something to spell out as a diff pager. Where
@@ -139,11 +147,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     revision itself, such as neovim with jj.nvim
 - A command typed into the command popup (`:`) or run interactively (`!`) can
   name what the tab has selected by a placeholder: `$selected` (`$s`) for
-  whatever the tab is about, `$marked` (`$m`) for the changes the log has
-  marked, and `$revision`, `$file`, `$bookmark` and `$operation` for a
-  selection of that one kind, where `$bookmark` also stands for the only local
-  bookmark on the change a tab is on. A command that named the marked changes
-  and ran leaves them unmarked, the way the built-in operations on them do
+  whatever the tab is about, which in the log is the marked changes when the
+  command is prefixed with `;`, and `$revision`, `$file`, `$bookmark` and
+  `$operation` for a selection of that one kind, where `$bookmark` also stands
+  for the only local bookmark on the change a tab is on. A command that named
+  the marked changes and ran leaves them unmarked, the way the built-in
+  operations on them do
 - Diff format rendering the Git format with a pager like
   [delta](https://github.com/dandavison/delta), configured as
   `blazingjj.diff-pager` and toggled through with `w` like the others
@@ -269,6 +278,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which the tab bar shows for itself
 - Clicking a change in the log tab no longer scrolls the log to put the
   selection into the middle of the panel; the line clicked stays where it is
+- The marked changes are now only acted on when the operation is prefixed
+  with `;` (`use-marks`), rather than whenever anything is marked; without
+  the prefix an operation acts on the selected change, as it does with
+  nothing marked
 - The set-bookmark dialog now offers the bookmarks the change is standing on
   first, nearest first, rather than ordering them by how recently the change
   each points at was committed

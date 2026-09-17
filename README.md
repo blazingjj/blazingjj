@@ -203,10 +203,9 @@ See all key mappings for the current tab with `?`.
   `toggle-layout` to, which comes unbound
 - Open the context menu for what the tab has selected with `Menu` or a right click
 - Open a command popup to run jj commands using `:` (jj prefix not required, e.g. write `new main` instead of `jj new main`)
-- A command can name what the tab has selected by a placeholder, so `:new $s` creates a change from the highlighted one and `:abandon $m` abandons the marked ones:
-  - `$selected`, or `$s`: what the tab is about, which is the file in the files tab, the bookmark in the bookmarks tab, the operation in the operation log and the revision everywhere else
-  - `$marked`, or `$m`: the changes the log has marked, as the one revset naming them all
-  - `$revision`: the revision the tab is on, whichever kind of thing it is about
+- A command can name what the tab has selected by a placeholder, so `:new $s` creates a change from the highlighted one and `; :abandon $s` abandons the marked ones:
+  - `$selected`, or `$s`: what the tab is about, which is the file in the files tab, the bookmark in the bookmarks tab, the operation in the operation log and the revision everywhere else. In the log it is the marked changes, as the one revset naming them all, whenever the command is prefixed with `;`, the way the built-in operations take them. Several of them are parenthesised, so that a revset written around the placeholder takes the whole set
+  - `$revision`: the revision the tab is on, whichever kind of thing it is about, and whatever is marked
   - `$file`, `$bookmark`, `$operation`: the selection of that kind, for a command that only makes sense against one
   - A placeholder is replaced inside the argument holding it, so `-r$s` names the selection as much as `$s` does, and what it stands for is one argument however it reads. A revset can be written around one, as in `$s-`; `$$` is a `$` of its own
   - A command naming something the tab has nothing of is refused rather than run without it
@@ -218,7 +217,8 @@ See all key mappings for the current tab with `?`.
 - Go to the top/bottom of the visible log with `Ctrl+Home`/`Ctrl+End`
 - Go to the highlighted change's parent with `-` or to its child with `+`,
   choosing which one when there is more than one in view
-- Mark the highlighted change with `Space`, to give a new change several parents
+- Mark the highlighted change with `Space`, and prefix an operation with `;`
+  to have it act on the marked changes rather than on the highlighted one
 - Display different revset with `r` (`jj log -r`)
 - Create new change with `n`, choosing whether it becomes a child of the
   highlighted change or is spliced in before or after it
@@ -227,10 +227,13 @@ See all key mappings for the current tab with `?`.
 - Edit highlighted change with `e` (`jj edit`)
   - Edit highlighted change ignoring immutability with `E` (`jj edit --ignore-immutable`)
 - Abandon a change with `a` (`jj abandon`)
-- Duplicate the highlighted change with `D` (`jj duplicate`)
-- Rebase with `Ctrl+r` (`jj rebase`), choosing whether the change moves alone,
-  with its descendants or as a whole branch, and whether it lands on the
-  selected change or before or after it
+- Duplicate the marked changes, or the highlighted one, with `D`
+  (`jj duplicate`)
+- Parallelize the marked changes with `|` (`jj parallelize`), making changes
+  that follow each other siblings under the first one's parents
+- Rebase with `Ctrl+r` (`jj rebase`), moving the marked changes or `@`, and
+  choosing whether the change moves alone, with its descendants or as a whole
+  branch, and whether it lands on the selected change or before or after it
 - Absorb the highlighted change's diff into its mutable ancestors with `A` (`jj absorb --from`)
 - Describe the highlighted change with `d` (`jj describe`)
   - Save with `Ctrl+s`
@@ -239,8 +242,10 @@ See all key mappings for the current tab with `?`.
   - Scroll in bookmark list with `j`/`k`
   - Create a new bookmark with `c`
   - Use auto-generated name with `g`
-- Squash current changes (in @) to the selected change with `s` (`jj squash`)
-  - Squash current changes to the selected change ignoring immutability with `S` (`jj squash --ignore-immutable`)
+- Squash the marked changes, or the ones in `@`, into the selected change with
+  `s` (`jj squash`)
+  - Squash the same way, ignoring immutability, with `S`
+    (`jj squash --ignore-immutable`)
 - Yank the change ID with `y` and the revision with `Y`
 - Git fetch with `f` (`jj git fetch`)
   - Git fetch all remotes with `F` (`jj git fetch --all-remotes`)
