@@ -18,8 +18,14 @@ use crate::ui::dialog::Choice;
 use crate::ui::dialog::ChoicePopup;
 
 /// What every scope says for itself in the menu, and the key that picks
-/// it. The keys are the letters of the jj flags they stand for.
-const SCOPES: [(PushScope, char, &str); 6] = [
+/// it. The keys are the letters of the jj flags they stand for, but for
+/// the one standing in for a plain `jj git push`.
+const SCOPES: [(PushScope, char, &str); 7] = [
+    (
+        PushScope::Ancestors,
+        'p',
+        "Bookmarks and tags reaching this change",
+    ),
     (PushScope::Selected, 'r', "Bookmarks on this change"),
     (
         PushScope::SelectedWithNew,
@@ -43,6 +49,8 @@ const REMOTE_KEY: char = 'o';
 /// The push menu for `selected`, put where it was opened, pushing to
 /// `remote` or to jj's default remote when [None]. Every entry asks for
 /// what the keybinding of its scope would, given the same remote.
+///
+/// Fails when the remotes cannot be listed.
 pub fn push_menu(
     anchor: Option<Position>,
     selected: &Head,
@@ -50,11 +58,13 @@ pub fn push_menu(
 ) -> Result<ChoicePopup> {
     let commander = new_commander();
     let remotes = commander.git_remotes()?;
+    // Resolved here so that no entry has to list the remotes again.
+    let current = remote.unwrap_or_else(|| commander.default_push_remote(&remotes));
 
     let items = SCOPES.iter().map(|(scope, key, label)| {
         Choice::new(
             Line::raw(format!("[{key}] {label}")),
-            command::push(selected, *scope, remote.clone()),
+            command::push(selected, *scope, Some(current.clone())),
         )
         .key(*key)
     });
@@ -64,7 +74,6 @@ pub fn push_menu(
         return Ok(menu);
     }
 
-    let current = remote.unwrap_or_else(|| commander.default_push_remote(&remotes));
     let label = Line::from(vec![
         Span::raw(format!("[{REMOTE_KEY}] Remote: ")),
         Span::styled(current.clone(), Role::Remote.style()),

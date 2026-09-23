@@ -806,6 +806,25 @@ pub fn push(selected: &Head, scope: PushScope, remote: Option<String>) -> AppAct
                 PushTarget::Bookmarks(bookmarks.into_iter().map(|it| it.name).collect())
             }
         }
+        // The revset names the remote, so jj's default one cannot be left
+        // to jj.
+        PushScope::Ancestors => {
+            let remote = match remote {
+                Some(remote) => remote,
+                None => {
+                    let commander = new_commander();
+                    match commander.git_remotes() {
+                        Ok(remotes) => commander.default_push_remote(&remotes),
+                        Err(err) => return refused("Push", err),
+                    }
+                }
+            };
+            let target = PushTarget::Revision(Revset::unpushed(&remote, &selected.commit_id));
+            return AppAction::Run(push_command(Push {
+                target,
+                remote: Some(remote),
+            }));
+        }
         PushScope::Tracked => PushTarget::Tracked,
         PushScope::All => PushTarget::All,
         PushScope::Change => PushTarget::Change(revset),

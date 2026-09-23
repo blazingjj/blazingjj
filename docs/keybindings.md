@@ -155,6 +155,7 @@ push-menu = "p"
 # The targets the push menu offers, none of them on a key of its own
 push = false
 push-new = false
+push-ancestors = false
 push-all = false
 push-all-new = false
 push-change = false

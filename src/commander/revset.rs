@@ -34,6 +34,14 @@ impl Revset {
         Self(format!("children({id})"))
     }
 
+    /// The ancestors of `head` that no bookmark on `remote` reaches.
+    pub fn unpushed(remote: &str, head: &CommitId) -> Self {
+        let remote = remote.replace('\\', "\\\\").replace('"', "\\\"");
+        Self(format!(
+            "remote_bookmarks(remote=exact:\"{remote}\")..{head}"
+        ))
+    }
+
     /// The union of the given revsets, or [None] if there are none.
     pub fn union(revsets: impl IntoIterator<Item = impl Into<Revset>>) -> Option<Self> {
         let expressions: Vec<_> = revsets.into_iter().map(|revset| revset.into().0).collect();
