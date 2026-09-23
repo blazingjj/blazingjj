@@ -161,6 +161,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The push menu can create the bookmark it sends, either named after the
   change the way jj's `templates.git-push-bookmark` says (`c`) or under a name
   you give (`n`)
+- With more than one remote, the push menu offers to pick the one to push to
+  (`o`), starting from the one jj would push to. The remote's name is drawn
+  in the `remote` style element
 - A push now says what it would do and asks before it sends anything;
   `blazingjj.confirm-push = false` pushes right away as before
 - The details panel now names the diff format it renders in, in its top

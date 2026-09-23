@@ -433,13 +433,14 @@ impl<'a> LogTab<'a> {
                 ))));
             }
             LogTabEvent::Push(scope) => {
-                return Ok(Some(command::push(&self.head, scope)));
+                return Ok(Some(command::push(&self.head, scope, None)));
             }
             LogTabEvent::PushMenu => {
                 return Ok(Some(AppAction::SetPopup(Box::new(push_menu(
                     self.log_panel.selected_position(),
                     &self.head,
-                )))));
+                    None,
+                )?))));
             }
             LogTabEvent::Fetch { all_remotes } => {
                 return Ok(Some(AppAction::Run(Command::Fetch { all_remotes })));

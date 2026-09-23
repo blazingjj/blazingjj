@@ -67,6 +67,14 @@ pub enum PushTarget {
     Named { name: String, revset: Revset },
 }
 
+/// What a push sends, and where to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Push {
+    pub target: PushTarget,
+    /// `jj git push --remote <remote>`, or jj's default remote when [None].
+    pub remote: Option<String>,
+}
+
 impl Commander {
     /// Create a new change. Maps to `jj new <revset>`. Only the tests
     /// create one without saying where it goes.
@@ -312,12 +320,16 @@ impl Commander {
     /// Git push. Maps to `jj git push`, which only says what it would do
     /// when `dry_run`.
     #[instrument(level = "trace", skip(self))]
-    pub fn git_push(&self, target: &PushTarget, dry_run: bool) -> Result<String, CommandError> {
+    pub fn git_push(&self, push: &Push, dry_run: bool) -> Result<String, CommandError> {
         let mut args = vec!["git".to_owned(), "push".to_owned()];
         if dry_run {
             args.push("--dry-run".to_owned());
         }
-        match target {
+        if let Some(remote) = &push.remote {
+            args.push("--remote".to_owned());
+            args.push(remote.clone());
+        }
+        match &push.target {
             PushTarget::Revision(revset) => {
                 args.push("-r".to_owned());
                 args.push(revset.as_str().to_owned());
@@ -362,6 +374,30 @@ impl Commander {
         }
 
         self.jj(args).color().run()
+    }
+
+    /// The names of the Git remotes. Maps to `jj git remote list`.
+    #[instrument(level = "trace", skip(self))]
+    pub fn git_remotes(&self) -> Result<Vec<String>, CommandError> {
+        Ok(self
+            .jj(["git", "remote", "list"])
+            .run()?
+            .lines()
+            .filter_map(|line| line.split_whitespace().next())
+            .map(str::to_owned)
+            .collect())
+    }
+
+    /// The remote `jj git push` goes to when not told, picked from
+    /// `remotes` the way jj picks it.
+    pub fn default_push_remote(&self, remotes: &[String]) -> String {
+        if let Some(remote) = self.env.jj_config.git_push_remote() {
+            return remote.to_owned();
+        }
+        match remotes {
+            [only] => only.clone(),
+            _ => "origin".to_owned(),
+        }
     }
 }
 
@@ -739,6 +775,28 @@ mod tests {
 
         let bookmarks = test_repo.bookmarks()?;
         assert_eq!(bookmarks, []);
+
+        Ok(())
+    }
+
+    #[test]
+    fn default_push_remote_is_the_only_one_or_origin() -> Result<()> {
+        let test_repo = TestRepo::new()?;
+        let commander = &test_repo.commander;
+
+        commander
+            .jj(["git", "remote", "add", "upstream", "https://example.com/a"])
+            .run_void()?;
+        let remotes = commander.git_remotes()?;
+        assert_eq!(remotes, ["upstream"]);
+        assert_eq!(commander.default_push_remote(&remotes), "upstream");
+
+        commander
+            .jj(["git", "remote", "add", "fork", "https://example.com/b"])
+            .run_void()?;
+        let remotes = commander.git_remotes()?;
+        assert_eq!(remotes, ["fork", "upstream"]);
+        assert_eq!(commander.default_push_remote(&remotes), "origin");
 
         Ok(())
     }

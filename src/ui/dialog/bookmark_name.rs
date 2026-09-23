@@ -17,6 +17,7 @@ use ratatui_textarea::TextArea;
 
 use crate::app::command;
 use crate::app::command::Command;
+use crate::commander::jj::Push;
 use crate::commander::jj::PushTarget;
 use crate::commander::revset::Revset;
 use crate::keybinds::PopupEvent;
@@ -31,8 +32,13 @@ use crate::ui::utils::centered_rect_line_height;
 
 pub enum BookmarkNameMode {
     Create,
-    Rename { old_name: String },
-    Push { revset: Revset },
+    Rename {
+        old_name: String,
+    },
+    Push {
+        revset: Revset,
+        remote: Option<String>,
+    },
 }
 
 pub struct BookmarkNamePopup<'a> {
@@ -47,9 +53,10 @@ impl BookmarkNamePopup<'_> {
         Self::named(BookmarkNameMode::Create, String::new())
     }
 
-    /// Ask for the name of a bookmark a push is to create for `revset`.
-    pub fn new_push(revset: Revset) -> BookmarkNamePopup<'static> {
-        Self::named(BookmarkNameMode::Push { revset }, String::new())
+    /// Ask for the name of a bookmark a push to `remote` is to create for
+    /// `revset`.
+    pub fn new_push(revset: Revset, remote: Option<String>) -> BookmarkNamePopup<'static> {
+        Self::named(BookmarkNameMode::Push { revset, remote }, String::new())
     }
 
     pub fn new_rename(old_name: String) -> BookmarkNamePopup<'static> {
@@ -101,9 +108,12 @@ impl BookmarkNamePopup<'_> {
                 old_name: old_name.clone(),
                 new_name: name,
             },
-            BookmarkNameMode::Push { revset } => command::push_command(PushTarget::Named {
-                name,
-                revset: revset.clone(),
+            BookmarkNameMode::Push { revset, remote } => command::push_command(Push {
+                target: PushTarget::Named {
+                    name,
+                    revset: revset.clone(),
+                },
+                remote: remote.clone(),
             }),
         }
     }

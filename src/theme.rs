@@ -58,6 +58,7 @@ pub enum Role {
     ButtonActive,
     ChangeId,
     Bookmark,
+    Remote,
     FileAdded,
     FileModified,
     FileRenamed,
@@ -76,7 +77,7 @@ pub enum Role {
 
 impl Role {
     /// Every role there is, in the order the styles tab lists them.
-    pub const ALL: [Self; 33] = [
+    pub const ALL: [Self; 34] = [
         Self::Default,
         Self::Highlight,
         Self::Hint,
@@ -97,6 +98,7 @@ impl Role {
         Self::Success,
         Self::ChangeId,
         Self::Bookmark,
+        Self::Remote,
         Self::FileAdded,
         Self::FileModified,
         Self::FileRenamed,
@@ -140,6 +142,7 @@ impl Role {
             Self::ButtonActive => "button-active",
             Self::ChangeId => "change-id",
             Self::Bookmark => "bookmark",
+            Self::Remote => "remote",
             Self::FileAdded => "file-added",
             Self::FileModified => "file-modified",
             Self::FileRenamed => "file-renamed",
@@ -189,6 +192,7 @@ impl Role {
             }
             Self::ChangeId => "A change id.",
             Self::Bookmark => "The name of a bookmark.",
+            Self::Remote => "The name of a remote.",
             Self::FileAdded => "A file the change adds.",
             Self::FileModified => "A file the change changes.",
             Self::FileRenamed => "A file the change renames.",
@@ -230,7 +234,7 @@ impl Role {
             | Self::Value => "The frame",
             Self::PopupBorder | Self::PopupTitle | Self::Button | Self::ButtonActive => "Popups",
             Self::Error | Self::Warning | Self::Success => "What the app has to say",
-            Self::ChangeId | Self::Bookmark => "The repo",
+            Self::ChangeId | Self::Bookmark | Self::Remote => "The repo",
             Self::FileAdded
             | Self::FileModified
             | Self::FileRenamed
@@ -289,6 +293,13 @@ impl Role {
             Self::Highlight => RoleStyle {
                 bg: Some(ThemeColor::Rgb(50, 50, 150)),
                 ..RoleStyle::default()
+            },
+            // Set on a background of its own, as it stands for a setting
+            // amid rows that stand for actions.
+            Self::Remote => RoleStyle {
+                bg: Some(ThemeColor::Ansi(Ansi::Cyan)),
+                bold: Some(true),
+                ..ansi(Ansi::Black)
             },
             // The tab bar tells the tab showing apart by weight and an
             // underline rather than by a colour, so that a row of names

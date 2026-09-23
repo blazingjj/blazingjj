@@ -13,6 +13,7 @@ use anyhow::Result;
 use ratatui::crossterm::clipboard::CopyToClipboard;
 use ratatui::crossterm::execute;
 use ratatui::layout::Alignment;
+use ratatui::layout::Position;
 use ratatui::text::Line;
 use ratatui::text::Text;
 
@@ -26,6 +27,7 @@ use crate::commander::ids::ChangeId;
 use crate::commander::ids::CommitId;
 use crate::commander::ids::OperationId;
 use crate::commander::jj::NewInsertMode;
+use crate::commander::jj::Push;
 use crate::commander::jj::PushTarget;
 use crate::commander::jj::RebaseSource;
 use crate::commander::jj::RebaseTarget;
@@ -53,6 +55,7 @@ use crate::ui::dialog::RebasePopup;
 use crate::ui::dialog::RebaseSources;
 use crate::ui::dialog::describe_action;
 use crate::ui::dialog::new_insert;
+use crate::ui::dialog::push_menu;
 use crate::ui::styles::AnsiText;
 
 /// What an operation acts on: either the marked changes in the log, or a
@@ -164,10 +167,16 @@ pub enum Command {
         target: Head,
         target_mode: RebaseTarget,
     },
-    Push(PushTarget),
+    Push(Push),
     /// Preview the push actions and prompt the user with the preview
     /// to confirm whether to proceed.
-    PreviewPush(PushTarget),
+    PreviewPush(Push),
+    /// Open the push menu for `selected`, pushing to `remote`.
+    PushMenu {
+        anchor: Option<Position>,
+        selected: Head,
+        remote: String,
+    },
     Fetch {
         all_remotes: bool,
     },
@@ -221,7 +230,10 @@ impl Command {
     pub fn touches_the_repo(&self) -> bool {
         !matches!(
             self,
-            Command::Copy(_) | Command::SetSetting { .. } | Command::UnsetSetting { .. }
+            Command::Copy(_)
+                | Command::PushMenu { .. }
+                | Command::SetSetting { .. }
+                | Command::UnsetSetting { .. }
         )
     }
 
@@ -359,24 +371,33 @@ impl Command {
                     Err(err) => Ok(Some(refused("Rebase", err))),
                 }
             }
-            Command::Push(target) => Ok(Some(with_loader(
+            Command::Push(push) => Ok(Some(with_loader(
                 background_tasks,
                 "Pushing",
                 TaskSlot::GitPush,
-                move || Ok(new_commander().git_push(&target, false)?),
+                move || Ok(new_commander().git_push(&push, false)?),
             ))),
-            Command::PreviewPush(target) => {
-                let asked = target.clone();
+            Command::PreviewPush(push) => {
+                let asked = push.clone();
                 let popup = loader(
                     background_tasks,
                     "Previewing the push",
                     TaskSlot::GitPushDryRun,
-                    move || Ok(new_commander().git_push(&target, true)?),
+                    move || Ok(new_commander().git_push(&push, true)?),
                 )
                 .on_output(move |output| ask_push(asked, output));
 
                 Ok(Some(AppAction::SetPopup(Box::new(popup))))
             }
+            Command::PushMenu {
+                anchor,
+                selected,
+                remote,
+            } => Ok(Some(AppAction::SetPopup(Box::new(push_menu(
+                anchor,
+                &selected,
+                Some(remote),
+            )?)))),
             Command::Fetch { all_remotes } => Ok(Some(with_loader(
                 background_tasks,
                 "Fetching",
@@ -706,7 +727,7 @@ pub fn rebase(marked: &[CommitId], destination: &Head) -> Result<AppAction> {
 }
 
 /// Prompt whether to proceed with the push described by `preview`.
-fn ask_push(target: PushTarget, preview: String) -> AppAction {
+fn ask_push(push: Push, preview: String) -> AppAction {
     // Filter out the dry-run request notice to keep the preview clean.
     let preview: String = preview
         .lines()
@@ -736,14 +757,14 @@ fn ask_push(target: PushTarget, preview: String) -> AppAction {
     AppAction::SetPopup(Box::new(ConfirmPopup::new(
         "Push Preview",
         question,
-        AppAction::Run(Command::Push(target)),
+        AppAction::Run(Command::Push(push)),
     )))
 }
 
-/// Push according to `scope` relative to `selected`. Pushing new bookmarks
-/// requires naming them explicitly, as jj only tracks remote bookmarks when
-/// requested by name.
-pub fn push(selected: &Head, scope: PushScope) -> AppAction {
+/// Push according to `scope` relative to `selected`, to `remote` or to jj's
+/// default remote when [None]. Pushing new bookmarks requires naming them
+/// explicitly, as jj only tracks remote bookmarks when requested by name.
+pub fn push(selected: &Head, scope: PushScope, remote: Option<String>) -> AppAction {
     let revset = Revset::from(&selected.commit_id);
     let target = match scope {
         // Both scopes send the change's bookmarks;
@@ -768,19 +789,19 @@ pub fn push(selected: &Head, scope: PushScope) -> AppAction {
         PushScope::Change => PushTarget::Change(revset),
         // The name is the user's to give, so the push waits for it.
         PushScope::Named => {
-            return AppAction::SetPopup(Box::new(BookmarkNamePopup::new_push(revset)));
+            return AppAction::SetPopup(Box::new(BookmarkNamePopup::new_push(revset, remote)));
         }
     };
 
-    AppAction::Run(push_command(target))
+    AppAction::Run(push_command(Push { target, remote }))
 }
 
-/// Send `target`, previewing first unless confirmation is disabled.
-pub fn push_command(target: PushTarget) -> Command {
+/// Send `push`, previewing first unless confirmation is disabled.
+pub fn push_command(push: Push) -> Command {
     if get_env().jj_config.confirm_push() {
-        Command::PreviewPush(target)
+        Command::PreviewPush(push)
     } else {
-        Command::Push(target)
+        Command::Push(push)
     }
 }
 
@@ -1189,6 +1210,14 @@ mod tests {
     /// What jj answers when asked what a push would do
     const PREVIEW: &str = "Changes to push to origin:\n  Add bookmark here to 0123abcd\nDry-run requested, not pushing.\n";
 
+    /// A push of every tracked bookmark to the default remote
+    fn tracked() -> Push {
+        Push {
+            target: PushTarget::Tracked,
+            remote: None,
+        }
+    }
+
     #[test]
     fn a_change_marked_as_its_own_rebase_destination_is_turned_down() {
         set_test_env();
@@ -1251,7 +1280,7 @@ mod tests {
     fn the_push_question_holds_what_jj_said_the_push_would_do() {
         set_test_env();
 
-        let rows = rows(ask_push(PushTarget::Tracked, PREVIEW.to_owned()));
+        let rows = rows(ask_push(tracked(), PREVIEW.to_owned()));
 
         assert!(says_where(&rows, "Push Preview"), "{rows:?}");
         assert!(
@@ -1272,7 +1301,7 @@ mod tests {
         set_test_env();
 
         let rows = rows(ask_push(
-            PushTarget::Tracked,
+            tracked(),
             "Warning: No bookmarks point to the specified revisions: @\nNothing changed.\n"
                 .to_owned(),
         ));
@@ -1286,10 +1315,7 @@ mod tests {
         set_test_env();
 
         assert!(says(
-            ask_push(
-                PushTarget::Tracked,
-                "Dry-run requested, not pushing.\n".to_owned()
-            ),
+            ask_push(tracked(), "Dry-run requested, not pushing.\n".to_owned()),
             "jj said nothing"
         ));
     }

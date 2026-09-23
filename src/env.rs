@@ -165,6 +165,7 @@ pub struct JjConfig {
     pub blazingjj: JjConfigBlazingjj,
     pub ui: JjConfigUi,
     pub templates: JjConfigTemplates,
+    pub git: JjConfigGit,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -276,6 +277,13 @@ pub struct JjConfigTemplates {
     git_push_bookmark: Option<String>,
 }
 
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct JjConfigGit {
+    // Newer jj takes a list of remotes here, which must not keep the rest
+    // of the configuration from being read.
+    push: Option<toml::Value>,
+}
+
 impl JjConfig {
     pub fn diff_format(&self) -> DiffFormat {
         self.blazingjj
@@ -356,6 +364,11 @@ impl JjConfig {
             _ if self.ui.diff.tool.is_some() => Some(None),
             _ => None,
         }
+    }
+
+    /// The remote `git.push` names, when it names a single one.
+    pub fn git_push_remote(&self) -> Option<&str> {
+        self.git.push.as_ref()?.as_str()
     }
 
     /// Whether a push is to be shown and asked about before it is sent.
