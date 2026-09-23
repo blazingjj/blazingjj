@@ -112,7 +112,7 @@ pub fn log_context_menu(
     items.extend([
         (
             Line::raw("Push"),
-            AppAction::SetPopup(Box::new(push_menu(anchor, selected))),
+            AppAction::SetPopup(Box::new(push_menu(anchor, selected, None)?)),
         ),
         (
             Line::raw("Set bookmark"),

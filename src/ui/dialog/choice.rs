@@ -19,6 +19,7 @@ use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
 use ratatui::widgets::Borders;
 use ratatui::widgets::List;
+use ratatui::widgets::ListItem;
 use ratatui::widgets::ListState;
 use ratatui::widgets::Paragraph;
 
@@ -72,7 +73,8 @@ impl From<(Line<'static>, AppAction)> for Choice {
 
 pub struct ChoicePopup {
     title: &'static str,
-    items: Vec<Choice>,
+    /// The choices, with [None] for a blank row setting a group apart.
+    items: Vec<Option<Choice>>,
     /// Rows listed under the choices that cannot be picked
     footnote: Vec<Line<'static>>,
     list_state: ListState,
@@ -97,7 +99,7 @@ impl ChoicePopup {
         Self {
             hint: keybinds.scroll_hint("select"),
             title,
-            items: items.into_iter().map(Into::into).collect(),
+            items: items.into_iter().map(|item| Some(item.into())).collect(),
             footnote: vec![],
             list_state: ListState::default().with_selected(Some(0)),
             anchor,
@@ -105,6 +107,16 @@ impl ChoicePopup {
             list_area: Rect::ZERO,
             keybinds,
         }
+    }
+
+    /// Add `items` as a group of their own, below a blank row.
+    pub fn group(mut self, items: impl IntoIterator<Item: Into<Choice>>) -> Self {
+        let mut items = items.into_iter().map(|item| Some(item.into())).peekable();
+        if items.peek().is_some() && !self.items.is_empty() {
+            self.items.push(None);
+        }
+        self.items.extend(items);
+        self
     }
 
     pub fn footnote(mut self, footnote: Vec<Line<'static>>) -> Self {
@@ -116,28 +128,41 @@ impl ChoicePopup {
     /// for a list of what something can be where one of them is what it
     /// already is.
     pub fn selected(mut self, index: usize) -> Self {
-        if index < self.items.len() {
+        if self.is_choice(index) {
             self.list_state.select(Some(index));
         }
         self
     }
 
+    /// Whether the row at `index` is a choice rather than a blank row or
+    /// past the choices.
+    fn is_choice(&self, index: usize) -> bool {
+        matches!(self.items.get(index), Some(Some(_)))
+    }
+
     fn scroll(&mut self, delta: isize) {
-        self.list_state.select(Some(
-            self.list_state
-                .selected()
-                .map(|selected| selected.saturating_add_signed(delta))
-                .unwrap_or(0)
-                .min(self.items.len().saturating_sub(1)),
-        ));
+        let mut index = self
+            .list_state
+            .selected()
+            .map(|selected| selected.saturating_add_signed(delta))
+            .unwrap_or(0)
+            .min(self.items.len().saturating_sub(1));
+        // A blank row sits between two choices, never at either end.
+        if !self.is_choice(index) && index < self.items.len() {
+            index = if delta < 0 { index - 1 } else { index + 1 };
+        }
+        self.list_state.select(Some(index));
     }
 
     /// Every row the list holds, pickable or not
-    fn rows(&self) -> impl Iterator<Item = &Line<'static>> {
+    fn rows(&self) -> impl Iterator<Item = Line<'static>> {
         self.items
             .iter()
-            .map(|item| &item.label)
-            .chain(self.footnote.iter())
+            .map(|item| {
+                item.as_ref()
+                    .map_or_else(Line::default, |item| item.label.clone())
+            })
+            .chain(self.footnote.iter().cloned())
     }
 
     /// Where to put the popup in `area`: at its anchor or centered, and
@@ -147,7 +172,7 @@ impl ChoicePopup {
         let max = centered_rect(area, 50, 60);
         let [extra_width, extra_height] = chrome(block, max);
 
-        let rows_width = self.rows().map(Line::width).max().unwrap_or(0) as u16;
+        let rows_width = self.rows().map(|row| row.width()).max().unwrap_or(0) as u16;
         // The title sits in the top border, padded by a space on either
         // side and between the two corners.
         let title_width = Line::raw(self.title).width() as u16 + 4;
@@ -175,14 +200,15 @@ impl ChoicePopup {
         let row = (pos.y - self.list_area.y) as usize;
         let index = self.list_state.offset() + row;
 
-        (index < self.items.len()).then_some(index)
+        self.is_choice(index).then_some(index)
     }
 
     /// The choice `key` picks, if it picks one at all.
     fn item_with_key(&self, key: char) -> Option<usize> {
-        self.items
-            .iter()
-            .position(|item| item.key == Some(key.to_ascii_lowercase()))
+        self.items.iter().position(|item| {
+            item.as_ref()
+                .is_some_and(|item| item.key == Some(key.to_ascii_lowercase()))
+        })
     }
 
     fn close() -> Result<ComponentInputResult> {
@@ -194,7 +220,7 @@ impl ChoicePopup {
         let index = self
             .list_state
             .selected()
-            .filter(|index| *index < self.items.len());
+            .filter(|index| self.is_choice(*index));
         let Some(index) = index else {
             return Self::close();
         };
@@ -205,10 +231,12 @@ impl ChoicePopup {
     /// Take the popup down and raise what the choice at `index` stands
     /// for.
     fn pick(&mut self, index: usize) -> Result<ComponentInputResult> {
-        let chosen = self.items.remove(index).action;
+        let Some(chosen) = self.items.remove(index) else {
+            return Self::close();
+        };
 
         Ok(ComponentInputResult::HandledAction(AppAction::Multiple(
-            vec![AppAction::ClosePopup, chosen],
+            vec![AppAction::ClosePopup, chosen.action],
         )))
     }
 }
@@ -227,10 +255,18 @@ impl Component for ChoicePopup {
             .split(block.inner(area));
         self.list_area = chunks[0];
 
-        let rows: Vec<Line<'static>> = self.rows().cloned().collect();
-        let list = List::new(rows)
-            .scroll_padding(3)
-            .highlight_style(Role::Highlight.style());
+        // The highlight goes under the row rather than over it, so that a
+        // part of a label drawn on a background of its own keeps it.
+        let selected = self.list_state.selected();
+        let rows = self.rows().enumerate().map(|(index, row)| {
+            let item = ListItem::new(row);
+            if Some(index) == selected {
+                item.style(Role::Highlight.style())
+            } else {
+                item
+            }
+        });
+        let list = List::new(rows).scroll_padding(3);
 
         f.render_stateful_widget(list, chunks[0], &mut self.list_state);
 
@@ -465,6 +501,57 @@ pub(super) mod tests {
         assert_eq!(popup.popup_area, Rect::new(27, 15, 45, 9));
         // Inside the popup border and its padding, above the help line
         assert_eq!(popup.list_area, Rect::new(29, 16, 41, 5));
+    }
+
+    /// Two choices, then a third in a group of its own
+    fn grouped() -> ChoicePopup {
+        popup(2, 0).group([Choice::new(Line::raw("item 2"), action(2)).key('x')])
+    }
+
+    #[test]
+    fn scrolling_steps_over_the_blank_row_of_a_group() {
+        let mut popup = grouped();
+
+        press(&mut popup, KeyCode::Char('j'));
+        press(&mut popup, KeyCode::Char('j'));
+        assert_eq!(popup.list_state.selected(), Some(3));
+
+        press(&mut popup, KeyCode::Char('k'));
+        assert_eq!(popup.list_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn a_grouped_choice_is_raised_by_its_key_and_by_a_click() {
+        let mut popup = grouped();
+        assert_eq!(chosen(press(&mut popup, KeyCode::Char('x'))), Some(2));
+
+        let mut popup = grouped();
+        draw(&mut popup);
+        // The blank row, then the choice below it
+        assert!(matches!(
+            click(&mut popup, 30, 19),
+            ComponentInputResult::Handled
+        ));
+        assert_eq!(chosen(click(&mut popup, 30, 20)), Some(2));
+    }
+
+    #[test]
+    fn the_selected_row_leaves_a_background_of_the_labels_own_alone() {
+        use ratatui::style::Color;
+        use ratatui::style::Stylize;
+        use ratatui::text::Span;
+
+        let label = Line::from(vec![Span::raw("a "), Span::raw("b").on_cyan()]);
+        let mut popup = ChoicePopup::new(None, "Choose", [(label, action(0))]);
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).expect("the test backend");
+        terminal
+            .draw(|f| popup.draw(f, f.area()).expect("the popup draws"))
+            .expect("the frame is drawn");
+
+        let buffer = terminal.backend().buffer();
+        let Rect { x, y, .. } = popup.list_area;
+        assert_eq!(buffer[(x, y)].bg, Role::Highlight.style().bg.unwrap());
+        assert_eq!(buffer[(x + 2, y)].bg, Color::Cyan);
     }
 
     #[test]
