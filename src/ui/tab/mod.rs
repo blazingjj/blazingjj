@@ -9,6 +9,7 @@ pub mod log;
 mod op_log;
 mod settings;
 mod styles;
+mod workspaces;
 
 pub use bookmarks::BookmarksTab;
 pub use evolog::EvologTab;
@@ -18,3 +19,4 @@ pub use log::LogTab;
 pub use op_log::OpLogTab;
 pub use settings::SettingsTab;
 pub use styles::StylesTab;
+pub use workspaces::WorkspacesTab;

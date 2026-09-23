@@ -16,6 +16,7 @@ use crate::commander::ids::CommitId;
 use crate::commander::log::Head;
 use crate::commander::new_commander;
 use crate::commander::operation::Operation;
+use crate::commander::workspace::Workspace;
 use crate::env::JjConfig;
 use crate::ui::AppAction;
 use crate::ui::dialog::BookmarkNamePopup;
@@ -187,6 +188,34 @@ pub fn op_log_context_menu(anchor: Option<Position>, operation: &Operation) -> C
     ];
 
     ChoicePopup::new(anchor, "Operation actions", items)
+}
+
+/// The context menu for `selected`, which is None when the selection is
+/// not on a workspace there is anything to do to: then there is nothing
+/// but adding one.
+pub fn workspaces_context_menu(
+    anchor: Option<Position>,
+    selected: Option<&Workspace>,
+) -> ChoicePopup {
+    let mut items = vec![(Line::raw("Add workspace"), command::ask_add_workspace())];
+    if let Some(workspace) = selected {
+        items.extend([
+            (
+                Line::raw("Rename"),
+                command::ask_rename_workspace(workspace),
+            ),
+            (
+                Line::raw("Forget"),
+                command::ask_forget_workspace(workspace),
+            ),
+            (
+                Line::raw("View the change it holds in the log"),
+                AppAction::ViewLog(workspace.target.clone()),
+            ),
+        ]);
+    }
+
+    ChoicePopup::new(anchor, "Workspace actions", items)
 }
 
 /// The context menu for `selected`, the bookmark and the change its line
