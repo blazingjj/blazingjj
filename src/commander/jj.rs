@@ -50,7 +50,8 @@ pub enum RebaseTarget {
 /// What a push sends to the remote.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PushTarget {
-    /// `jj git push -r <rev>` — the tracked bookmarks on the change.
+    /// `jj git push -r <revset>` — the tracked bookmarks and tags on the
+    /// changes.
     Revision(Revset),
     /// `jj git push -b <name>` — these bookmarks, which jj starts
     /// tracking if the remote does not have them yet.
@@ -797,6 +798,52 @@ mod tests {
         let remotes = commander.git_remotes()?;
         assert_eq!(remotes, ["fork", "upstream"]);
         assert_eq!(commander.default_push_remote(&remotes), "origin");
+
+        Ok(())
+    }
+
+    #[test]
+    fn pushing_the_unpushed_ancestors_sends_the_bookmarks_on_them() -> Result<()> {
+        let upstream = TestRepo::new()?;
+        let test_repo = TestRepo::new()?;
+        let commander = &test_repo.commander;
+        let url = upstream.directory.path().to_string_lossy();
+        commander
+            .jj(["git", "remote", "add", "upstream", &url])
+            .run_void()?;
+
+        commander.jj(["commit", "-m", "base"]).run_void()?;
+        commander.jj(["describe", "-m", "child"]).run_void()?;
+        let child = commander.get_current_head()?;
+        let base = commander.get_commit_parent(&child.commit_id)?;
+        let to_upstream = |target| Push {
+            target,
+            remote: Some("upstream".to_owned()),
+        };
+        commander
+            .jj(["bookmark", "create", "a", "-r", base.commit_id.as_str()])
+            .run_void()?;
+        commander.git_push(
+            &to_upstream(PushTarget::Bookmarks(vec!["a".to_owned()])),
+            false,
+        )?;
+        // The push may have rewritten both, when configured to sign them.
+        let base = commander.get_head_latest(&base)?;
+        let child = commander.get_head_latest(&child)?;
+        commander
+            .jj(["bookmark", "move", "a", "--to", child.commit_id.as_str()])
+            .run_void()?;
+
+        let unpushed = |head: &Head| {
+            to_upstream(PushTarget::Revision(Revset::unpushed(
+                "upstream",
+                &head.commit_id,
+            )))
+        };
+        let preview = commander.git_push(&unpushed(&child), true)?;
+        assert!(preview.contains("bookmark: a [move forward"), "{preview}");
+        let preview = commander.git_push(&unpushed(&base), true)?;
+        assert!(preview.contains("Nothing changed"), "{preview}");
 
         Ok(())
     }

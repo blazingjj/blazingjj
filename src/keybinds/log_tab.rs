@@ -66,6 +66,9 @@ pub enum PushScope {
     Selected,
     /// Those on the selected change, tracking the new ones.
     SelectedWithNew,
+    /// Those on the selected change and its ancestors not on the remote
+    /// yet that are tracked, which is what jj pushes by default for `@`.
+    Ancestors,
     /// Every tracked bookmark.
     Tracked,
     /// Every bookmark, new ones included.
@@ -167,6 +170,7 @@ impl LogTabKeybinds {
             LogTabEvent::PushMenu => config.push_menu,
             LogTabEvent::Push(PushScope::Selected) => config.push,
             LogTabEvent::Push(PushScope::SelectedWithNew) => config.push_new,
+            LogTabEvent::Push(PushScope::Ancestors) => config.push_ancestors,
             LogTabEvent::Push(PushScope::Tracked) => config.push_all,
             LogTabEvent::Push(PushScope::All) => config.push_all_new,
             LogTabEvent::Push(PushScope::Change) => config.push_change,
@@ -208,6 +212,7 @@ impl LogTabKeybinds {
             LogTabEvent::PushMenu => "push-menu", Some(Section::BookmarksAndRemotes), "open the push menu",
             LogTabEvent::Push(PushScope::Selected) => "push", Some(Section::BookmarksAndRemotes), "git push",
             LogTabEvent::Push(PushScope::SelectedWithNew) => "push-new", Some(Section::BookmarksAndRemotes), "git push, tracking new bookmarks",
+            LogTabEvent::Push(PushScope::Ancestors) => "push-ancestors", Some(Section::BookmarksAndRemotes), "git push the tracked bookmarks and tags reaching the change",
             LogTabEvent::Push(PushScope::Tracked) => "push-all", Some(Section::BookmarksAndRemotes), "git push all tracked bookmarks",
             LogTabEvent::Push(PushScope::All) => "push-all-new", Some(Section::BookmarksAndRemotes), "git push all bookmarks, new ones included",
             LogTabEvent::Push(PushScope::Change) => "push-change", Some(Section::BookmarksAndRemotes), "git push a new bookmark named after the change",

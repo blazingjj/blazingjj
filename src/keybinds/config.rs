@@ -142,6 +142,7 @@ pub struct LogTabKeybindsConfig {
     pub push_menu: Option<Keybind>,
     pub push: Option<Keybind>,
     pub push_new: Option<Keybind>,
+    pub push_ancestors: Option<Keybind>,
     pub push_all: Option<Keybind>,
     pub push_all_new: Option<Keybind>,
     pub push_change: Option<Keybind>,
