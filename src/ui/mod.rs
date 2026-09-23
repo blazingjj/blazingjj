@@ -13,6 +13,7 @@ pub mod status_bar;
 pub mod styles;
 pub mod styles_tab;
 pub mod utils;
+pub mod workspaces_tab;
 use anyhow::Result;
 use ratatui::Frame;
 use ratatui::crossterm::event::Event;

@@ -274,6 +274,7 @@ pub struct JjConfigUiDiff {
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct JjConfigTemplates {
     git_push_bookmark: Option<String>,
+    workspace_list: Option<String>,
 }
 
 impl JjConfig {
@@ -400,6 +401,14 @@ impl JjConfig {
             .clone()
             .or(self.templates.git_push_bookmark.clone())
             .unwrap_or("'push-' ++ change_id.short()".to_string())
+    }
+
+    /// The template `jj workspace list` writes each workspace with.
+    pub fn workspace_list_template(&self) -> String {
+        self.templates
+            .workspace_list
+            .clone()
+            .unwrap_or("builtin_workspace_list".to_string())
     }
 
     pub fn describe_mode(&self) -> DescribeMode {

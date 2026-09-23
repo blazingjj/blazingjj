@@ -106,7 +106,7 @@ impl<T> LogOutput<T> {
 }
 
 #[derive(Error, Debug)]
-pub struct RecordParseError(String);
+pub struct RecordParseError(pub(super) String);
 
 impl Display for RecordParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
