@@ -320,6 +320,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   diffs it has shown are cached
 - The details panel now runs ahead of the selection, so moving onto one of the
   next few entries of the list shows their content without a wait
+- Taking the marked changes apart (`|` in the log tab) no longer blocks the UI
+  thread while jj rewrites them
 
 ### Fixed
 

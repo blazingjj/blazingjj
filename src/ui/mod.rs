@@ -1,5 +1,5 @@
 /*! All user interface components, such as tabs, panels and dialogs.
-*/
+ */
 pub mod bookmarks_tab;
 pub mod dialog;
 pub mod evolog_tab;

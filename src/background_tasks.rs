@@ -44,8 +44,11 @@ pub type TaskOutput = Result<String, TaskError>;
 /// Why a task has no output to deliver.
 #[derive(Debug, Error)]
 pub enum TaskError {
-    #[error(transparent)]
-    Command(#[from] CommandError),
+    /// What the command failed with, along with whatever the layers
+    /// above jj said they were doing at the time, reported as the whole
+    /// chain rather than as its last link.
+    #[error("{0:#}")]
+    Command(anyhow::Error),
     /// The task never got as far as running its command, so there is no
     /// status and no output to report.
     #[error("Failed to start background task: {0}")]
@@ -54,6 +57,21 @@ pub enum TaskError {
     /// to report.
     #[error("Background task panicked")]
     Panic,
+}
+
+/// A failed command is what a task has to report, whatever it was
+/// wrapped in. Written out rather than derived, `anyhow::Error` being no
+/// `std::error::Error` and so no `#[from]` field.
+impl From<anyhow::Error> for TaskError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Command(err)
+    }
+}
+
+impl From<CommandError> for TaskError {
+    fn from(err: CommandError) -> Self {
+        Self::Command(err.into())
+    }
 }
 
 /// What a task is for. A slot dedups submissions of work already in
@@ -76,6 +94,13 @@ pub enum TaskSlot {
     /// pushing, and so is not the work [TaskSlot::GitPush] stands for.
     GitPushDryRun,
     GitFetch,
+    /// A 'jj parallelize' of the changes it names, along with whether
+    /// the log handed over its marks for it. A write to the repo is a
+    /// slot of its own, a second write being another operation rather
+    /// than the same work asked for twice.
+    Parallelize {
+        marks_taken: bool,
+    },
     /// A read of what operation the repo is at.
     RepoOpId,
 }

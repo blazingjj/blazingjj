@@ -243,11 +243,23 @@ impl Command {
                 }
             }
             Command::Parallelize(acts_on) => {
+                // A `Command` is not `Send` -- its payloads include
+                // dialogs -- so the changes go to the task on their own.
+                // What is left to do is worked out once the result is
+                // back, the slot carrying what that takes.
                 let (changes, taken) = acts_on.into_parts();
-                match new_commander().run_parallelize(changes) {
-                    Ok(()) => Ok(Some(rewritten(taken))),
-                    Err(err) => Ok(Some(refused("Parallelize", err))),
-                }
+                background_tasks.submit_uninterruptible(
+                    TaskSlot::Parallelize {
+                        marks_taken: taken.is_some(),
+                    },
+                    move || {
+                        new_commander().run_parallelize(changes)?;
+                        Ok(String::new())
+                    },
+                );
+
+                // Nothing is put up while the task works.
+                Ok(None)
             }
             Command::Absorb(head) => match new_commander().run_absorb(&head.commit_id) {
                 Ok(()) => Ok(Some(show_change(new_commander().get_head_latest(&head)?))),
@@ -1074,6 +1086,16 @@ fn rewritten(taken: Option<AppAction>) -> AppAction {
     AppAction::Multiple(actions)
 }
 
+/// What parallelizing leaves the app to do once it has gone through, or
+/// what jj said when it would not do it. The operation runs with nothing
+/// up while it does, so seeing it through is the app's own.
+pub fn parallelize_done(output: TaskOutput, marks_taken: bool) -> AppAction {
+    match output {
+        Ok(_) => rewritten(marks_taken.then_some(AppAction::ClearLogMarks)),
+        Err(err) => refused("Parallelize", err),
+    }
+}
+
 /// Put `change` up wherever a change shows, the repo having moved under
 /// whatever else is on screen.
 fn show_change(change: Head) -> AppAction {
@@ -1155,10 +1177,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc;
+
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
     use super::*;
+    use crate::commander::CommandError;
     use crate::commander::ids::ChangeId;
     use crate::env::set_test_env;
 
@@ -1170,6 +1195,14 @@ mod tests {
             immutable,
             local_bookmarks: Vec::new(),
         }
+    }
+
+    /// Where a command submits its work, with nothing collecting what
+    /// its task delivers: a test asks what the operation leaves to do.
+    fn background_tasks() -> BackgroundTasks {
+        let (sender, _receiver) = mpsc::channel();
+
+        BackgroundTasks::new(sender)
     }
 
     /// What the popup the action puts up says, as one string per row.
@@ -1191,6 +1224,19 @@ mod tests {
                     .collect::<String>()
             })
             .collect()
+    }
+
+    /// Every action an action comes to, one by one, however they nest.
+    fn actions_of(action: &AppAction) -> Vec<&AppAction> {
+        match action {
+            AppAction::Multiple(actions) => actions.iter().flat_map(actions_of).collect(),
+            action => vec![action],
+        }
+    }
+
+    /// Whether an action comes to one `wanted` accepts, at any depth.
+    fn has(action: &AppAction, wanted: impl Fn(&AppAction) -> bool) -> bool {
+        actions_of(action).into_iter().any(wanted)
     }
 
     fn says(action: AppAction, text: &str) -> bool {
@@ -1274,6 +1320,58 @@ mod tests {
             parallelize(&two),
             AppAction::Run(Command::Parallelize(_))
         ));
+    }
+
+    /// Taking the marked changes apart rewrites them, so every tab is
+    /// out of date once it has gone through, marks or no marks.
+    #[test]
+    fn parallelizing_leaves_the_tabs_stale_and_the_marks_taken() {
+        let done = parallelize_done(Ok(String::new()), true);
+
+        assert!(has(&done, |it| matches!(it, AppAction::MarkTabsStale)));
+        assert!(has(&done, |it| matches!(it, AppAction::ClearLogMarks)));
+
+        // Nothing was handed over, so nothing is done with.
+        let nothing_taken = parallelize_done(Ok(String::new()), false);
+
+        assert!(has(&nothing_taken, |it| matches!(
+            it,
+            AppAction::MarkTabsStale
+        )));
+        assert!(!has(&nothing_taken, |it| matches!(
+            it,
+            AppAction::ClearLogMarks
+        )));
+    }
+
+    /// A parallelize jj turns down says what jj said, and leaves the log
+    /// its marks to try again with.
+    #[test]
+    fn a_turned_down_parallelize_says_what_jj_said() {
+        let refused = parallelize_done(
+            Err(CommandError::Status("no such revision".to_owned(), Some(1)).into()),
+            true,
+        );
+
+        assert!(!has(&refused, |it| matches!(it, AppAction::MarkTabsStale)));
+        assert!(!has(&refused, |it| matches!(it, AppAction::ClearLogMarks)));
+        assert!(says(refused, "no such revision"));
+    }
+
+    /// Parallelizing is handed to a task rather than run where it stands,
+    /// and puts nothing up while that task works.
+    #[test]
+    fn parallelizing_runs_in_the_background_with_nothing_up() {
+        set_test_env();
+
+        let background_tasks = background_tasks();
+        // `none()` is a revset jj can only do nothing with.
+        let asked = Command::Parallelize(ActsOn::marked(Revset::expression("none()")))
+            .run(&background_tasks)
+            .expect("the command asks for the work");
+
+        assert!(asked.is_none(), "nothing is put up while it runs");
+        assert!(background_tasks.is_running(&TaskSlot::Parallelize { marks_taken: true }));
     }
 
     #[test]

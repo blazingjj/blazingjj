@@ -22,6 +22,7 @@ use tracing::trace;
 use tracing::warn;
 
 use crate::app::command::ask_update_stale_workspace;
+use crate::app::command::parallelize_done;
 use crate::app::command::refuse_outdated_view;
 use crate::app::repo_watch::Check;
 use crate::app::repo_watch::Moment;
@@ -831,6 +832,13 @@ impl<'a> App<'a> {
             TaskSlot::RepoOpId => {
                 self.repo_checked(result.output)?;
                 return Ok(Handled::Nothing);
+            }
+            // The operation puts nothing up while it runs, so seeing it
+            // through is the app's own.
+            TaskSlot::Parallelize { marks_taken } => {
+                let action = parallelize_done(result.output, marks_taken);
+                self.handle_action(action)?;
+                return Ok(Handled::Redraw);
             }
             TaskSlot::CommitShow(tab, _)
             | TaskSlot::FileDiff(tab, _)
