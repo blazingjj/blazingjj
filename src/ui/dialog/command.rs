@@ -1,3 +1,7 @@
+/*!
+The [CommandPopup] is used for manually entering a jj command to execute.
+*/
+
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::event::KeyEventKind;
