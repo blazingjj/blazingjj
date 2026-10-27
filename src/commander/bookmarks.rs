@@ -4,7 +4,7 @@
 This module has features to parse the `jj bookmark list` output. The
 other jj bookmark commands are defined in module [jj][super::jj].
 
-It is mostly used in the [bookmarks_tab][crate::ui::bookmarks_tab] module.
+It is mostly used in the [bookmarks tab][crate::ui::tab::bookmarks] module.
 */
 use std::collections::HashMap;
 use std::fmt::Display;
