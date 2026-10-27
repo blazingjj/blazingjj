@@ -1,9 +1,16 @@
 /*!
 The [CommandPopup] is used for manually entering a jj command to execute.
+
+It is possible to store a command history, so up and down arrows can be
+used to pick a previously entered command.
 */
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use anyhow::Result;
 use ratatui::crossterm::event::Event;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::crossterm::event::KeyEventKind;
 use ratatui::layout::Alignment;
 use ratatui::layout::Constraint;
@@ -53,15 +60,22 @@ pub struct CommandPopup<'a> {
     /// placeholders of the command stand for.
     selection: Selection,
     keybinds: PopupKeybinds,
+    /// Previous commands
+    history: Rc<RefCell<Vec<String>>>,
+    /// Current history index
+    history_index: usize,
 }
 
 impl CommandPopup<'_> {
-    pub fn new(mode: CommandMode, selection: Selection) -> Self {
+    pub fn new(mode: CommandMode, selection: Selection, history: Rc<RefCell<Vec<String>>>) -> Self {
+        let history_index = history.borrow().len();
         Self {
             mode,
             command_textarea: TextArea::new(vec![]),
             selection,
             keybinds: PopupKeybinds::text_line(),
+            history,
+            history_index,
         }
     }
 
@@ -74,6 +88,44 @@ impl CommandPopup<'_> {
         };
 
         command.to_owned()
+    }
+
+    /// Process history handling keys. Return true if event was handled
+    fn history_input(&mut self, event: Event) -> bool {
+        let Event::Key(key) = event else {
+            return false;
+        };
+        fn set_text(textarea: &mut TextArea, history: &[String], index: usize) {
+            textarea.clear();
+            if index >= history.len() {
+                return;
+            }
+            textarea.insert_str(history[index].clone());
+        }
+
+        let history = self.history.borrow();
+        match key.code {
+            KeyCode::Up => {
+                if self.history_index > 0 {
+                    self.history_index -= 1;
+                    set_text(&mut self.command_textarea, &history, self.history_index);
+                }
+                true
+            }
+            KeyCode::Down => {
+                if self.history_index < history.len() {
+                    self.history_index += 1;
+                    set_text(&mut self.command_textarea, &history, self.history_index);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Append command to command history
+    fn history_accumulate(&mut self, command: String) {
+        self.history.borrow_mut().push(command);
     }
 }
 
@@ -240,6 +292,8 @@ impl Component for CommandPopup<'_> {
                         return cancel;
                     }
 
+                    self.history_accumulate(command.clone());
+
                     let typed = format!("jj {command}");
                     let args = match split(&command) {
                         Ok(args) => args,
@@ -277,6 +331,9 @@ impl Component for CommandPopup<'_> {
                 _ => {}
             }
         };
+        if self.history_input(event.clone()) {
+            return Ok(ComponentInputResult::Handled);
+        }
         self.command_textarea.input(event);
         Ok(ComponentInputResult::Handled)
     }
@@ -292,6 +349,8 @@ mod tests {
             command_textarea: TextArea::new(vec![typed.to_owned()]),
             selection: Selection::default(),
             keybinds: PopupKeybinds::text_line(),
+            history: Rc::new(RefCell::new(vec![])),
+            history_index: 0,
         }
         .command()
     }
