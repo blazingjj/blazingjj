@@ -1,5 +1,5 @@
 /*! Where a new change goes relative to the one it is created from.
-*/
+ */
 
 use ratatui::text::Line;
 
