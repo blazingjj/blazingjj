@@ -28,11 +28,11 @@ use crate::app::TabId;
 use crate::commander::CommandError;
 use crate::commander::cancel::CancelToken;
 use crate::event::AppEvent;
-use crate::ui::files_tab::FileDiffKey;
 use crate::ui::panel::CommitShowKey;
 use crate::ui::panel::EvologShowKey;
 use crate::ui::panel::OpShowKey;
 use crate::ui::panel::OutputRequest;
+use crate::ui::tab::files::FileDiffKey;
 
 /// How many tasks may run at once. A submission beyond this makes room by
 /// killing the ones that have been running longest.
