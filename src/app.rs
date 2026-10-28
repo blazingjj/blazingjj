@@ -2,6 +2,8 @@ pub mod command;
 mod repo_watch;
 
 use core::fmt;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -274,6 +276,9 @@ pub struct App<'a> {
     /// as the repo names it.
     workspace: Option<String>,
 
+    /// Command history
+    command_history: Rc<RefCell<Vec<String>>>,
+
     // event handling
     running: Arc<AtomicBool>,
     /// Counts the clicks of the mouse events on their way to the
@@ -313,6 +318,8 @@ impl<'a> App<'a> {
             stale_workspace: false,
             pending_interactive: None,
             workspace: read_workspace(),
+
+            command_history: RefCell::new(vec![]).into(),
 
             running,
             clicks: Clicks::default(),
@@ -1025,6 +1032,7 @@ impl<'a> App<'a> {
                                 self.popup = Some(Box::new(CommandPopup::new(
                                     CommandMode::Capture,
                                     selection,
+                                    self.command_history.clone(),
                                 )));
                             }
                             GlobalEvent::InteractiveCommandPopup => {
@@ -1032,6 +1040,7 @@ impl<'a> App<'a> {
                                 self.popup = Some(Box::new(CommandPopup::new(
                                     CommandMode::Interactive,
                                     selection,
+                                    self.command_history.clone(),
                                 )));
                             }
                             GlobalEvent::ToggleLayout => self.toggle_layout(),

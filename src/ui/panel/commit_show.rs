@@ -1,5 +1,5 @@
 /*! What 'jj show' says about a change, as a details panel shows it.
-*/
+ */
 
 use super::output_cache::OutputKey;
 use super::output_cache::OutputRequest;

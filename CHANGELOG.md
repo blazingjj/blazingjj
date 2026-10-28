@@ -260,6 +260,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that commands wanting an editor, such as `describe` or `split`, can be
   used; running one with `:` offers to run it in the terminal rather than
   hanging
+- The command popup can recall previous commands via the up and down arrow.
 
 ### Changed
 
