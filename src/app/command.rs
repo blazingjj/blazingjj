@@ -1,9 +1,9 @@
-/*! The operations against the repo, each naming both what to do and
-what to do it to, so that whatever asks for one does not have to be the
-component that holds the selection it acts on.
+/*! Repository operations, each specifying both the action and its target,
+so that the component requesting the operation does not need to hold
+the selection it acts on.
 
-Only the app runs them. What it is to show once one is done comes back
-as an [AppAction].
+Only the application runs them. The UI action to display once completed
+is returned as an [AppAction].
 */
 
 use std::fmt::Display;
@@ -55,10 +55,9 @@ use crate::ui::dialog::describe_action;
 use crate::ui::dialog::new_insert;
 use crate::ui::styles::AnsiText;
 
-/// What an operation acts on: the changes the log has marked, or what
-/// it falls back to when none are. Which of the two it is decides
-/// whether the log is done marking them once the operation has gone
-/// through.
+/// What an operation acts on: either the marked changes in the log, or a
+/// fallback when none are marked. This distinction determines whether the log
+/// clears its marks once the operation completes.
 #[derive(Clone)]
 pub struct ActsOn {
     changes: Revset,
@@ -95,15 +94,15 @@ impl ActsOn {
     }
 }
 
-/// What the log is to do once an operation that was handed the marked
-/// changes has gone through: it is done marking them.
+/// Specifies what the log should do once an operation using marked changes
+/// has completed: it clears the marks.
 fn marks_taken(marked: bool) -> Option<AppAction> {
     marked.then_some(AppAction::ClearLogMarks)
 }
 
-/// Which version of a file an editor is opened on. The editor edits the
-/// working copy either way, so reaching another change's version of a
-/// file means moving the working copy there first.
+/// Specifies which version of a file an editor should open. Since the editor
+/// always modifies the working copy, accessing another change's version of a
+/// file requires moving the working copy there first.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum OpenAt {
     /// The file as the working copy has it.
@@ -118,21 +117,21 @@ pub enum OpenAt {
     AtRevision(String),
 }
 
-/// The change the set-bookmark dialog was opened for, which is all it
-/// takes to put it back up.
+/// The change for which the set-bookmark dialog was opened, which contains
+/// everything needed to restore it.
 pub struct BookmarkSetDialog {
     pub config: JjConfig,
     pub change_id: Option<ChangeId>,
 }
 
 pub enum Command {
-    /// Put text on the system clipboard.
+    /// Place text onto the system clipboard.
     Copy(String),
     Duplicate(ActsOn),
     Parallelize(ActsOn),
     Absorb(Head),
-    /// Create a change from what `acts_on` names, put where `insert`
-    /// says.
+    /// Create a change from the target specified by `acts_on`,
+    /// inserted where `insert` dictates.
     New {
         acts_on: ActsOn,
         insert: NewInsertMode,
@@ -149,8 +148,8 @@ pub enum Command {
         revset: Revset,
         ignore_immutable: bool,
     },
-    /// Abandon the marked changes, or the selected one when none are
-    /// marked, moving the selection out of them.
+    /// Abandon the marked changes, or the selected one if none are marked,
+    /// moving the selection away from them.
     Abandon {
         marked: Vec<CommitId>,
         selected: Head,
@@ -166,20 +165,19 @@ pub enum Command {
         target_mode: RebaseTarget,
     },
     Push(PushTarget),
-    /// Ask what the push would do, and put the answer as the question
-    /// whether to go ahead with it.
+    /// Preview the push actions and prompt the user with the preview
+    /// to confirm whether to proceed.
     PreviewPush(PushTarget),
     Fetch {
         all_remotes: bool,
     },
-    /// Take the repo back to the state this operation left it in.
+    /// Restore the repository to the state it was in after this operation.
     RestoreOperation(OperationId),
-    /// Take back this one operation, leaving what came after it in place.
+    /// Revert this single operation, leaving subsequent operations intact.
     RevertOperation(OperationId),
     RestoreFile(File),
     UntrackFile(File),
-    /// Open the file in the configured editor, on the version of it
-    /// `at` names.
+    /// Open the file in the configured editor at the version specified by `at`.
     OpenFile {
         file: File,
         at: OpenAt,
@@ -194,33 +192,32 @@ pub enum Command {
     SetBookmark {
         name: String,
         commit_id: CommitId,
-        /// What the set-bookmark dialog needs to come back up when the
-        /// name is refused, for the asking that goes through it.
+        /// Information needed to restore the set-bookmark dialog
+        /// if the name is rejected.
         dialog: Option<Box<BookmarkSetDialog>>,
     },
     DeleteBookmark(String),
     ForgetBookmark(String),
     TrackBookmark(Bookmark),
     UntrackBookmark(Bookmark),
-    /// Set an option in the user's config, `value` being the TOML
-    /// expression to set it to.
+    /// Set a user configuration option, with `value` as the TOML expression.
     SetSetting {
         key: String,
         value: String,
     },
-    /// Take an option out of the user's config, leaving whatever the
-    /// rest of the configuration says.
+    /// Remove an option from the user's configuration,
+    /// falling back to defaults.
     UnsetSetting {
         key: String,
     },
-    /// Update the working copy jj refuses to read the repo until it is
-    /// updated.
+    /// Update the working copy; jj refuses to read the repository until
+    /// it is updated.
     UpdateStaleWorkspace,
 }
 
 impl Command {
-    /// Whether the operation goes to the repo, so that a view the repo
-    /// has moved on from is a view it would be carried out against.
+    /// Whether the operation interacts with the repository, meaning an outdated
+    /// view would still be valid when executing it.
     pub fn touches_the_repo(&self) -> bool {
         !matches!(
             self,
@@ -258,8 +255,8 @@ impl Command {
                 insert,
                 describe,
             } => {
-                // Inserting can hit immutable changes, so the changes stay
-                // marked for another attempt, which has to ask for them again.
+                // Inserting can hit immutable changes, so the changes remain
+                // marked for another attempt.
                 let (changes, taken) = acts_on.into_parts();
                 if let Err(err) = new_commander().run_new_with_insert(changes, insert) {
                     return Ok(Some(refused("New", err)));
@@ -279,13 +276,12 @@ impl Command {
                 target,
                 ignore_immutable,
             } => {
-                // Sources of its own are the marked changes, which the
-                // log is done marking once they are folded in.
+                // Sources here are the marked changes, which the log stops
+                // marking once they are folded in.
                 let marked = from.is_some();
                 match new_commander().run_squash(from, &target.commit_id, ignore_immutable) {
-                    // Folding the working copy in moves it, so the view
-                    // follows it there; folding the marked changes in
-                    // leaves it where it was.
+                    // Folding the working copy moves it, so the view follows it;
+                    // folding marked changes leaves the view where it was.
                     Ok(()) if marked => Ok(Some(rewritten(marks_taken(marked)))),
                     Ok(()) => Ok(Some(show_change(new_commander().get_current_head()?))),
                     Err(err) => Ok(Some(refused("Squash", err))),
@@ -307,9 +303,9 @@ impl Command {
                     ),
                 };
 
-                // A tab following a change that is gone falls back to the
-                // working copy, which may be nowhere near what was being
-                // read, so take the selection to the parent instead.
+                // A tab following a deleted change falls back to the working
+                // copy, which might be unrelated to what was being read, so
+                // move the selection to the parent instead.
                 let mut moved_to = selected.clone();
                 while abandoned.contains(&moved_to.commit_id) {
                     moved_to = new_commander().get_commit_parent(&moved_to.commit_id)?;
@@ -337,9 +333,8 @@ impl Command {
                         AppAction::ViewLog(new_commander().get_head_latest(&head)?),
                         AppAction::MarkTabsStale,
                     ]))),
-                    // Put the editor back with what was written, since a
-                    // refused description is one to correct rather than
-                    // one to lose.
+                    // Restore the editor with the written description so user
+                    // input is not lost when rejected.
                     Err(err) => Ok(Some(AppAction::SetPopup(Box::new(DescribePopup::refused(
                         head,
                         description,
@@ -389,8 +384,8 @@ impl Command {
                 move || Ok(new_commander().git_fetch(all_remotes)?),
             ))),
             Command::UpdateStaleWorkspace => match new_commander().update_stale_workspace() {
-                // The working copy is where the repo says it is now,
-                // which is not where any tab last read it.
+                // The working copy is now where the repository dictates,
+                // which may differ from where tabs last read it.
                 Ok(_) => Ok(Some(repo_moved()?)),
                 Err(err) => Ok(Some(refused("Update", err))),
             },
@@ -406,8 +401,7 @@ impl Command {
                 Ok(_) => Ok(Some(show_working_copy_files()?)),
                 Err(err) => Ok(Some(refused("Restore", err))),
             },
-            // This works even for deleted files, as jj does not fail on
-            // those.
+            // This works even for deleted files, as jj handles them successfully.
             Command::UntrackFile(file) => match new_commander().untrack_file(&file) {
                 Ok(_) => Ok(Some(show_working_copy_files()?)),
                 Err(err) => Ok(Some(refused("Untrack", err))),
@@ -418,9 +412,8 @@ impl Command {
                     AppAction::ViewBookmark(name),
                     AppAction::MarkTabsStale,
                 ]))),
-                // Put the question back with what was typed, since a
-                // refused name is usually one to correct rather than one
-                // to give up on.
+                // Reopen the prompt with the typed name so the user can
+                // correct it.
                 Err(err) => Ok(Some(AppAction::SetPopup(Box::new(
                     BookmarkNamePopup::refused(BookmarkNameMode::Create, name, err),
                 )))),
@@ -446,9 +439,7 @@ impl Command {
                 dialog,
             } => match new_commander().set_bookmark_commit(&name, &commit_id) {
                 Ok(()) => Ok(Some(AppAction::MarkTabsStale)),
-                // Put the question back with the name that was refused,
-                // which is usually one to correct rather than one to
-                // give up on.
+                // Reopen the prompt with the rejected name for correction.
                 Err(err) => Ok(Some(match dialog {
                     Some(dialog) => AppAction::SetPopup(Box::new(BookmarkSetPopup::refused(
                         dialog.config,
@@ -492,14 +483,12 @@ impl Command {
     }
 }
 
-/// Open `file` in the configured editor, having taken the working copy
-/// to where `at` says the version to open is.
+/// Open `file` in the configured editor after moving the working copy
+/// to the location specified by `at`.
 fn open_file(file: &File, at: &OpenAt) -> Result<Option<AppAction>> {
     let Some(path) = file.path.as_deref() else {
         return Ok(Some(message("Open", "The line names no file to open.")));
     };
-    // Whatever is in the way of opening the file is in the way before the
-    // working copy has been taken anywhere for it.
     let Some(editor) = get_env().jj_config.editor() else {
         return Ok(Some(message(
             "Open",
@@ -520,8 +509,8 @@ fn open_file(file: &File, at: &OpenAt) -> Result<Option<AppAction>> {
                 Err(err) => return Ok(Some(refused("New", err))),
             }
         }
-        // The editor reads the revision itself, so the working copy
-        // stays where it is and the URL goes where the file would.
+        // The editor reads the revision directly, so the working copy
+        // stays put and the URL points to the file location.
         OpenAt::AtRevision(url) => (None, url.as_str()),
     };
 
@@ -535,9 +524,9 @@ fn open_file(file: &File, at: &OpenAt) -> Result<Option<AppAction>> {
     })
 }
 
-/// Open `target`, a file of the working copy or a URL naming one at a
-/// revision, in `editor`, either with the terminal handed over to it or
-/// left running on its own, as the configuration says.
+/// Open `target` (a working copy file or a revision URL) in `editor`,
+/// either running interactively in the terminal or detached, according
+/// to configuration.
 fn open_in_editor(editor: &Editor, target: &str) -> Option<AppAction> {
     let env = get_env();
     let program = Program::new(editor.program(), env.root.clone()).args(editor.args(target));
@@ -545,8 +534,8 @@ fn open_in_editor(editor: &Editor, target: &str) -> Option<AppAction> {
     match env.jj_config.editor_mode() {
         EditorMode::Terminal => Some(AppAction::RunInteractive(Interactive {
             program,
-            // The editor leaves the file it edited on the screen, which
-            // is not something to read once it is closed.
+            // The editor leaves the edited file on the screen, which
+            // doesn't need to persist once closed.
             hold_screen: false,
             on_success: Vec::new(),
         })),
@@ -557,11 +546,9 @@ fn open_in_editor(editor: &Editor, target: &str) -> Option<AppAction> {
     }
 }
 
-/// Asking where to open `file`, which is shown at `head`, named
-/// `revision` to an editor, rather than in the working copy: what is on
-/// disk now, what that change has, which means taking the working copy
-/// there first, or, for an editor that reads a revision itself, the file
-/// at `revision`. Only the versions there are to open are offered.
+/// Prompt the user where to open `file` (associated with `head`, identified by
+/// `revision`), offering options such as the working copy version, the change
+/// version (checking it out first), or directly via an editor URL if supported.
 pub fn ask_open_file(config: JjConfig, head: &Head, revision: &str, file: &File) -> AppAction {
     let open = |at| {
         AppAction::Run(Command::OpenFile {
@@ -574,14 +561,13 @@ pub fn ask_open_file(config: JjConfig, head: &Head, revision: &str, file: &File)
         return message("Open", "The line names no file to open.");
     };
 
-    // The change has no version of a file it deletes, however the tab
+    // A deleted file has no version in the change, regardless of how the tab
     // shows it.
     let at_change = file.diff_type != Some(DiffType::Deleted);
 
     let mut items = Vec::new();
-    // An editor that reads the revision itself gets at the file without
-    // anything being checked out, which makes it the first thing to
-    // offer wherever it is configured.
+    // An editor that reads revisions directly accesses the file without
+    // checking anything out, so prioritize it if configured.
     if at_change && let Some(url) = config.editor_url(revision, path) {
         items.push((
             Line::raw("Open the file at this revision"),
@@ -614,9 +600,9 @@ pub fn ask_open_file(config: JjConfig, head: &Head, revision: &str, file: &File)
     AppAction::SetPopup(Box::new(ChoicePopup::new(None, "Open", items)))
 }
 
-/// Whether the working copy has `path`. A file another change added or
-/// deleted is not there to open, however the change shows it. A symlink
-/// is there whether or not what it points at is.
+/// Check whether `path` exists in the working copy. Files added or deleted
+/// by other changes aren't present here, whereas symlinks exist regardless
+/// of their target's presence.
 fn in_working_copy(path: &str) -> bool {
     Path::new(&get_env().root)
         .join(path)
@@ -624,8 +610,8 @@ fn in_working_copy(path: &str) -> bool {
         .is_ok()
 }
 
-/// Asking for a new change from the marked changes, or from `selected`
-/// when none are marked.
+/// Prompt to create a new change from the marked changes, or from `selected`
+/// if none are marked.
 pub fn ask_new_change_from_selection(
     selected: &Head,
     marked: &[CommitId],
@@ -641,7 +627,7 @@ pub fn ask_new_change_from_selection(
     ask_new_change(acts_on, &target, describe)
 }
 
-/// Asking for a new change from the one a bookmark points at.
+/// Prompt to create a new change from the commit pointed to by a bookmark.
 pub fn ask_new_change_from_bookmark(bookmark: &Bookmark, head: &Head, describe: bool) -> AppAction {
     ask_new_change(
         ActsOn::change(&head.commit_id),
@@ -650,9 +636,7 @@ pub fn ask_new_change_from_bookmark(bookmark: &Bookmark, head: &Head, describe: 
     )
 }
 
-/// Asking to see the files of one version of `change`. The newest
-/// version is the change as it stands, so the files tab may as well keep
-/// up with it.
+/// View files for a specific version of `change`.
 pub fn show_version_files(version: &Head, change: &Head) -> AppAction {
     if version.commit_id == change.commit_id {
         AppAction::ViewFiles(version.clone())
@@ -661,8 +645,8 @@ pub fn show_version_files(version: &Head, change: &Head) -> AppAction {
     }
 }
 
-/// Asking to describe `head`: the refusal when it is immutable, or the
-/// editor with what it says now.
+/// Prompt to describe `head`, returning an error if immutable or opening
+/// the editor with the current description.
 pub fn describe(head: &Head) -> Result<AppAction> {
     if head.immutable {
         return Ok(message(
@@ -680,8 +664,8 @@ pub fn describe(head: &Head) -> Result<AppAction> {
     })
 }
 
-/// Parallelizing the marked changes, or the refusal when there are
-/// fewer than two of them to take apart from one another.
+/// Parallelize the marked changes.
+/// if fewer than two are marked, return an error.
 pub fn parallelize(marked: &[CommitId]) -> AppAction {
     if marked.len() < 2 {
         return message(
@@ -694,11 +678,10 @@ pub fn parallelize(marked: &[CommitId]) -> AppAction {
     AppAction::Run(Command::Parallelize(ActsOn::marked(changes)))
 }
 
-/// Asking to rebase `sources`, or the working copy commit when none are
-/// marked, onto `destination`.
+/// Prompt to rebase `marked` onto `destination`.
+/// Rebase the working copy if 'marked' is empty.
 pub fn rebase(marked: &[CommitId], destination: &Head) -> Result<AppAction> {
-    // Marking the change being moved onto says to move the others onto
-    // it, there being nowhere else it could go.
+    // If the destination is among the marked sources, exclude it to avoid rebasing onto itself.
     let sources: Vec<_> = marked
         .iter()
         .filter(|source| **source != destination.commit_id)
@@ -722,11 +705,9 @@ pub fn rebase(marked: &[CommitId], destination: &Head) -> Result<AppAction> {
     ))))
 }
 
-/// Asking whether to send the push `preview` describes, that being what
-/// jj answered when asked what it would do.
+/// Prompt whether to proceed with the push described by `preview`.
 fn ask_push(target: PushTarget, preview: String) -> AppAction {
-    // That the push has not happened is what the question is about, so
-    // jj saying so as well only makes the answer harder to find.
+    // Filter out the dry-run request notice to keep the preview clean.
     let preview: String = preview
         .lines()
         .filter(|line| !line.contains("Dry-run requested"))
@@ -734,17 +715,15 @@ fn ask_push(target: PushTarget, preview: String) -> AppAction {
     if preview.trim().is_empty() {
         return message("Push", "jj said nothing about what this push would do");
     }
-    // A push with nothing to send is nothing to answer for, so it is
-    // reported rather than asked about. Whatever jj had to say about why
-    // stands as the report.
+    // If there is nothing to change, report it as a message instead of
+    // asking for confirmation.
     if preview.contains("Nothing changed") {
         return AppAction::SetPopup(Box::new(
             MessagePopup::new("Push", preview).text_align(Alignment::Left),
         ));
     }
 
-    // The preview is laid out as jj wrote it, colors and indentation
-    // included.
+    // Preserve the layout, colors, and indentation of the jj output.
     let text = preview.owned_ansi_text().ok();
     let preview = text.unwrap_or_else(|| Text::raw(preview));
 
@@ -761,14 +740,14 @@ fn ask_push(target: PushTarget, preview: String) -> AppAction {
     )))
 }
 
-/// Pushing what `scope` says of `selected`. Pushing the new bookmarks of
-/// a change means naming them, as jj only tracks a bookmark the remote
-/// does not have yet when it is asked for by name.
+/// Push according to `scope` relative to `selected`. Pushing new bookmarks
+/// requires naming them explicitly, as jj only tracks remote bookmarks when
+/// requested by name.
 pub fn push(selected: &Head, scope: PushScope) -> AppAction {
     let revset = Revset::from(&selected.commit_id);
     let target = match scope {
-        // Both of these send the bookmarks the change has, so neither
-        // has anything to send when it has none.
+        // Both scopes send the change's bookmarks;
+        // neither has anything to send if none exist.
         PushScope::Selected | PushScope::SelectedWithNew => {
             let bookmarks = match new_commander().get_local_bookmarks(&revset) {
                 Ok(bookmarks) => bookmarks,
@@ -796,8 +775,7 @@ pub fn push(selected: &Head, scope: PushScope) -> AppAction {
     AppAction::Run(push_command(target))
 }
 
-/// Sending `target`, shown and asked about first unless that is turned
-/// off.
+/// Send `target`, previewing first unless confirmation is disabled.
 pub fn push_command(target: PushTarget) -> Command {
     if get_env().jj_config.confirm_push() {
         Command::PreviewPush(target)
@@ -806,7 +784,7 @@ pub fn push_command(target: PushTarget) -> Command {
     }
 }
 
-/// Asking to put a bookmark on `head`.
+/// Prompt to create or move a bookmark on `head`.
 pub fn set_bookmark(config: JjConfig, head: &Head) -> AppAction {
     AppAction::SetPopup(Box::new(BookmarkSetPopup::new(
         config,
@@ -815,8 +793,8 @@ pub fn set_bookmark(config: JjConfig, head: &Head) -> AppAction {
     )))
 }
 
-/// Asking for a new change from `revset`, which `target` names as the
-/// user sees it: where the change goes is a question of its own.
+/// Prompt to create a new change from `revset`,
+/// with `target` describing the source for the user.
 pub fn ask_new_change(acts_on: ActsOn, target: &str, describe: bool) -> AppAction {
     AppAction::SetPopup(Box::new(new_insert(target, |insert| {
         AppAction::Run(Command::New {
@@ -827,16 +805,16 @@ pub fn ask_new_change(acts_on: ActsOn, target: &str, describe: bool) -> AppActio
     })))
 }
 
-/// Asking to squash the marked changes, or the working copy when none
-/// are marked, into `selected`: the target it picks, the refusal when
-/// that target cannot take it, or the question that runs it.
+/// Prompt to squash the marked changes (or the working copy if none are marked)
+/// into `selected`, handling target validation, immutability rejections, and
+/// confirmation.
 pub fn ask_squash(
     selected: &Head,
     marked: &[CommitId],
     ignore_immutable: bool,
 ) -> Result<AppAction> {
-    // Marking the change being squashed into says to fold the others
-    // into it, there being nowhere else they could go.
+    // Marking the target change specifies folding the others into it,
+    // as there is nowhere else they can go.
     let sources: Vec<_> = marked
         .iter()
         .filter(|source| **source != selected.commit_id)
@@ -846,9 +824,8 @@ pub fn ask_squash(
         return Ok(message("Squash", "Cannot squash a change into itself"));
     }
 
-    // Marked sources name themselves, so the selection is the target
-    // whatever it is. Squashing the change the working copy is on, on
-    // the other hand, has nowhere to go but its parent.
+    // Marked sources are explicit, so the selection remains the target.
+    // Squashing the working copy change, however, defaults to its parent.
     let from = Revset::union(&sources);
     let (target, question) = if from.is_some() {
         (
@@ -893,8 +870,8 @@ pub fn ask_squash(
     ))
 }
 
-/// Asking to edit `target`, which the question names as `subject`: the
-/// refusal when it is immutable, or the question that runs it.
+/// Prompt to edit `target`, displaying `subject` in the prompt,
+/// or rejecting if immutable.
 pub fn ask_edit(target: &Head, subject: String, ignore_immutable: bool) -> AppAction {
     if target.immutable && !ignore_immutable {
         return message(
@@ -921,9 +898,8 @@ pub fn ask_edit(target: &Head, subject: String, ignore_immutable: bool) -> AppAc
     )
 }
 
-/// Asking to abandon the `marked` changes, or `selected` when none are
-/// marked: the refusal when it is immutable, or the question that runs
-/// it.
+/// Prompt to abandon the `marked` changes (or `selected` if none are marked),
+/// rejecting if immutable.
 pub fn ask_abandon(selected: &Head, marked: Vec<CommitId>) -> AppAction {
     if selected.immutable {
         return message(
@@ -954,7 +930,7 @@ pub fn ask_abandon(selected: &Head, marked: Vec<CommitId>) -> AppAction {
     )
 }
 
-/// Asking to take the repo back to the state `operation` left it in.
+/// Prompt to restore the repository to the state left by `operation`.
 pub fn ask_op_restore(operation: &Operation) -> AppAction {
     confirm(
         "Restore",
@@ -966,7 +942,7 @@ pub fn ask_op_restore(operation: &Operation) -> AppAction {
     )
 }
 
-/// Asking to take back `operation` alone.
+/// Prompt to revert `operation` alone.
 pub fn ask_op_revert(operation: &Operation) -> AppAction {
     confirm(
         "Revert",
@@ -978,8 +954,8 @@ pub fn ask_op_revert(operation: &Operation) -> AppAction {
     )
 }
 
-/// How a question names an operation: as short as the operation log
-/// writes it, and with what it says of itself.
+/// Formats an operation name using its short identifier and description,
+/// matching the operation log style.
 fn name_of(operation: &Operation) -> String {
     format!(
         "Operation: {} {}",
@@ -988,7 +964,7 @@ fn name_of(operation: &Operation) -> String {
     )
 }
 
-/// Asking to delete the bookmark of this name.
+/// Prompt to delete the bookmark with this name.
 pub fn ask_delete_bookmark(name: &str) -> AppAction {
     confirm(
         "Delete",
@@ -999,7 +975,7 @@ pub fn ask_delete_bookmark(name: &str) -> AppAction {
     )
 }
 
-/// Asking to forget the bookmark of this name.
+/// Prompt to forget the bookmark with this name.
 pub fn ask_forget_bookmark(name: &str) -> AppAction {
     confirm(
         "Forget",
@@ -1010,8 +986,7 @@ pub fn ask_forget_bookmark(name: &str) -> AppAction {
     )
 }
 
-/// Asking to put `bookmark` on `head`, which for one of several targets
-/// is what settles it on that one.
+/// Prompt to place `bookmark` onto `head`.
 pub fn ask_set_bookmark(bookmark: &Bookmark, head: &Head) -> AppAction {
     confirm(
         "Set",
@@ -1030,8 +1005,8 @@ pub fn ask_set_bookmark(bookmark: &Bookmark, head: &Head) -> AppAction {
     )
 }
 
-/// Turning down an operation asked for on a view the repo has moved on
-/// from, which it would be carried out against.
+/// Rejects operations requested on an outdated view where the repository has
+/// moved on.
 pub fn refuse_outdated_view() -> AppAction {
     message(
         "Out of date",
@@ -1040,8 +1015,8 @@ pub fn refuse_outdated_view() -> AppAction {
     )
 }
 
-/// Asking whether to update a stale working copy, which jj refuses to
-/// read the repo until.
+/// Prompt to update a stale working copy, which jj requires before reading the
+/// repository.
 pub fn ask_update_stale_workspace() -> AppAction {
     confirm(
         "Stale working copy",
@@ -1055,7 +1030,7 @@ pub fn ask_update_stale_workspace() -> AppAction {
     )
 }
 
-/// Put `question` to the user, running `command` if they say yes.
+/// Display `question` to the user, running `command` upon confirmation.
 fn confirm(title: &'static str, question: Text<'static>, command: Command) -> AppAction {
     AppAction::SetPopup(Box::new(ConfirmPopup::new(
         title,
@@ -1064,9 +1039,8 @@ fn confirm(title: &'static str, question: Text<'static>, command: Command) -> Ap
     )))
 }
 
-/// What to show once an operation has rewritten changes without moving
-/// the working copy: every tab is out of date, and the log may be done
-/// marking what it handed over.
+/// Actions to show after rewriting changes without moving the working copy:
+/// invalidating tabs and clearing log marks if needed.
 fn rewritten(taken: Option<AppAction>) -> AppAction {
     let mut actions = vec![AppAction::MarkTabsStale];
     actions.extend(taken);
@@ -1074,8 +1048,8 @@ fn rewritten(taken: Option<AppAction>) -> AppAction {
     AppAction::Multiple(actions)
 }
 
-/// Put `change` up wherever a change shows, the repo having moved under
-/// whatever else is on screen.
+/// Display `change` in the view, updating the log and head following
+/// repository changes.
 fn show_change(change: Head) -> AppAction {
     AppAction::Multiple(vec![
         AppAction::ViewLog(change.clone()),
@@ -1084,9 +1058,8 @@ fn show_change(change: Head) -> AppAction {
     ])
 }
 
-/// The repo is somewhere else altogether, an operation of the operation
-/// log having been taken back. Every tab is behind, and the change the
-/// working copy is on is not the one it was.
+/// Handles repository movement due to an undone operation, updating tabs
+/// and the working copy head.
 fn repo_moved() -> Result<AppAction> {
     Ok(AppAction::Multiple(vec![
         AppAction::ChangeHead(new_commander().get_current_head()?),
@@ -1094,8 +1067,8 @@ fn repo_moved() -> Result<AppAction> {
     ]))
 }
 
-/// Show the files of the working copy commit, the operation having
-/// changed what is in it.
+/// Show the files of the working copy commit after an operation modifies
+/// its contents.
 fn show_working_copy_files() -> Result<AppAction> {
     Ok(AppAction::Multiple(vec![
         AppAction::ViewFiles(new_commander().get_current_head()?),
@@ -1107,8 +1080,7 @@ fn message(title: &'static str, text: impl Into<String>) -> AppAction {
     AppAction::SetPopup(Box::new(MessagePopup::new(title, text).wrapped()))
 }
 
-/// What jj said when it would not do what `operation` asked. Its answer
-/// is laid out as it wrote it, being several lines as often as not.
+/// Displays the error message returned by jj when `operation` is rejected.
 fn refused(operation: &'static str, err: impl Display) -> AppAction {
     AppAction::SetPopup(Box::new(
         MessagePopup::new(operation, format!("{err:#}"))
@@ -1117,9 +1089,8 @@ fn refused(operation: &'static str, err: impl Display) -> AppAction {
     ))
 }
 
-/// Run `operation` in `slot` and put up a loader popup for it, which
-/// stays until that slot's result arrives. The popup swallows all
-/// input, so the slot it waits for has to be the one submitted here.
+/// Run `operation` in `slot` and show a loader popup until the result arrives,
+/// blocking input.
 fn with_loader<F>(
     background_tasks: &BackgroundTasks,
     operation_name: &str,
@@ -1137,8 +1108,8 @@ where
     )))
 }
 
-/// The loader popup [with_loader] puts up, for a caller that has more to
-/// say about what becomes of the output.
+/// Creates the loader popup used by [with_loader] for callers needing custom
+/// output handling.
 fn loader<F>(
     background_tasks: &BackgroundTasks,
     operation_name: &str,

@@ -1,3 +1,5 @@
+/*! The application itself.
+ */
 pub mod command;
 mod repo_watch;
 
@@ -70,6 +72,7 @@ use crate::ui::tab::OpLogTab;
 use crate::ui::tab::SettingsTab;
 use crate::ui::tab::StylesTab;
 
+/// Tab identifiers
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum TabId {
     Log,
@@ -228,6 +231,7 @@ fn tab_bar_scroll(titles: &[String], selected: usize, width: u16) -> u16 {
         .min(total - width)
 }
 
+/// Application metrics
 pub struct Stats {
     pub start_time: Instant,
 }
@@ -242,6 +246,7 @@ pub enum Handled {
     Stop,
 }
 
+/// The application object
 pub struct App<'a> {
     // user interface
     pub current_tab: TabId,
