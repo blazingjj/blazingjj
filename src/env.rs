@@ -1,4 +1,4 @@
-/** The environment configures the application.
+/*! The environment configures the application.
 
 It is a combination of
 - configuration files

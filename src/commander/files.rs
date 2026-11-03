@@ -2,7 +2,7 @@
 [Commander] member functions related to jj diff.
 
 This module has features to parse the diff output.
-It is mostly used in the [files_tab][crate::ui::files_tab] module.
+It is mostly used in the [files tab][crate::ui::tab::files] module.
 */
 use anyhow::Context;
 use anyhow::Result;

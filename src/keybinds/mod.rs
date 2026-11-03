@@ -1,3 +1,8 @@
+/*! The keybindings defined by components.
+
+For each component that has keybindings, define the events
+they correspond to and their default key.
+*/
 use std::fmt::Display;
 use std::str::FromStr;
 

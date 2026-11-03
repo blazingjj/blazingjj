@@ -2,7 +2,7 @@
 [Commander] member functions related to jj log.
 
 This module has features to parse the log output to extract change id and commit id.
-It is mostly used in the [log_tab][crate::ui::log_tab] module.
+It is mostly used in the [log tab][crate::ui::tab::log] module.
 */
 
 use std::fmt::Display;

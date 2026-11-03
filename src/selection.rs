@@ -1,19 +1,20 @@
-/*! What a tab has selected, and the placeholders a command names it by.
+/*! What a tab has selected, and the placeholders commands use to refer to it.
 
-A command the user writes, whether typed into the command popup or
-configured as one of their own, says what to run it against by putting a
-placeholder where the argument goes. What each one stands for is
-whatever the tab it is run from has selected, so `$selected` means the
-change in the log and the file in the files tab. Where the log is
-holding its marked changes out, they are what it has selected, so a
-command written against `$selected` acts on them the way the built-in
-operations do.
+Commands can be entered in the command popup or configured by the user.
+A command can use placeholders to refer to the selection in the tab it
+is run from. For example, $selected refers to the change shown in the log
+or the file selected in the files tab.
 
-A placeholder the current tab has nothing for is an error rather than an
-empty argument: a command that was to be run against something is not
-one to run against nothing instead.
-*/
+A tab can know about more than one kind of thing. For example, the files
+tab has both a selected file and the revision shown alongside it. Each
+placeholder refers to a particular kind of selection, while $selected refers
+to what the tab is primarily about. In the log, if changes are marked,
+$selected refers to those changes rather than the revision the log is
+currently on.
 
+If a tab has nothing to supply for a placeholder, the command fails
+instead of substituting an empty argument. A command that requires a
+selection should not silently run without one. */
 use std::fmt;
 
 use crate::commander::ids::CommitId;
@@ -21,11 +22,11 @@ use crate::commander::ids::OperationId;
 use crate::commander::log::Head;
 use crate::commander::revset::Revset;
 
-/// How the revision a tab is on is named to something outside the app:
-/// by its change id, so that it is read as the change stands, except
-/// where what is shown is not the change as it stands. A version out of
-/// the evolog and one of several divergent commits are both only to be
-/// found by their commit id.
+/// The revision identifier used when referring to the revision outside
+/// the app. Normally this is the change ID, which identifies the change
+/// as it currently stands. If the revision is pinned or divergent, its
+/// commit ID is used instead, since that specific commit cannot be
+/// identified by its change ID alone.
 pub fn shown_revision(head: &Head, pinned: bool) -> &str {
     if pinned || head.divergent {
         head.commit_id.as_str()
@@ -34,7 +35,7 @@ pub fn shown_revision(head: &Head, pinned: bool) -> &str {
     }
 }
 
-/// One of the placeholders a command is written with.
+/// A placeholder that can be used in a command.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Placeholder {
     /// What the tab is about: the revision, or the file, bookmark or
@@ -57,8 +58,8 @@ impl Placeholder {
         Self::Operation,
     ];
 
-    /// The names it is written as, of which the first is the one to
-    /// read it back by.
+    /// The names accepted for this placeholder. The first is its canonical
+    /// name, used when displaying the placeholder.
     pub fn names(self) -> &'static [&'static str] {
         match self {
             Self::Selected => &["$selected", "$s"],
@@ -69,7 +70,8 @@ impl Placeholder {
         }
     }
 
-    /// What it stands for, as the help and the settings tab say it.
+    /// A description of what this placeholder refers to, as shown in the
+    /// help and settings tabs.
     pub fn doc(self) -> &'static str {
         match self {
             Self::Selected => "what the tab has selected",
@@ -87,10 +89,12 @@ impl fmt::Display for Placeholder {
     }
 }
 
-/// The marked changes as the one revset that names them all, that being
-/// how jj takes more than one, and parenthesised where there are several
-/// of them: a revset written around the placeholder is to take the whole
-/// set rather than binding to the last of them.
+/// The marked changes represented as a single revset.
+///
+/// jj represents multiple revisions as a union of their revsets. When
+/// there is more than one marked change, parentheses keep the union
+/// together so that any revset expression surrounding the placeholder
+/// applies to the entire selection.
 fn marked_revset(marked: &[CommitId]) -> Option<String> {
     let changes = Revset::union(marked)?;
 
@@ -101,22 +105,27 @@ fn marked_revset(marked: &[CommitId]) -> Option<String> {
     })
 }
 
-/// What a tab has selected, of each of the kinds a placeholder names.
+/// The selections available from a tab for each kind of placeholder.
 ///
-/// A tab is about one kind of thing but may know of others: the files
-/// tab has a file and the revision it is shown at, so a command run
-/// from it can name either.
+/// A tab can have a primary selection and know about other things as
+/// well. For example, the files tab has a selected file and the revision
+/// shown alongside it, so a command can refer to either.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Selection {
+    /// The revision shown in the tab, identified as described by
+    /// [shown_revision]. If the revision has exactly one local bookmark,
+    /// record that bookmark as a fallback for $bookmark.
     revision: Option<String>,
+    /// The changes marked in the log. Only the log tab has marked changes.
     marked: Vec<CommitId>,
     file: Option<String>,
-    /// The bookmark the tab is about, where it is about one.
+    /// The bookmark selected by a tab that is specifically about a bookmark
     bookmark: Option<String>,
     /// The only local bookmark on the revision the tab is on, where it
     /// has one. The tab is not about it, so it is no selection of its
     /// own, only what `$bookmark` falls back to.
     revision_bookmark: Option<String>,
+    /// The operation selected by the tab.
     operation: Option<String>,
 }
 
@@ -155,8 +164,8 @@ impl Selection {
         self
     }
 
-    /// What `placeholder` stands for, or None where the tab has nothing
-    /// of that kind.
+    /// Return the value for `placeholder`, or `None` if the tab has no
+    /// selection of that kind.
     fn value(&self, placeholder: Placeholder) -> Option<String> {
         match placeholder {
             // What the tab is about is the most particular thing it has:
@@ -177,14 +186,14 @@ impl Selection {
         }
     }
 
-    /// `args` with every placeholder replaced by what the selection has
-    /// for it, refused when one of them has nothing to stand for.
+    /// Substitute the tab's selections for placeholders in `args`.
     ///
-    /// Substitution happens inside an argument, so that `--rev=$s` names
-    /// the selection as much as `$s` on its own does, and after the
-    /// command has been split into arguments, so that what a placeholder
-    /// stands for is one argument however it reads. `$$` is a `$` of its
-    /// own rather than the start of a placeholder.
+    /// Return an error if any placeholder has no corresponding selection.
+    ///
+    /// Substitution happens within each argument, so placeholders also work
+    /// inside options such as `--rev=$s`. Arguments are already split before
+    /// substitution, so a substituted value containing spaces remains a
+    /// single argument. Use `$$` to produce a literal `$`.
     pub fn substitute(&self, args: &[String]) -> Result<Substituted, Missing> {
         let mut used = Vec::new();
         let args = args
@@ -198,8 +207,8 @@ impl Selection {
         })
     }
 
-    /// `arg` with every placeholder replaced by what the selection has
-    /// for it, noting in `used` which ones it named.
+    /// Substitute placeholders in arg, recording each placeholder used
+    /// in `used`.
     fn substitute_one(&self, arg: &str, used: &mut Vec<Placeholder>) -> Result<String, Missing> {
         let mut left = arg;
         let mut done = String::with_capacity(arg.len());
@@ -233,12 +242,11 @@ impl Selection {
         Ok(done)
     }
 
-    /// The placeholder `arg` starts with and the name it is written as,
-    /// if it starts with one at all.
+    /// Return the placeholder at the start of `arg`, along with the name
+    /// that matched, or `None` if no placeholder starts there.
     ///
-    /// A name has to end where the word does, so that the short names
-    /// do not turn every word starting with one into a placeholder:
-    /// `$selection` is not `$s` with `election` after it.
+    /// A placeholder name must end at a word boundary: for example,
+    /// `$selection` is not `$s` followed by `election`.
     fn placeholder_at(arg: &str) -> Option<(Placeholder, &'static str)> {
         Placeholder::ALL.into_iter().find_map(|placeholder| {
             let name = placeholder.names().iter().find(|name| {
@@ -251,16 +259,16 @@ impl Selection {
     }
 }
 
-/// A command with the selection put in it.
+/// A command with its placeholders replaced by the tab's selections.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Substituted {
     pub args: Vec<String>,
-    /// Whether it names what the log has marked, and so is a command the
-    /// marks were there for.
+    /// Whether the command refers to the changes marked in the log.
     pub uses_marks: bool,
 }
 
-/// A placeholder the tab it was to be filled from has nothing for.
+/// A placeholder has no corresponding selection in the tab from which
+/// the command was run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Missing(pub Placeholder);
 

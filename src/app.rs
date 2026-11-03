@@ -1,3 +1,5 @@
+/*! The application itself.
+ */
 pub mod command;
 mod repo_watch;
 
@@ -54,22 +56,23 @@ use crate::ui::ComponentInputResult;
 use crate::ui::Interactive;
 use crate::ui::Scroll;
 use crate::ui::Tab;
-use crate::ui::bookmarks_tab::BookmarksTab;
 use crate::ui::dialog::CommandMode;
 use crate::ui::dialog::CommandPopup;
 use crate::ui::dialog::HelpPopup;
-use crate::ui::evolog_tab::EvologTab;
-use crate::ui::files_tab::FilesTab;
-use crate::ui::keybindings_tab::KeybindingsTab;
-use crate::ui::log_tab::LogTab;
-use crate::ui::op_log_tab::OpLogTab;
-use crate::ui::settings_tab::SettingsTab;
 use crate::ui::status_bar;
 use crate::ui::status_bar::Status;
 use crate::ui::styles::paint;
 use crate::ui::styles::panel_title;
-use crate::ui::styles_tab::StylesTab;
+use crate::ui::tab::BookmarksTab;
+use crate::ui::tab::EvologTab;
+use crate::ui::tab::FilesTab;
+use crate::ui::tab::KeybindingsTab;
+use crate::ui::tab::LogTab;
+use crate::ui::tab::OpLogTab;
+use crate::ui::tab::SettingsTab;
+use crate::ui::tab::StylesTab;
 
+/// Tab identifiers
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum TabId {
     Log,
@@ -228,6 +231,7 @@ fn tab_bar_scroll(titles: &[String], selected: usize, width: u16) -> u16 {
         .min(total - width)
 }
 
+/// Application metrics
 pub struct Stats {
     pub start_time: Instant,
 }
@@ -242,6 +246,7 @@ pub enum Handled {
     Stop,
 }
 
+/// The application object
 pub struct App<'a> {
     // user interface
     pub current_tab: TabId,
