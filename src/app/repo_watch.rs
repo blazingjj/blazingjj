@@ -65,8 +65,9 @@ pub struct RepoWatch {
     /// What the check the app started last is doing.
     running: Check,
 
-    /// Whether the app itself put the view out of date.
-    stale_is_ours: bool,
+    /// Whether the view catches up with a move found rather than wait for
+    /// the user.
+    catch_up: bool,
 
     /// Whether the app has moved the repo and no reading has accounted
     /// for that move yet.
@@ -97,7 +98,7 @@ impl RepoWatch {
             running: Check::default(),
             // Nothing has been read yet, and reading it is what the user
             // opened the app for.
-            stale_is_ours: true,
+            catch_up: true,
             moved_by_us: false,
             has_focus: true,
             left_stale: false,
@@ -119,7 +120,7 @@ impl RepoWatch {
     /// Note that the app is putting the view out of date itself, without
     /// a check to find it.
     pub fn catching_up(&mut self) {
-        self.stale_is_ours = true;
+        self.catch_up = true;
         // A check already on its way was started before we knew that,
         // so what it comes back with says nothing about who moved the
         // repo.
@@ -153,7 +154,7 @@ impl RepoWatch {
     /// Decide whether to leave the view out of date rather than catch it
     /// up, and report whether that has changed since the last pass.
     pub fn leave_stale(&mut self, stale: bool) -> bool {
-        let left_stale = stale && self.has_focus && !self.stale_is_ours;
+        let left_stale = stale && self.has_focus && !self.catch_up;
         mem::replace(&mut self.left_stale, left_stale) != left_stale
     }
 
@@ -217,7 +218,7 @@ impl RepoWatch {
             return Moved::Ours;
         }
 
-        self.stale_is_ours = false;
+        self.catch_up = false;
         Moved::Elsewhere
     }
 
@@ -552,7 +553,7 @@ mod tests {
     }
 
     #[test]
-    fn stops_treating_staleness_as_its_own_once_a_poll_finds_a_move() {
+    fn stops_catching_up_once_a_poll_finds_a_move() {
         let now = Instant::now();
         let mut watch = watch(now);
         watch.check_to_start(moment(now));
