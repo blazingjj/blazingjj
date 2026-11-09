@@ -49,8 +49,12 @@
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
 
-          # The TUI shells out to jj, and so do the tests.
-          nativeCheckInputs = [ pkgs.jujutsu ];
+          # The TUI shells out to jj, and so do the tests; jj in turn needs git
+          # for adding workspaces to a colocated repo.
+          nativeCheckInputs = [
+            pkgs.git
+            pkgs.jujutsu
+          ];
 
           meta = {
             inherit (cargoToml.package) description;
