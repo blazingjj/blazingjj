@@ -643,6 +643,7 @@ impl<'a> App<'a> {
                 self.repo_watch.ask_check(Check {
                     snapshot: false,
                     ours: true,
+                    catch_up: false,
                 });
             }
             AppAction::RunInteractive(interactive) => {
@@ -929,6 +930,7 @@ impl<'a> App<'a> {
                 self.repo_watch.ask_check(Check {
                     snapshot: true,
                     ours: false,
+                    catch_up: true,
                 });
                 return Ok(Handled::Nothing);
             }
@@ -1008,6 +1010,7 @@ impl<'a> App<'a> {
                                 self.repo_watch.ask_check(Check {
                                     snapshot: true,
                                     ours: true,
+                                    catch_up: false,
                                 });
                                 // Asking for a read is asking to be told
                                 // again should it be a stale working copy
