@@ -21,6 +21,8 @@ pub struct Check {
     pub snapshot: bool,
     /// Whether a move this check finds is one the app has just made.
     pub ours: bool,
+    /// Whether the view catches up once this answers.
+    pub catch_up: bool,
 }
 
 /// Whether the repo has moved since the app last read where it was, and
@@ -65,8 +67,9 @@ pub struct RepoWatch {
     /// What the check the app started last is doing.
     running: Check,
 
-    /// Whether the app itself put the view out of date.
-    stale_is_ours: bool,
+    /// Whether the view catches up with a move found rather than wait for
+    /// the user.
+    catch_up: bool,
 
     /// Whether the app has moved the repo and no reading has accounted
     /// for that move yet.
@@ -92,12 +95,13 @@ impl RepoWatch {
             next: Check {
                 snapshot: true,
                 ours: false,
+                catch_up: false,
             },
             asked: true,
             running: Check::default(),
             // Nothing has been read yet, and reading it is what the user
             // opened the app for.
-            stale_is_ours: true,
+            catch_up: true,
             moved_by_us: false,
             has_focus: true,
             left_stale: false,
@@ -119,7 +123,7 @@ impl RepoWatch {
     /// Note that the app is putting the view out of date itself, without
     /// a check to find it.
     pub fn catching_up(&mut self) {
-        self.stale_is_ours = true;
+        self.catch_up = true;
         // A check already on its way was started before we knew that,
         // so what it comes back with says nothing about who moved the
         // repo.
@@ -153,7 +157,7 @@ impl RepoWatch {
     /// Decide whether to leave the view out of date rather than catch it
     /// up, and report whether that has changed since the last pass.
     pub fn leave_stale(&mut self, stale: bool) -> bool {
-        let left_stale = stale && self.has_focus && !self.stale_is_ours;
+        let left_stale = stale && self.has_focus && !self.catch_up;
         mem::replace(&mut self.left_stale, left_stale) != left_stale
     }
 
@@ -187,7 +191,10 @@ impl RepoWatch {
             return Moved::No;
         };
 
-        self.record(at, op_id, self.running.ours)
+        let moved = self.record(at, op_id, self.running.ours);
+        // After recording, which stops catching up on a move made elsewhere.
+        self.catch_up |= self.running.catch_up;
+        moved
     }
 
     /// Take what a read the app made for itself found, rather than one
@@ -217,7 +224,7 @@ impl RepoWatch {
             return Moved::Ours;
         }
 
-        self.stale_is_ours = false;
+        self.catch_up = false;
         Moved::Elsewhere
     }
 
@@ -226,6 +233,7 @@ impl RepoWatch {
     fn want(&mut self, check: Check) {
         self.next.snapshot |= check.snapshot;
         self.next.ours |= check.ours;
+        self.next.catch_up |= check.catch_up;
         if check.ours {
             self.moved_by_us = true;
             self.catching_up();
@@ -261,6 +269,7 @@ mod tests {
         Check {
             snapshot: true,
             ours: false,
+            catch_up: false,
         }
     }
 
@@ -464,6 +473,7 @@ mod tests {
         watch.ask_check(Check {
             snapshot: false,
             ours: true,
+            catch_up: false,
         });
         assert_eq!(watch.read(now, OperationId("b".to_owned())), Moved::Ours);
 
@@ -497,23 +507,71 @@ mod tests {
     }
 
     #[test]
-    fn asks_before_catching_up_with_what_changed_while_away() {
+    fn catches_up_with_what_changed_while_away() {
         let now = Instant::now();
         let mut watch = watch(now);
         watch.check_to_start(moment(now));
         watch.checked(now, op_id("a"));
 
-        // Back at the window, the check that comes with regaining focus
-        // reads for a user who is looking at the view again, so what it
-        // turns up is theirs to ask for rather than ours to show.
         watch.set_focus(false);
         watch.set_focus(true);
-        watch.ask_check(snapshotting());
+        watch.ask_check(Check {
+            catch_up: true,
+            ..snapshotting()
+        });
         watch.check_to_start(moment(now));
         assert_eq!(watch.checked(now, op_id("b")), Moved::Elsewhere);
 
+        assert!(!watch.leave_stale(true));
+        assert!(!watch.waiting_for_refresh());
+    }
+
+    #[test]
+    fn catches_up_with_what_changed_while_away_after_a_failed_check() {
+        let now = Instant::now();
+        let mut watch = watch(now);
+        watch.check_to_start(moment(now));
+        watch.checked(now, op_id("a"));
+
+        watch.set_focus(false);
+        watch.set_focus(true);
+        watch.ask_check(Check {
+            catch_up: true,
+            ..snapshotting()
+        });
+        watch.check_to_start(moment(now));
+        watch.checked(now, None);
+        watch.check_to_start(moment(now + INTERVAL));
+        assert_eq!(watch.checked(now, op_id("b")), Moved::Elsewhere);
+
+        assert!(!watch.leave_stale(true));
+        assert!(!watch.waiting_for_refresh());
+    }
+
+    #[test]
+    fn catches_up_with_a_poll_running_on_return_once_the_focus_check_answers() {
+        let now = Instant::now();
+        let mut watch = watch(now);
+        watch.check_to_start(moment(now));
+        watch.checked(now, op_id("a"));
+
+        watch.set_focus(false);
+        watch.check_to_start(moment(now + INTERVAL));
+        watch.set_focus(true);
+        watch.ask_check(Check {
+            catch_up: true,
+            ..snapshotting()
+        });
+        // The poll asked for no catch-up, so its move is left stale until
+        // the check that comes with regaining focus answers.
+        assert_eq!(watch.checked(now, op_id("b")), Moved::Elsewhere);
         assert!(watch.leave_stale(true));
         assert!(watch.waiting_for_refresh());
+
+        watch.check_to_start(moment(now));
+        assert_eq!(watch.checked(now, op_id("b")), Moved::No);
+        assert!(watch.leave_stale(true));
+        assert!(!watch.waiting_for_refresh());
     }
 
     #[test]
@@ -542,6 +600,7 @@ mod tests {
         watch.ask_check(Check {
             snapshot: false,
             ours: true,
+            catch_up: false,
         });
         watch.check_to_start(moment(now));
         assert!(!watch.leave_stale(false));
@@ -552,7 +611,7 @@ mod tests {
     }
 
     #[test]
-    fn stops_treating_staleness_as_its_own_once_a_poll_finds_a_move() {
+    fn stops_catching_up_once_a_poll_finds_a_move() {
         let now = Instant::now();
         let mut watch = watch(now);
         watch.check_to_start(moment(now));
